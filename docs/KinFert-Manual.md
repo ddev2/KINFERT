@@ -201,6 +201,10 @@ the simulation, and inspect results.
 
 ### 3.1 The main window, control by control
 
+![KinFert main window](img/main-window.png)
+
+*The main window: load or build a configuration, choose the output directory, run, and read results.*
+
 | Control | On-screen label | What it does |
 |---|---|---|
 | `ChooseConfigButton` | **Read config file** | Load a saved configuration (a set of simulation parameters) from a file. The chosen file name appears in `ConfigFileName`. |
@@ -245,6 +249,10 @@ groups; this chapter follows those groups. For each option the tables give the
 configuration file — see [§10.1](#101-configuration-command-file)), and its
 meaning.
 
+![The Config window](img/config-overview.png)
+
+*The Config window, where a simulation is defined.*
+
 ### 4.1 Top-level actions
 
 | Button / option | Label | What it does |
@@ -269,6 +277,8 @@ Two independent switches decide *what* is simulated:
 
 ### 4.3 Cohorts
 
+![Config window — cohort settings](img/config-cohorts.png)
+
 A run covers either a single birth cohort or a range.
 
 | Option | Label | Meaning |
@@ -289,6 +299,8 @@ cohort file. See [§10.2](#102-cohort--demographic-regime-data-file).
 
 ### 4.4 Mortality
 
+![Config window — Mortality group](img/config-mortality.png)
+
 | Option | Label | Meaning |
 |---|---|---|
 | `LIFE_EXPECTANCY_AT_BIRTH_WOMEN` | **e0 women** | Female life expectancy at birth, *e₀*. |
@@ -298,6 +310,8 @@ Mortality is applied through survival schedules derived from these life
 expectancies (see [§8.4](#84-mortality)).
 
 ### 4.5 Union fertility (a priori)
+
+![Config window — Union fertility, a priori](img/config-fertility-apriori.png)
 
 This group defines the *target* fertility of a union before contraceptive
 behaviour is applied.
@@ -310,6 +324,8 @@ behaviour is applied.
 | `NSTEP_CONTRACEPTION` | **Contraception steps** | Number of iteration steps used when fitting contraception to the fertility target. |
 
 ### 4.6 Contraception use
+
+![Config window — Contraception use](img/config-contraception.png)
 
 | Option | Label | Meaning |
 |---|---|---|
@@ -326,6 +342,8 @@ altogether. See [§8.2](#82-fertility).
 
 ### 4.7 Amenorrhea
 
+![Config window — Amenorrhea group](img/config-amenorrhea.png)
+
 Postpartum amenorrhea is modelled with the **Lesthaeghe–Page** formulation.
 
 | Option | Label | Meaning |
@@ -337,6 +355,8 @@ Postpartum amenorrhea is modelled with the **Lesthaeghe–Page** formulation.
 | `ZERO_FIXED_AMENORRHEA_` | **Duration amenorrhea** | The fixed amenorrhea duration (used when the box above is ticked). |
 
 ### 4.8 Nuptiality (unions)
+
+![Config window — Union (nuptiality) group](img/config-nuptiality.png)
 
 **Women — first union**
 
@@ -417,6 +437,10 @@ The **LowLevel** window holds the biological and performance options that most
 users leave at their defaults. It is reached from **Low Level Options** on the
 Config window.
 
+![The LowLevel window](img/lowlevel-window.png)
+
+*The LowLevel window — advanced biological and performance options.*
+
 ### 5.1 Fecundability
 
 These choose how *fecundability* (monthly conception probability) varies between
@@ -464,6 +488,10 @@ These choose the age pattern of permanent sterility.
 The **Outputs** window selects which results are produced. It is reached from
 **Output Options** on the Config window. The **All / none** button toggles a
 whole section at once.
+
+![The Outputs window](img/outputs-window.png)
+
+*The Outputs window — selects which results are produced.*
 
 ### 6.1 Fertility result tables
 
@@ -531,6 +559,8 @@ whole section at once.
 
 #### 6.4.1 Optional per-kin fields
 
+![Select optional fields dialog](img/kin-output-fields.png)
+
 The **Select optional fields** dialog toggles the columns written for each kin in
 the kinship microdata file:
 
@@ -543,6 +573,8 @@ index, Share of inheritance (heirs), Heirs, KinType of heirs, Decedents, Share
 
 ### 6.5 Inheritance
 
+![Outputs window — Inheritance group](img/outputs-inheritance.png)
+
 | Option | Label | Meaning |
 |---|---|---|
 | `INHERITANCE` | **Find heirs and decedents** | Run the inheritance resolution. |
@@ -554,6 +586,8 @@ index, Share of inheritance (heirs), Heirs, KinType of heirs, Decedents, Share
 | `COUNTRY_INHERITANCE_RULES` | **Inheritance rules** | Select the national succession rule set. *`[TODO: list the available countries/rule sets.]`* |
 | `NON_BIO_KIN` | **Include non bio kin** | Include non-biological kin. |
 | `ALL_EGO_PARTNERS_GENEALOGY` | **Simulate egos' partner genealogy** | Also build the genealogy of ego's partner(s). |
+
+![Set of possible heirs dialog (the decedents dialog is identical)](img/heirs-set.png)
 
 The **heirs set** and **decedents set** dialogs offer the same kin-type list:
 Partner, Child, Grandchild, Great-grandchild, Father, Mother, Grandfather,
@@ -585,6 +619,10 @@ Grand-niece-nephew, Aunt-uncle, First cousin, Grand-aunt-uncle.
 
 The **Graphs** window (opened from the main window) plots inputs and outputs using
 TAChart. It is organised into tabs:
+
+![The Graphs window](img/graphs-window.png)
+
+*The Graphs window and its tabs.*
 
 | Tab | Shows |
 |---|---|
@@ -790,6 +828,8 @@ with a configurable thread cap and optional batching ([§6.6](#66-multithreading
 KinFert recognises the following kin types (enumeration `KinTypes`, with the
 display names from `str_kinship`). Ego's network is built from the subset you
 choose under **Select kin to simulate**.
+
+![Select kin to simulate dialog](img/kin-selection.png)
 
 | Internal name | Display name | Branch |
 |---|---|---|
