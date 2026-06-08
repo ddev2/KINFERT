@@ -1,0 +1,210 @@
+object KinOutputFields: TKinOutputFields
+  Left = 118
+  Height = 434
+  Top = 37
+  Width = 258
+  Caption = 'KinOutputFields'
+  ClientHeight = 434
+  ClientWidth = 258
+  OnActivate = FormActivate
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  LCLVersion = '3.8.0.0'
+  object opFieldsGroup: TGroupBox
+    Left = 16
+    Height = 384
+    Top = 8
+    Width = 224
+    Caption = 'Optional fields'
+    ClientHeight = 357
+    ClientWidth = 214
+    TabOrder = 0
+    object yBirthSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 8
+      Width = 139
+      Caption = 'Year of birth integer'
+      TabOrder = 0
+    end
+    object mBirthSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 24
+      Width = 107
+      Caption = 'Month of birth'
+      TabOrder = 1
+    end
+    object yBirthFloatSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 40
+      Width = 125
+      Caption = 'Year of birth float'
+      TabOrder = 2
+    end
+    object nChildrenSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 56
+      Width = 135
+      Caption = 'Number of children'
+      TabOrder = 3
+    end
+    object birthOrderSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 72
+      Width = 87
+      Caption = 'Birth order'
+      TabOrder = 4
+    end
+    object ageRelEgoSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 88
+      Width = 161
+      Caption = 'Age difference with ego'
+      TabOrder = 5
+    end
+    object ageDeathSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 104
+      Width = 98
+      Caption = 'Age at death'
+      TabOrder = 6
+    end
+    object ageUnionSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 120
+      Width = 113
+      Caption = 'Age at union(s)'
+      TabOrder = 7
+    end
+    object ageEndUnionSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 136
+      Width = 152
+      Caption = 'Age at end of union(s)'
+      TabOrder = 8
+    end
+    object causeEndSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 152
+      Width = 151
+      Caption = 'Cause end of union(s)'
+      TabOrder = 9
+    end
+    object ageMotherAtChildbirthSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 168
+      Width = 178
+      Caption = 'Age of mother at childbirth'
+      TabOrder = 10
+    end
+    object ageFatherAtChildbirthSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 184
+      Width = 172
+      Caption = 'Age of father at childbirth'
+      TabOrder = 11
+    end
+    object statusSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 200
+      Width = 131
+      Caption = 'Educational status'
+      TabOrder = 12
+    end
+    object cohortDemRegSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 216
+      Width = 188
+      Caption = 'Demographic Regime cohort'
+      TabOrder = 13
+    end
+    object motherUnionNumberSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 232
+      Width = 135
+      Caption = 'Mother union index'
+      TabOrder = 14
+    end
+    object shareHeirsSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 264
+      Width = 89
+      Caption = 'share heirs'
+      TabOrder = 15
+    end
+    object heirsSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 248
+      Width = 56
+      Caption = 'Heirs'
+      TabOrder = 16
+    end
+    object kinTypeHeirsSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 280
+      Width = 101
+      Caption = 'kinType heirs'
+      TabOrder = 17
+    end
+    object decedentsSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 296
+      Width = 87
+      Caption = 'Decedents'
+      TabOrder = 18
+    end
+    object shareDecedentsSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 312
+      Width = 121
+      Caption = 'share decedents'
+      TabOrder = 19
+    end
+    object kinTypeDecedentsSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 328
+      Width = 133
+      Caption = 'kinType decedents'
+      TabOrder = 20
+    end
+  end
+  object OkBtn: TButton
+    Left = 165
+    Height = 25
+    Top = 400
+    Width = 75
+    Caption = 'OK'
+    Default = True
+    TabOrder = 1
+    OnClick = OkBtnClick
+  end
+  object AllNoneBtn: TToggleBox
+    Left = 16
+    Height = 25
+    Top = 400
+    Width = 75
+    Caption = 'All / none'
+    TabOrder = 2
+    OnChange = AllNoneBtnChange
+  end
+end

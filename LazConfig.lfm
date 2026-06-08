@@ -1,0 +1,1252 @@
+object ConfigForm: TConfigForm
+  Left = 29
+  Height = 817
+  Top = 29
+  Width = 1212
+  BorderStyle = bsDialog
+  Caption = 'Config'
+  ClientHeight = 817
+  ClientWidth = 1212
+  OnActivate = FormActivate
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  object DemReg_group: TGroupBox
+    Left = 25
+    Height = 488
+    Top = 203
+    Width = 1167
+    Caption = 'COHORT DEMOGRAPHIC REGIME'
+    ClientHeight = 461
+    ClientWidth = 1157
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 7
+    OnMouseEnter = myFocusHandler
+    object Cohort_label: TLabel
+      Left = 22
+      Height = 16
+      Top = 13
+      Width = 95
+      Caption = 'Cohort               '
+      ParentColor = False
+      Transparent = False
+    end
+    object COHORTS: TComboBox
+      Left = 112
+      Height = 20
+      Top = 9
+      Width = 100
+      ItemHeight = 18
+      TabOrder = 0
+      Text = 'COHORTS'
+    end
+    object MORTALITY_group: TGroupBox
+      Left = 16
+      Height = 88
+      Top = 40
+      Width = 177
+      Caption = 'MORTALITY'
+      ClientHeight = 61
+      ClientWidth = 167
+      ParentBackground = False
+      ParentColor = False
+      ParentShowHint = False
+      TabOrder = 1
+      object LIFE_EXPECTANCY_AT_BIRTH_WOMEN: TEdit
+        Left = 96
+        Height = 21
+        Top = 7
+        Width = 64
+        TabOrder = 0
+        Text = 'LIFE_EXPECTANCY_AT_BIRTH_WOMEN'
+      end
+      object LIFE_EXPECTANCY_AT_BIRTH_MEN: TEdit
+        Left = 96
+        Height = 21
+        Top = 37
+        Width = 64
+        ParentShowHint = False
+        ShowHint = True
+        TabOrder = 1
+        Text = 'LIFE_EXPECTANCY_AT_BIRTH_MEN'
+      end
+      object e0W: TLabel
+        Left = 16
+        Height = 16
+        Top = 11
+        Width = 88
+        Caption = 'e0 women       '
+        ParentColor = False
+        Transparent = False
+      end
+      object e0M: TLabel
+        Left = 16
+        Height = 16
+        Top = 40
+        Width = 88
+        Caption = 'e0 men            '
+        ParentColor = False
+        Transparent = False
+      end
+    end
+    object GenFertilityGroup: TGroupBox
+      Left = 16
+      Height = 312
+      Top = 136
+      Width = 177
+      Caption = 'UNION FERTILITY (apriori)'
+      ClientHeight = 285
+      ClientWidth = 167
+      ParentBackground = False
+      ParentColor = False
+      ParentShowHint = False
+      TabOrder = 2
+      object PPR_TARGET: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 215
+        Width = 143
+        Caption = 'PPR values as target'
+        TabOrder = 0
+      end
+      object APRIORI_PPR: TValueListEditor
+        Left = 8
+        Height = 176
+        Top = 8
+        Width = 152
+        AutoAdvance = aaDown
+        RowCount = 2
+        TabOrder = 1
+        Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goColSizing, goEditing, goTabs, goAlwaysShowEditor, goThumbTracking, goCellEllipsis]
+        TitleCaptions.Strings = (
+          'Parity'
+          'PPR'
+        )
+        ColWidths = (
+          64
+          86
+        )
+      end
+      object contrStepsLab: TLabel
+        Left = 16
+        Height = 16
+        Top = 240
+        Width = 127
+        Caption = 'Contraception steps:'
+        ParentColor = False
+      end
+      object NSTEP_CONTRACEPTION: TEdit
+        Left = 40
+        Height = 21
+        Top = 261
+        Width = 64
+        TabOrder = 2
+        Text = 'NSTEP_CONTRACEPTION'
+      end
+      object CTFR: TEdit
+        Left = 72
+        Height = 21
+        Top = 184
+        Width = 88
+        ReadOnly = True
+        TabOrder = 3
+        Text = 'CTFR'
+      end
+      object CTFRLab: TLabel
+        Left = 15
+        Height = 16
+        Top = 188
+        Width = 62
+        Caption = ' CTFR:      '
+        Color = clInactiveBorder
+        Font.Style = [fsBold]
+        ParentColor = False
+        ParentFont = False
+        Transparent = False
+      end
+    end
+    object ContraceptionUseGroup: TGroupBox
+      Left = 560
+      Height = 248
+      Top = 40
+      Width = 368
+      Caption = 'CONTRACEPTION USE'
+      ClientHeight = 221
+      ClientWidth = 358
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 3
+      object EffContraceptionBeforeFirstUnion: TLabel
+        Left = 8
+        Height = 16
+        Top = 10
+        Width = 245
+        Caption = 'Efficacy before first union                         '
+        ParentColor = False
+        Transparent = False
+      end
+      object EFF_CONTRACEP_BEFORE_UNION: TEdit
+        Left = 240
+        Height = 21
+        Top = 7
+        Width = 80
+        TabOrder = 0
+        Text = 'EFF_CONTRACEP_BEFORE_UNION'
+      end
+      object TimeAfterFirstUnionGroup: TGroupBox
+        Left = 0
+        Height = 77
+        Top = 32
+        Width = 256
+        Caption = 'Contraception time after first union'
+        ClientHeight = 50
+        ClientWidth = 246
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 1
+        object CONTRACEP_TIME_AFTER_FIRST_UNION: TEdit
+          Left = 160
+          Height = 21
+          Top = 5
+          Width = 80
+          TabOrder = 0
+          Text = 'CONTRACEP_TIME_AFTER_FIRST_UNION'
+        end
+        object TimeFirstUnionFirstBirth: TLabel
+          Left = 7
+          Height = 16
+          Top = 8
+          Width = 134
+          Caption = 'Length of time (years)'
+          ParentColor = False
+        end
+        object PropContrAfterFirstUnion: TLabel
+          Left = 8
+          Height = 16
+          Top = 34
+          Width = 79
+          Caption = 'Prop. waiting'
+          ParentColor = False
+        end
+        object PROP_CONTRACEP_AFTER_FIRST_UNION: TEdit
+          Left = 160
+          Height = 21
+          Top = 32
+          Width = 80
+          TabOrder = 1
+          Text = 'PROP_CONTRACEP_AFTER_FIRST_UNION'
+        end
+      end
+      object NStepsContrGroup: TGroupBox
+        Left = 264
+        Height = 77
+        Top = 32
+        Width = 51
+        Caption = 'NSteps'
+        ClientHeight = 50
+        ClientWidth = 41
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 2
+        object NSTEP_CONTRACEP_BEFORE_FIRST_CHILD: TEdit
+          Left = 0
+          Height = 21
+          Top = 5
+          Width = 40
+          TabOrder = 0
+          Text = 'NSTEP_CONTRACEP_BEFORE_FIRST_CHILD'
+        end
+      end
+      object StoppingGroup: TGroupBox
+        Left = 0
+        Height = 112
+        Top = 112
+        Width = 120
+        Caption = 'STOPPING'
+        ClientHeight = 85
+        ClientWidth = 110
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 3
+        object EFF_STOPPING_CONTRACEP: TValueListEditor
+          Left = 5
+          Height = 80
+          Top = 8
+          Width = 99
+          DefaultColWidth = 42
+          RowCount = 2
+          TabOrder = 0
+          TitleCaptions.Strings = (
+            'Parity'
+            'Efficacy'
+          )
+          ColWidths = (
+            42
+            55
+          )
+        end
+      end
+      object SPACINGGroup: TGroupBox
+        Left = 120
+        Height = 112
+        Top = 112
+        Width = 120
+        Caption = 'SPACING'
+        ClientHeight = 85
+        ClientWidth = 110
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 4
+        object PROP_USING_SPACING: TValueListEditor
+          Left = 5
+          Height = 80
+          Top = 8
+          Width = 99
+          DefaultColWidth = 42
+          RowCount = 2
+          TabOrder = 0
+          TitleCaptions.Strings = (
+            'Parity'
+            'Prop'
+          )
+          ColWidths = (
+            42
+            55
+          )
+        end
+      end
+      object WAITINGTIMEGroup: TGroupBox
+        Left = 240
+        Height = 112
+        Top = 112
+        Width = 120
+        Caption = 'WAITING TIME'
+        ClientHeight = 85
+        ClientWidth = 110
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 5
+        object WAITING_TIME_SPACING: TValueListEditor
+          Left = 8
+          Height = 80
+          Top = 8
+          Width = 99
+          DefaultColWidth = 42
+          RowCount = 2
+          TabOrder = 0
+          TitleCaptions.Strings = (
+            'Parity'
+            'Time'
+          )
+          ColWidths = (
+            42
+            55
+          )
+        end
+      end
+    end
+    object AMENORRHEA_Group: TGroupBox
+      Left = 560
+      Height = 160
+      Top = 288
+      Width = 368
+      Caption = 'AMENORRHEA'
+      ClientHeight = 133
+      ClientWidth = 358
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 4
+      object Lestaeghe_pageGroup: TGroupBox
+        Left = 2
+        Height = 72
+        Top = 8
+        Width = 254
+        Caption = 'Lesthaeghe-Page model'
+        ClientHeight = 45
+        ClientWidth = 244
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 0
+        object AmenoAlpha: TLabel
+          Left = 8
+          Height = 16
+          Top = 8
+          Width = 34
+          Caption = 'Alpha'
+          ParentColor = False
+        end
+        object AmenoBeta: TLabel
+          Left = 7
+          Height = 16
+          Top = 27
+          Width = 28
+          Caption = 'Beta'
+          ParentColor = False
+        end
+        object AMENO_ALPHA: TEdit
+          Left = 154
+          Height = 21
+          Top = 2
+          Width = 80
+          TabOrder = 0
+          Text = 'AMENO_ALPHA'
+        end
+        object AMENO_BETA: TEdit
+          Left = 154
+          Height = 21
+          Top = 27
+          Width = 80
+          TabOrder = 1
+          Text = 'AMENO_BETA'
+        end
+      end
+      object NStepsAmenoGroup: TGroupBox
+        Left = 264
+        Height = 73
+        Top = 8
+        Width = 56
+        Caption = 'NSteps'
+        ClientHeight = 46
+        ClientWidth = 46
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 1
+        object NSTEP_AMENORRHEA: TEdit
+          Left = 0
+          Height = 21
+          Top = 2
+          Width = 48
+          TabOrder = 0
+          Text = 'NSTEP_AMENORRHEA'
+        end
+      end
+      object FIXED_AMENORRHEA: TCheckBox
+        Left = 40
+        Height = 18
+        Top = 109
+        Width = 230
+        Caption = 'Same duration of amenorrhea for all'
+        TabOrder = 2
+      end
+      object durAmenoLab: TLabel
+        Left = 8
+        Height = 16
+        Top = 88
+        Width = 128
+        Caption = 'Duration amenorrhea'
+        ParentColor = False
+      end
+      object ZERO_FIXED_AMENORRHEA_: TEdit
+        Left = 160
+        Height = 21
+        Top = 82
+        Width = 80
+        TabOrder = 3
+        Text = 'ZERO_FIXED_AMENORRHEA_'
+      end
+    end
+    object NuptialityGroup: TGroupBox
+      Left = 208
+      Height = 408
+      Top = 40
+      Width = 336
+      Caption = 'UNION'
+      ClientHeight = 381
+      ClientWidth = 326
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 5
+      object UnionWomenGroup: TGroupBox
+        Left = 3
+        Height = 96
+        Top = 0
+        Width = 201
+        Caption = 'Women'
+        ClientHeight = 69
+        ClientWidth = 191
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 0
+        object AgeWomen: TLabel
+          Left = 12
+          Height = 16
+          Top = 5
+          Width = 88
+          Caption = 'Age first union'
+          ParentColor = False
+        end
+        object PropEverWomen: TLabel
+          Left = 12
+          Height = 16
+          Top = 29
+          Width = 113
+          Caption = 'Prop. ever in union'
+          ParentColor = False
+        end
+        object StdDevUnionWomen: TLabel
+          Left = 12
+          Height = 16
+          Top = 51
+          Width = 46
+          Caption = 'Std dev'
+          ParentColor = False
+        end
+        object MEAN_AGE_UNION: TEdit
+          Left = 136
+          Height = 21
+          Top = 0
+          Width = 48
+          TabOrder = 0
+          Text = 'MEAN_AGE_UNION'
+        end
+        object EVER_INUNION_PROP: TEdit
+          Left = 136
+          Height = 21
+          Top = 24
+          Width = 48
+          TabOrder = 1
+          Text = 'EVER_INUNION_PROP'
+        end
+        object STD_DEV_AGE_UNION: TEdit
+          Left = 136
+          Height = 21
+          Top = 50
+          Width = 48
+          TabOrder = 2
+          Text = 'STD_DEV_AGE_UNION'
+        end
+      end
+      object MarMaxValuesGroup: TGroupBox
+        Left = 200
+        Height = 96
+        Top = 0
+        Width = 64
+        Caption = 'Max value'
+        ClientHeight = 69
+        ClientWidth = 54
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 1
+        object MEAN_AGE_UNION_HIGH: TEdit
+          Left = 0
+          Height = 21
+          Top = 0
+          Width = 48
+          TabOrder = 0
+          Text = 'MEAN_AGE_UNION_HIGH'
+        end
+        object EVER_INUNION_PROP_HIGH: TEdit
+          Left = 0
+          Height = 21
+          Top = 24
+          Width = 48
+          TabOrder = 1
+          Text = 'EVER_INUNION_PROP_HIGH'
+        end
+      end
+      object UnionNstepsGroup: TGroupBox
+        Left = 264
+        Height = 97
+        Top = 0
+        Width = 57
+        Caption = 'NSteps'
+        ClientHeight = 70
+        ClientWidth = 47
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 2
+        object NSTEP_UNION_MEAN: TEdit
+          Left = 0
+          Height = 21
+          Top = 0
+          Width = 48
+          TabOrder = 0
+          Text = 'NSTEP_UNION_MEAN'
+        end
+        object NSTEP_UNION_PROP: TEdit
+          Left = 0
+          Height = 21
+          Top = 24
+          Width = 48
+          TabOrder = 1
+          Text = 'NSTEP_UNION_PROP'
+        end
+        object NSTEP_UNION_STDDEV: TEdit
+          Left = 0
+          Height = 21
+          Top = 50
+          Width = 48
+          TabOrder = 2
+          Text = 'NSTEP_UNION_STDDEV'
+        end
+      end
+      object MenGroup: TGroupBox
+        Left = 3
+        Height = 72
+        Top = 96
+        Width = 201
+        Caption = 'Men'
+        ClientHeight = 45
+        ClientWidth = 191
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 3
+        object AgeFirstUnionMenLabel: TLabel
+          Left = 7
+          Height = 16
+          Top = 5
+          Width = 88
+          Caption = 'Age first union'
+          ParentColor = False
+        end
+        object MEAN_AGE_UNION_MEN: TEdit
+          Left = 136
+          Height = 21
+          Top = 2
+          Width = 48
+          TabOrder = 0
+          Text = 'MEAN_AGE_UNION_MEN'
+        end
+        object PropEverMen: TLabel
+          Left = 7
+          Height = 16
+          Top = 28
+          Width = 116
+          Caption = 'Prop. ever in  union'
+          ParentColor = False
+        end
+        object EVER_INUNION_PROP_MEN: TEdit
+          Left = 136
+          Height = 21
+          Top = 26
+          Width = 48
+          TabOrder = 1
+          Text = 'EVER_INUNION_PROP_MEN'
+        end
+      end
+      object SeparationGroup: TGroupBox
+        Left = 3
+        Height = 72
+        Top = 208
+        Width = 201
+        Caption = 'SEPARATION'
+        ClientHeight = 45
+        ClientWidth = 191
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 4
+        object FreqSep: TLabel
+          Left = 5
+          Height = 16
+          Top = 3
+          Width = 131
+          Caption = 'Frequency separation'
+          ParentColor = False
+        end
+        object SEPARATION: TEdit
+          Left = 136
+          Height = 21
+          Top = 0
+          Width = 48
+          TabOrder = 0
+          Text = 'SEPARATION'
+        end
+        object SECOND_SEPARATION_REL_RISK: TEdit
+          Left = 136
+          Height = 21
+          Top = 24
+          Width = 48
+          TabOrder = 1
+          Text = 'SECOND_SEPARATION_REL_RISK'
+        end
+        object SecondSeparationLabel: TLabel
+          Left = 5
+          Height = 16
+          Top = 26
+          Width = 109
+          Caption = '2nd Sep. Rel. Risk'
+          ParentColor = False
+        end
+      end
+      object SeparationSteps: TGroupBox
+        Left = 264
+        Height = 72
+        Top = 208
+        Width = 57
+        Caption = 'NSteps'
+        ClientHeight = 45
+        ClientWidth = 47
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 5
+        object NSTEP_SEPARATION: TEdit
+          Left = 0
+          Height = 21
+          Top = 0
+          Width = 48
+          TabOrder = 0
+          Text = 'NSTEP_SEPARATION'
+        end
+      end
+      object Repartnering: TGroupBox
+        Left = 3
+        Height = 72
+        Top = 307
+        Width = 133
+        Caption = 'SECOND UNIONS'
+        ClientHeight = 45
+        ClientWidth = 123
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 6
+        object FreqRepWomen: TLabel
+          Left = 7
+          Height = 16
+          Top = 4
+          Width = 74
+          Caption = 'Freq women'
+          ParentColor = False
+        end
+        object FreqRepMen: TLabel
+          Left = 8
+          Height = 16
+          Top = 27
+          Width = 57
+          Caption = 'Freq men'
+          ParentColor = False
+        end
+      end
+      object SeparationIterationGroup: TGroupBox
+        Left = 200
+        Height = 72
+        Top = 208
+        Width = 64
+        Caption = 'Iteration value'
+        ClientHeight = 45
+        ClientWidth = 54
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 7
+        object SEPARATION_ADJUSTED: TEdit
+          Left = 0
+          Height = 21
+          Top = 0
+          Width = 48
+          TabOrder = 0
+          Text = 'SEPARATION_ADJUSTED'
+        end
+      end
+      object FIXED_AGE_UNION: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 176
+        Width = 278
+        Caption = 'Same age at union for all women and all men'
+        TabOrder = 8
+      end
+      object SEP_TARGET: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 284
+        Width = 171
+        Caption = 'Separation freq. as target'
+        TabOrder = 9
+      end
+      object ReparSeparGroup: TGroupBox
+        Left = 136
+        Height = 72
+        Top = 307
+        Width = 64
+        Caption = 'Separ.'
+        ClientHeight = 45
+        ClientWidth = 54
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 10
+        object REPARTNERING_WOMEN: TEdit
+          Left = 3
+          Height = 21
+          Top = 0
+          Width = 48
+          TabOrder = 0
+          Text = 'REPARTNERING_WOMEN'
+        end
+        object REPARTNERING_MEN: TEdit
+          Left = 3
+          Height = 21
+          Top = 24
+          Width = 48
+          TabOrder = 1
+          Text = 'REPARTNERING_MEN'
+        end
+      end
+      object ReparWidowGroup: TGroupBox
+        Left = 200
+        Height = 72
+        Top = 307
+        Width = 64
+        Caption = 'Widow.'
+        ClientHeight = 45
+        ClientWidth = 54
+        ParentBackground = False
+        ParentColor = False
+        TabOrder = 11
+        object REPARTNERING_WID_WOMEN: TEdit
+          Left = 3
+          Height = 21
+          Top = 0
+          Width = 48
+          TabOrder = 0
+          Text = 'REPARTNERING_WID_WOMEN'
+        end
+        object REPARTNERING_WID_MEN: TEdit
+          Left = 3
+          Height = 21
+          Top = 24
+          Width = 48
+          TabOrder = 1
+          Text = 'REPARTNERING_WID_MEN'
+        end
+      end
+    end
+    object nEgosLab: TLabel
+      Left = 232
+      Height = 16
+      Top = 13
+      Width = 228
+      Caption = 'Number of Egos in the Kinship model:'
+      ParentColor = False
+    end
+    object NEGO: TEdit
+      Left = 472
+      Height = 21
+      Top = 9
+      Width = 56
+      ParentShowHint = False
+      TabOrder = 6
+      Text = 'NEGO'
+      OnMouseEnter = myFocusHandler
+    end
+    object ReadCohortFile: TButton
+      Left = 987
+      Height = 25
+      Hint = 'Read file with data for various cohorts'
+      Top = 423
+      Width = 120
+      Caption = 'Read Cohorts'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 7
+      OnClick = ReadCohortFileClick
+    end
+    object CohortsFilename: TLabel
+      Left = 960
+      Height = 16
+      Top = 368
+      Width = 87
+      Caption = 'no cohorts file'
+      ParentColor = False
+    end
+    object OtherParamBox: TGroupBox
+      Left = 944
+      Height = 248
+      Top = 40
+      Width = 185
+      Caption = 'OTHERS'
+      ClientHeight = 221
+      ClientWidth = 175
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 8
+      object PropWomenLab: TLabel
+        Left = 8
+        Height = 16
+        Top = 10
+        Width = 109
+        Caption = 'P. women at birth:'
+        ParentColor = False
+      end
+      object PROP_WOMEN_AT_BIRTH: TEdit
+        Left = 120
+        Height = 21
+        Top = 8
+        Width = 48
+        TabOrder = 0
+        Text = 'PROP_WOMEN_AT_BIRTH'
+      end
+    end
+    object CreateCohortFile: TButton
+      Left = 987
+      Height = 25
+      Hint = 'Create a cohort file with default values for the current cohort'
+      Top = 392
+      Width = 120
+      Caption = 'Create cohort file'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 9
+      OnClick = CreateCohortFileClick
+    end
+    object DUMPALLCOHORTS: TCheckBox
+      Left = 944
+      Height = 18
+      Top = 304
+      Width = 173
+      Caption = 'Write complete cohort file'
+      TabOrder = 10
+    end
+    object DETAILED_COHORT_DATA: TCheckBox
+      Left = 944
+      Height = 18
+      Top = 328
+      Width = 174
+      Caption = 'Write detailed cohort data'
+      TabOrder = 11
+    end
+  end
+  object ModelTypeGroup: TGroupBox
+    Left = 24
+    Height = 49
+    Top = 15
+    Width = 232
+    Caption = 'MODEL TYPE'
+    ClientHeight = 22
+    ClientWidth = 222
+    ParentBackground = False
+    ParentColor = False
+    ParentShowHint = False
+    TabOrder = 0
+    object FERTILITY: TCheckBox
+      Left = 22
+      Height = 18
+      Top = 2
+      Width = 69
+      Caption = 'Fertility'
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 0
+    end
+    object KINSHIP: TCheckBox
+      Left = 120
+      Height = 18
+      Top = 2
+      Width = 68
+      Caption = 'Kinship'
+      Color = clDefault
+      ParentColor = False
+      ParentShowHint = False
+      ShowHint = True
+      TabOrder = 1
+    end
+  end
+  object writeConfigFile: TButton
+    Left = 888
+    Height = 25
+    Hint = 'Save the current configuration set of values'
+    Top = 776
+    Width = 120
+    Caption = 'Save config file'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 1
+    OnClick = writeConfigFileClick
+  end
+  object Cancel: TButton
+    Left = 1032
+    Height = 25
+    Top = 776
+    Width = 120
+    Caption = 'Ok'
+    TabOrder = 2
+    OnClick = CancelClick
+  end
+  object DefaultValues: TButton
+    Left = 600
+    Height = 25
+    Hint = 'Reset the configuration to default values'
+    Top = 776
+    Width = 120
+    Caption = 'Reset to default'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 3
+    OnClick = DefaultValuesClick
+  end
+  object WRITE_ONLY_CHANGES: TCheckBox
+    Left = 888
+    Height = 18
+    Top = 744
+    Width = 190
+    Caption = 'Save only non-default values'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 4
+  end
+  object ConfigINFOGroup: TGroupBox
+    Left = 256
+    Height = 105
+    Top = 15
+    Width = 408
+    Caption = 'CONFIG INFO'
+    ClientHeight = 78
+    ClientWidth = 398
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 5
+    object CohortFileName: TLabel
+      Left = 8
+      Height = 16
+      Top = 34
+      Width = 175
+      Caption = 'File name for cohorts             '
+      ParentColor = False
+      Transparent = False
+    end
+    object DEM_REG_FILENAME: TEdit
+      Left = 176
+      Height = 21
+      Top = 31
+      Width = 192
+      TabOrder = 0
+      Text = 'DEM_REG_FILENAME'
+    end
+    object RootFileName: TLabel
+      Left = 8
+      Height = 16
+      Top = 8
+      Width = 228
+      Caption = 'Root of output files name:                    '
+      ParentColor = False
+      Transparent = False
+    end
+    object FILENAME: TEdit
+      Left = 176
+      Height = 21
+      Top = 5
+      Width = 192
+      TabOrder = 1
+      Text = 'FILENAME'
+    end
+    object BOOTSTRAP_NRUNS: TEdit
+      Left = 176
+      Height = 21
+      Top = 58
+      Width = 80
+      TabOrder = 2
+      Text = 'BOOTSTRAP_NRUNS'
+    end
+    object Boostrapping: TLabel
+      Left = 8
+      Height = 16
+      Top = 61
+      Width = 181
+      Caption = 'Boostrapping                            '
+      ParentColor = False
+      Transparent = False
+    end
+    object OUTPUT_BOOTSTRAP_MULTIPLE_INDIV_FILES: TCheckBox
+      Left = 272
+      Height = 18
+      Top = 61
+      Width = 82
+      Caption = 'Mult. files'
+      TabOrder = 3
+    end
+  end
+  object EducationGB: TGroupBox
+    Left = 25
+    Height = 56
+    Top = 136
+    Width = 232
+    Caption = 'EDUCATION'
+    ClientHeight = 29
+    ClientWidth = 222
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 6
+    object EDUCATION: TComboBox
+      Left = 8
+      Height = 20
+      Top = 4
+      Width = 144
+      ItemHeight = 18
+      TabOrder = 0
+      Text = 'EDUCATION'
+    end
+  end
+  object Image1: TImage
+    Left = 912
+    Height = 185
+    Top = 16
+    Width = 240
+  end
+  object COHORTS_SIM_Group: TGroupBox
+    Left = 664
+    Height = 105
+    Top = 15
+    Width = 192
+    Caption = 'COHORTS SIMULATED'
+    ClientHeight = 78
+    ClientWidth = 182
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 8
+    object FirstCohort: TLabel
+      Left = 8
+      Height = 16
+      Top = 10
+      Width = 27
+      Caption = 'First'
+      ParentColor = False
+    end
+    object LastCohort: TLabel
+      Left = 8
+      Height = 16
+      Top = 37
+      Width = 26
+      Caption = 'Last'
+      ParentColor = False
+    end
+    object FIRST_COHORT: TEdit
+      Left = 80
+      Height = 21
+      Top = 5
+      Width = 80
+      TabOrder = 0
+      Text = 'FIRST_COHORT'
+    end
+    object LAST_COHORT: TEdit
+      Left = 80
+      Height = 21
+      Top = 32
+      Width = 80
+      TabOrder = 1
+      Text = 'LAST_COHORT'
+    end
+    object LabStep: TLabel
+      Left = 8
+      Height = 16
+      Top = 64
+      Width = 28
+      Caption = 'Step'
+      ParentColor = False
+    end
+    object STEP_COHORT: TEdit
+      Left = 80
+      Height = 21
+      Top = 59
+      Width = 80
+      TabOrder = 2
+      Text = 'STEP_COHORT'
+    end
+  end
+  object OutputOptions: TButton
+    Left = 25
+    Height = 25
+    Top = 776
+    Width = 135
+    Caption = 'Output Options'
+    TabOrder = 9
+    OnClick = OutputOptionsClick
+  end
+  object ModelOptionsGroup: TGroupBox
+    Left = 25
+    Height = 56
+    Top = 64
+    Width = 232
+    Caption = 'MODEL OPTIONS'
+    ClientHeight = 29
+    ClientWidth = 222
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 10
+    object INIT_RANDOM_NUMBERS: TCheckBox
+      Left = 21
+      Height = 18
+      Top = 12
+      Width = 167
+      Caption = 'Same Random Sequence'
+      TabOrder = 0
+    end
+  end
+  object readConfigFile: TButton
+    Left = 744
+    Height = 25
+    Top = 776
+    Width = 120
+    Caption = 'Read config file'
+    TabOrder = 11
+    OnClick = readConfigFileClick
+  end
+  object NO_CHANGES_SHAPE: TShape
+    Left = 1088
+    Height = 24
+    Top = 738
+    Width = 40
+    Shape = stSquaredDiamond
+  end
+  object ConfigFileOptions: TGroupBox
+    Left = 256
+    Height = 57
+    Top = 135
+    Width = 600
+    Caption = 'OTHERS OPTIONS'
+    ClientHeight = 30
+    ClientWidth = 590
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 12
+    object FIXED_FERTILITY: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 5
+      Width = 100
+      Caption = 'Fixed fertility'
+      TabOrder = 0
+    end
+    object FIXED_FERTILITY_VALUE: TComboBox
+      Left = 112
+      Height = 20
+      Top = 5
+      Width = 64
+      ItemHeight = 18
+      TabOrder = 1
+      Text = 'FIXED_FERTILITY_VALUE'
+    end
+  end
+  object LowLevelOptions: TButton
+    Left = 192
+    Height = 25
+    Top = 776
+    Width = 135
+    Caption = 'Low Level Options'
+    TabOrder = 13
+    OnClick = LowLevelOptionsClick
+  end
+  object CommentBtn: TButton
+    Left = 352
+    Height = 25
+    Top = 776
+    Width = 135
+    Caption = 'Documentation'
+    TabOrder = 14
+    OnClick = CommentBtnClick
+  end
+  object DUMPALL: TCheckBox
+    Left = 888
+    Height = 18
+    Top = 712
+    Width = 165
+    Caption = 'Write detailed config file'
+    TabOrder = 15
+  end
+  object SaveConfigDialog: TSaveDialog
+    Left = 1160
+    Top = 528
+  end
+  object OpenDialogCohortsFile: TOpenDialog
+    Left = 1152
+    Top = 472
+  end
+end

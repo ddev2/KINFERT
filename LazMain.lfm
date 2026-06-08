@@ -1,0 +1,240 @@
+object KinFertForm: TKinFertForm
+  Left = 1
+  Height = 755
+  Top = 26
+  Width = 975
+  HorzScrollBar.Page = 958
+  VertScrollBar.Page = 736
+  AutoScroll = True
+  Caption = 'Kinfert'
+  ClientHeight = 755
+  ClientWidth = 975
+  Menu = MainMenu1
+  Position = poScreenCenter
+  OnCreate = FormCreate
+  OnResize = FormResize
+  object ChooseConfigButton: TButton
+    Left = 16
+    Height = 25
+    Hint = 'Read a file with saved parameters for the simulation'
+    Top = 8
+    Width = 134
+    Caption = 'Read config file'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 0
+    OnClick = ChooseConfigButtonClick
+  end
+  object ConfigFileName: TLabel
+    Left = 160
+    Height = 16
+    Top = 12
+    Width = 30
+    Caption = 'none'
+    ParentColor = False
+  end
+  object OutputDirButton: TButton
+    Left = 16
+    Height = 25
+    Hint = 'The main output directory for results'
+    Top = 40
+    Width = 134
+    Caption = 'Output directory'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 1
+    OnClick = OutputDirButtonClick
+  end
+  object OutputDirName: TLabel
+    Left = 160
+    Height = 16
+    Top = 44
+    Width = 30
+    Caption = 'none'
+    ParentColor = False
+  end
+  object createConfigFile: TButton
+    Left = 16
+    Height = 25
+    Hint = 'Enter or edit parameters for the simulation'
+    Top = 72
+    Width = 134
+    Caption = 'Edit config'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 2
+    OnClick = createConfigFileClick
+  end
+  object runSimul: TButton
+    Left = 16
+    Height = 25
+    Hint = 'Run the simulation with the chosen set of parameters'
+    Top = 104
+    Width = 134
+    Caption = 'run simulation'
+    Default = True
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 3
+    OnClick = runSimulClick
+  end
+  object status: TLabel
+    Left = 16
+    Height = 16
+    Top = 168
+    Width = 37
+    Caption = 'status'
+    ParentColor = False
+  end
+  object Log: TMemo
+    Left = 16
+    Height = 504
+    Top = 208
+    Width = 942
+    Font.Name = 'Courier New'
+    Lines.Strings = (
+      'Output'
+    )
+    ParentFont = False
+    ReadOnly = True
+    ScrollBars = ssBoth
+    TabOrder = 4
+    WantTabs = True
+  end
+  object QuitBtn: TButton
+    Left = 16
+    Height = 25
+    Top = 136
+    Width = 134
+    Caption = 'Quit'
+    TabOrder = 5
+    OnClick = QuitBtnClick
+  end
+  object GraphsBtn: TButton
+    Left = 176
+    Height = 25
+    Hint = 'Show some graphs for simulation results...'
+    Top = 72
+    Width = 134
+    Caption = 'Graphs'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 6
+    OnClick = GraphsBtnClick
+  end
+  object Reset_nRuns: TButton
+    Left = 176
+    Height = 25
+    Hint = 'Reset the simulation count (useful for graphs)'
+    Top = 104
+    Width = 134
+    Caption = 'Reset run count'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 7
+    OnClick = Reset_nRunsClick
+  end
+  object VersionString: TLabel
+    Left = 720
+    Height = 16
+    Top = 179
+    Width = 81
+    Caption = 'VersionString'
+    ParentColor = False
+  end
+  object UtilesBtn: TButton
+    Left = 328
+    Height = 25
+    Hint = 'Debug options useful mainly for internal debugging...'
+    Top = 72
+    Width = 134
+    Caption = 'Debug'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 8
+    OnClick = UtilesBtnClick
+  end
+  object errorShape: TShape
+    Left = 438
+    Height = 24
+    Hint = 'Will be red if there was some errors during the last simulation run'
+    Top = 104
+    Width = 24
+    ParentShowHint = False
+    Shape = stSquaredDiamond
+    ShowHint = True
+  end
+  object errorStatusLab: TLabel
+    Left = 356
+    Height = 16
+    Top = 107
+    Width = 74
+    Caption = 'error status:'
+    ParentColor = False
+  end
+  object SaveOutput: TButton
+    Left = 176
+    Height = 25
+    Hint = 'Save the content of the output log to a file'
+    Top = 136
+    Width = 134
+    Caption = 'Save output log'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 9
+    OnClick = SaveOutputClick
+  end
+  object CED: TImage
+    Left = 568
+    Height = 164
+    Top = 12
+    Width = 384
+  end
+  object ProgressBar: TProgressBar
+    Left = 192
+    Height = 20
+    Top = 716
+    Width = 766
+    TabOrder = 10
+  end
+  object ZipLab: TLabel
+    Left = 16
+    Height = 16
+    Top = 718
+    Width = 161
+    Caption = 'Zip compression progress:'
+  end
+  object OpenConfigDialog: TOpenDialog
+    Left = 264
+    Top = 16
+  end
+  object OutputDirectoryDialog: TSelectDirectoryDialog
+    Left = 368
+    Top = 16
+  end
+  object MainMenu1: TMainMenu
+    Left = 328
+    Top = 152
+    object FIleMenu: TMenuItem
+      Caption = 'File'
+      object FileOpenMenu: TMenuItem
+        Caption = 'Open Config File...'
+        ShortCut = 4175
+        ShortCutKey2 = 4175
+        OnClick = FileOpenMenuClick
+      end
+      object FileMenuSep: TMenuItem
+        Caption = '-'
+      end
+      object FileQuitMenu: TMenuItem
+        Caption = 'Quit'
+        ShortCutKey2 = 4177
+        OnClick = FileQuitMenuClick
+      end
+    end
+  end
+  object SaveOutputDialog: TSaveDialog
+    Left = 472
+    Top = 16
+  end
+end

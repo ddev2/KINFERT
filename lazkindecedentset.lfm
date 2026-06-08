@@ -1,0 +1,169 @@
+object DecedentsSet: TDecedentsSet
+  Left = 289
+  Height = 358
+  Top = 70
+  Width = 266
+  Caption = 'Decedents'
+  ClientHeight = 358
+  ClientWidth = 266
+  LCLVersion = '4.0.0.1'
+  OnActivate = FormActivate
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  object GroupBox1: TGroupBox
+    Left = 8
+    Height = 321
+    Top = 0
+    Width = 248
+    Caption = 'Set of possible decedents'
+    ClientHeight = 294
+    ClientWidth = 238
+    TabOrder = 0
+    object PartnerSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 0
+      Width = 68
+      Caption = 'Partner'
+      TabOrder = 0
+    end
+    object ChildSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 16
+      Width = 56
+      Caption = 'Child'
+      TabOrder = 1
+    end
+    object grandChildSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 32
+      Width = 88
+      Caption = 'Grandchild'
+      TabOrder = 2
+    end
+    object greatGrandChildSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 48
+      Width = 123
+      Caption = 'Great-grandchild'
+      TabOrder = 3
+    end
+    object fatherSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 64
+      Width = 62
+      Caption = 'Father'
+      TabOrder = 4
+    end
+    object motherSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 80
+      Width = 67
+      Caption = 'Mother'
+      TabOrder = 5
+    end
+    object grandFatherSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 96
+      Width = 95
+      Caption = 'Grandfather'
+      TabOrder = 6
+    end
+    object grandMotherSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 112
+      Width = 101
+      Caption = 'Grandmother'
+      TabOrder = 7
+    end
+    object greatGrandFatherSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 128
+      Width = 130
+      Caption = 'Great-grandfather'
+      TabOrder = 8
+    end
+    object greatGrandMotherSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 144
+      Width = 136
+      Caption = 'Great-grandmother'
+      TabOrder = 9
+    end
+    object siblingSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 160
+      Width = 65
+      Caption = 'Sibling'
+      TabOrder = 10
+    end
+    object nieceNephewSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 176
+      Width = 109
+      Caption = 'Niece-nephew'
+      TabOrder = 11
+    end
+    object grandNieceNephewSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 192
+      Width = 147
+      Caption = 'Grand-niece-nephew'
+      TabOrder = 12
+    end
+    object auntUncleSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 208
+      Width = 89
+      Caption = 'Aunt-uncle'
+      TabOrder = 13
+    end
+    object firstCousinSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 224
+      Width = 92
+      Caption = 'First cousin'
+      TabOrder = 14
+    end
+    object grandAuntUncleSelect: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 240
+      Width = 128
+      Caption = 'Grand-aunt-uncle'
+      TabOrder = 15
+    end
+  end
+  object AllNoneBtn: TButton
+    Left = 8
+    Height = 25
+    Top = 328
+    Width = 75
+    Caption = 'All / none'
+    TabOrder = 1
+    OnClick = AllNoneBtnClick
+  end
+  object OkBtn: TButton
+    Left = 181
+    Height = 25
+    Top = 328
+    Width = 75
+    Caption = 'OK'
+    TabOrder = 2
+    OnClick = OkBtnClick
+  end
+end

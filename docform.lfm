@@ -1,0 +1,44 @@
+object Documentation: TDocumentation
+  Left = 50
+  Height = 267
+  Top = 586
+  Width = 875
+  Caption = 'Documentation'
+  ClientHeight = 267
+  ClientWidth = 875
+  OnActivate = FormActivate
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  LCLVersion = '2.2.4.0'
+  object DocLab: TLabel
+    Left = 184
+    Height = 18
+    Top = 8
+    Width = 453
+    Caption = 'Enter a text to describe your simulation in the configuration file'
+    Font.Height = -16
+    ParentColor = False
+    ParentFont = False
+  end
+  object OkBtn: TButton
+    Left = 781
+    Height = 25
+    Top = 232
+    Width = 75
+    Caption = 'Ok'
+    Default = True
+    OnClick = OkBtnClick
+    TabOrder = 0
+  end
+  object DOCUMENTATION: TMemo
+    Left = 17
+    Height = 184
+    Top = 40
+    Width = 839
+    Lines.Strings = (
+      'DOCUMENTATION'
+    )
+    ScrollBars = ssBoth
+    TabOrder = 1
+  end
+end

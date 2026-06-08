@@ -1,0 +1,711 @@
+object OutputForm: TOutputForm
+  Left = 13
+  Height = 728
+  Top = 153
+  Width = 824
+  BorderStyle = bsDialog
+  Caption = 'Outputs'
+  ClientHeight = 728
+  ClientWidth = 824
+  LCLVersion = '4.6.0.0'
+  OnActivate = FormActivate
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  object OKBtn: TButton
+    Left = 728
+    Height = 25
+    Top = 680
+    Width = 75
+    Caption = 'OK'
+    TabOrder = 0
+    OnClick = OKBtnClick
+  end
+  object FERTILITYGroup: TGroupBox
+    Left = 272
+    Height = 648
+    Top = 24
+    Width = 264
+    Caption = 'FERTILITY'
+    ClientHeight = 621
+    ClientWidth = 254
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 1
+    object FertilityAggrResultsBox: TGroupBox
+      Left = 16
+      Height = 464
+      Top = 160
+      Width = 232
+      ClientHeight = 437
+      ClientWidth = 222
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 1
+      object GENERAL_FERTILITY: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 8
+        Width = 116
+        Caption = 'General Fertility'
+        Color = 14803425
+        ParentColor = False
+        TabOrder = 0
+      end
+      object INTERVAL_TABLE: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 32
+        Width = 102
+        Caption = 'Interval Table'
+        TabOrder = 1
+      end
+      object INTERVAL_CONCEPTION_UNION_TABLE: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 56
+        Width = 144
+        Caption = 'Intervals conc. union'
+        TabOrder = 2
+      end
+      object LAST_BIRTH: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 80
+        Width = 80
+        Caption = 'Last birth'
+        TabOrder = 3
+      end
+      object DURATION_TABLE: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 104
+        Width = 106
+        Caption = 'Duration table'
+        TabOrder = 4
+      end
+      object PARITY_AGE_TABLE: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 128
+        Width = 100
+        Caption = 'Parity by age'
+        TabOrder = 5
+      end
+      object REPARTNERING_STATE_TABLE: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 152
+        Width = 131
+        Caption = 'Repartnering state'
+        TabOrder = 6
+      end
+      object COHORT_TFR: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 176
+        Width = 91
+        Caption = 'Cohort TFR'
+        TabOrder = 7
+      end
+      object AGE_CHILDBEARING: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 200
+        Width = 136
+        Caption = 'Age at childbearing'
+        TabOrder = 8
+      end
+      object COHORT_FERTILITY_TABLE: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 224
+        Width = 109
+        Caption = 'Cohort fertility'
+        TabOrder = 9
+      end
+      object PROP_CELIBACY: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 248
+        Width = 123
+        Caption = 'Proportion single'
+        TabOrder = 10
+      end
+      object NO_FECUNDATION: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 272
+        Width = 113
+        Caption = 'No fecundation'
+        TabOrder = 11
+      end
+      object DUMP_UNION_TABLE: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 296
+        Width = 126
+        Caption = 'Dump union table'
+        TabOrder = 12
+      end
+      object INUNION_STATE_TABLE: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 320
+        Width = 97
+        Caption = 'Union states'
+        TabOrder = 13
+      end
+      object FERTILITY_BY_UNION_DURATION: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 344
+        Width = 171
+        Caption = 'Fertility by union duration'
+        TabOrder = 14
+      end
+      object FERTILITY_BY_UNION_STATUS: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 368
+        Width = 159
+        Caption = 'Fertility by union status'
+        TabOrder = 15
+      end
+      object PPRS_BY_UNION_STATUS: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 392
+        Width = 145
+        Caption = 'PPRs by union status'
+        TabOrder = 16
+      end
+      object PARITY_BY_AGE_AT_UNION: TCheckBox
+        Left = 16
+        Height = 18
+        Top = 416
+        Width = 175
+        Caption = 'Parity by age at first union'
+        TabOrder = 17
+      end
+    end
+    object OUTPUT_INDIVIDUAL_FERTILITY_INFO: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 16
+      Width = 212
+      Caption = 'Individual results (microdata file)'
+      TabOrder = 0
+    end
+    object OUTPUT_INDIVIDUAL_FERTILITY_INFO_EXTENDED: TCheckBox
+      Left = 40
+      Height = 18
+      Top = 52
+      Width = 100
+      Caption = 'Extended file'
+      TabOrder = 2
+    end
+    object OUTPUT_EXCLUDE_ABORTION: TCheckBox
+      Left = 40
+      Height = 18
+      Top = 34
+      Width = 121
+      Caption = 'Exclude abortion'
+      TabOrder = 3
+    end
+    object OUTPUT_AGGREGATE_FERTILITY: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 152
+      Width = 189
+      Caption = 'Aggregate results for fertility'
+      TabOrder = 4
+    end
+    object OUTPUT_FERT_SURVEY: TCheckBox
+      Left = 40
+      Height = 18
+      Top = 70
+      Width = 110
+      Caption = 'Fertility survey'
+      TabOrder = 5
+    end
+    object FertSurveyMinLab: TLabel
+      Left = 64
+      Height = 16
+      Top = 96
+      Width = 53
+      Caption = 'Age min:'
+    end
+    object FertSurvMaxLab: TLabel
+      Left = 64
+      Height = 16
+      Top = 120
+      Width = 56
+      Caption = 'Age Max:'
+    end
+    object FERT_SURVEY_MIN: TEdit
+      Left = 136
+      Height = 21
+      Top = 94
+      Width = 80
+      TabOrder = 6
+      Text = 'FERT_SURVEY_MIN'
+    end
+    object FERT_SURVEY_MAX: TEdit
+      Left = 136
+      Height = 21
+      Top = 118
+      Width = 80
+      TabOrder = 7
+      Text = 'FERT_SURVEY_MAX'
+    end
+  end
+  object GeneralBox: TGroupBox
+    Left = 544
+    Height = 352
+    Top = 24
+    Width = 264
+    Caption = 'GENERAL'
+    ClientHeight = 325
+    ClientWidth = 254
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 2
+    object OUTPUT_INDIVIDUAL_AGE_FLOAT: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 16
+      Width = 221
+      Caption = 'Ages in individual file show in float'
+      TabOrder = 0
+    end
+    object floatPrecisionLab: TLabel
+      Left = 24
+      Height = 16
+      Top = 52
+      Width = 118
+      Caption = 'Numbers: precision'
+      ParentColor = False
+    end
+    object FLOATING_POINT_PRECISION: TEdit
+      Left = 184
+      Height = 21
+      Top = 48
+      Width = 48
+      TabOrder = 1
+      Text = 'FLOATING_POINT_PRECISION'
+    end
+    object floatDigitsLab: TLabel
+      Left = 24
+      Height = 16
+      Top = 76
+      Width = 96
+      Caption = 'Numbers: digits'
+      ParentColor = False
+    end
+    object FLOATING_POINT_DIGITS: TEdit
+      Left = 184
+      Height = 21
+      Top = 72
+      Width = 48
+      TabOrder = 2
+      Text = 'FLOATING_POINT_DIGITS'
+    end
+    object MaxUnionLab: TLabel
+      Left = 24
+      Height = 16
+      Top = 96
+      Width = 118
+      Caption = 'Output: max unions'
+      ParentColor = False
+    end
+    object OUTPUT_MAXNUMUNION: TEdit
+      Left = 184
+      Height = 21
+      Top = 96
+      Width = 48
+      TabOrder = 3
+      Text = 'OUTPUT_MAXNUMUNION'
+    end
+    object MaxBirthsLab: TLabel
+      Left = 24
+      Height = 16
+      Top = 120
+      Width = 113
+      Caption = 'Output: max births'
+      ParentColor = False
+    end
+    object OUTPUT_MAXNUMBIRTHS: TEdit
+      Left = 184
+      Height = 21
+      Top = 120
+      Width = 48
+      TabOrder = 4
+      Text = 'OUTPUT_MAXNUMBIRTHS'
+    end
+    object ZIP_INDIVIDUAL: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 152
+      Width = 202
+      Caption = 'Compress (ZIP) microdata files'
+      TabOrder = 5
+    end
+    object SAVE_LOG: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 176
+      Width = 227
+      Caption = 'Save output log at the end of simul.'
+      TabOrder = 6
+    end
+    object WRITE_FOLDER: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 200
+      Width = 148
+      Caption = 'Write results in folder'
+      TabOrder = 7
+    end
+    object WRITE_ADJUSTED_VALUES: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 224
+      Width = 148
+      Caption = 'Write adjusted values (fert. & sep.)'
+      TabOrder = 8
+    end
+  end
+  object KINSHIPGroup: TGroupBox
+    Left = 8
+    Height = 648
+    Top = 24
+    Width = 264
+    Caption = 'KINSHIP'
+    ClientHeight = 621
+    ClientWidth = 254
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 3
+    object OUTPUT_INDIVIDUAL_KINSHIP_INFO: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 16
+      Width = 212
+      Caption = 'Individual results (microdata file)'
+      TabOrder = 1
+    end
+    object KINSHIP_INDIV_FORMAT: TComboBox
+      Left = 108
+      Height = 20
+      Top = 280
+      Width = 124
+      ItemHeight = 18
+      TabOrder = 2
+      Text = 'KINSHIP_INDIV_FORMAT'
+    end
+    object KinIndFileFmtLab: TLabel
+      Left = 28
+      Height = 16
+      Top = 280
+      Width = 65
+      Caption = 'File format'
+      ParentColor = False
+    end
+    object KinshipAggrResultsBox: TGroupBox
+      Left = 8
+      Height = 227
+      Top = 360
+      Width = 248
+      ClientHeight = 200
+      ClientWidth = 238
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 3
+      object KIN_STATISTICS: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 8
+        Width = 100
+        Caption = 'Kin Statistics'
+        TabOrder = 0
+      end
+      object KIN_FATHERS_SONS: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 32
+        Width = 156
+        Caption = 'Ages Fathers and Sons'
+        TabOrder = 1
+      end
+      object KIN_DISTRIBUTION: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 56
+        Width = 113
+        Caption = 'Kin Distribution'
+        TabOrder = 2
+      end
+      object KIN_RELATIVE_DISTRIBUTION: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 80
+        Width = 161
+        Caption = 'Kin Relative Distribution'
+        TabOrder = 3
+      end
+      object KIN_AGE_DISTRIBUTION: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 104
+        Width = 139
+        Caption = 'Kin Age Distribution'
+        TabOrder = 4
+      end
+      object NUM_KIN_AGE: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 128
+        Width = 164
+        Caption = 'Nb of kins by age of ego'
+        TabOrder = 5
+      end
+      object UNION_TABLE: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 152
+        Width = 111
+        Caption = 'Union life table'
+        TabOrder = 6
+      end
+      object KIN_TOTAL_NUMBERS: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 176
+        Width = 142
+        Caption = 'Total number of kins'
+        TabOrder = 7
+      end
+    end
+    object OUTPUT_AGGREGATE_KINSHIP: TCheckBox
+      Left = 12
+      Height = 18
+      Top = 360
+      Width = 208
+      Caption = 'Aggregate results by age of Ego'
+      ParentShowHint = False
+      TabOrder = 0
+    end
+    object KinSelectionBtn: TButton
+      Left = 28
+      Height = 25
+      Top = 40
+      Width = 200
+      Caption = 'Select kin to simulate'
+      TabOrder = 4
+      OnClick = KinSelectionBtnClick
+    end
+    object optionalFieldsBtn: TButton
+      Left = 28
+      Height = 25
+      Top = 304
+      Width = 200
+      Caption = 'Select optional fields in output file'
+      TabOrder = 5
+      OnClick = optionalFieldsBtnClick
+    end
+    object InheritanceGroup: TGroupBox
+      Left = 8
+      Height = 150
+      Top = 128
+      Width = 237
+      ClientHeight = 123
+      ClientWidth = 227
+      TabOrder = 7
+      object heirsSetBtn: TButton
+        Left = 8
+        Height = 25
+        Top = 0
+        Width = 200
+        Caption = 'Select possible heirs set'
+        TabOrder = 0
+        OnClick = heirsSetBtnClick
+      end
+      object decedentsSetBtn: TButton
+        Left = 8
+        Height = 25
+        Top = 72
+        Width = 200
+        Caption = 'Select possible decedents set'
+        TabOrder = 1
+        OnClick = decedentsSetBtnClick
+      end
+      object PARTNER_DECEDENT: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 104
+        Width = 201
+        Caption = 'Egos'' partner can be decedent'
+        TabOrder = 2
+      end
+      object PARTNER_FIRST_HEIR: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 32
+        Width = 119
+        Caption = 'Partner first heir'
+        TabOrder = 3
+      end
+      object PARTNER_FULL_HEIR: TCheckBox
+        Left = 8
+        Height = 18
+        Top = 48
+        Width = 114
+        Caption = 'Partner full heir'
+        TabOrder = 4
+      end
+    end
+    object INHERITANCE: TCheckBox
+      Left = 28
+      Height = 18
+      Top = 97
+      Width = 169
+      Caption = 'Find heirs and decedents'
+      TabOrder = 6
+    end
+    object COUNTRY_INHERITANCE_RULES: TComboBox
+      Left = 136
+      Height = 20
+      Top = 121
+      Width = 100
+      ItemHeight = 18
+      TabOrder = 8
+      Text = 'COUNTRY_INHERITANCE_RULES'
+    end
+    object countryLab: TLabel
+      Left = 28
+      Height = 16
+      Top = 121
+      Width = 105
+      Caption = 'Inheritance rules:'
+    end
+    object NON_BIO_KIN: TCheckBox
+      Left = 28
+      Height = 18
+      Top = 328
+      Width = 133
+      Caption = 'Include non bio kin'
+      TabOrder = 9
+    end
+    object ALL_EGO_PARTNERS_GENEALOGY: TCheckBox
+      Left = 28
+      Height = 18
+      Top = 74
+      Width = 217
+      Caption = 'Simulate egos'' partner genealogy'
+      TabOrder = 10
+    end
+  end
+  object ALL_NONE: TButton
+    Left = 232
+    Height = 25
+    Top = 680
+    Width = 78
+    Caption = 'All / none'
+    TabOrder = 4
+    OnClick = ALL_NONEClick
+  end
+  object MultithreadingBox: TGroupBox
+    Left = 544
+    Height = 288
+    Top = 384
+    Width = 264
+    Caption = 'MULTITHREADING'
+    ClientHeight = 261
+    ClientWidth = 254
+    ParentBackground = False
+    ParentColor = False
+    TabOrder = 5
+    object MultiTypeBox: TGroupBox
+      Left = 16
+      Height = 104
+      Top = 8
+      Width = 216
+      ClientHeight = 77
+      ClientWidth = 206
+      ParentBackground = False
+      ParentColor = False
+      TabOrder = 1
+      object MULTITHREADING_INIT: TCheckBox
+        Left = 24
+        Height = 18
+        Top = 0
+        Width = 95
+        Caption = 'Init DemReg'
+        TabOrder = 0
+      end
+      object MULTITHREADING_INITMOTHERHOOD: TCheckBox
+        Left = 24
+        Height = 18
+        Top = 24
+        Width = 116
+        Caption = 'Init Motherhood'
+        TabOrder = 1
+      end
+      object MULTITHREADING_SIMKIN: TCheckBox
+        Left = 24
+        Height = 18
+        Top = 48
+        Width = 119
+        Caption = 'Simulate kinship'
+        TabOrder = 2
+      end
+    end
+    object MULTITHREADING: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 8
+      Width = 132
+      Caption = 'MULTITHREADING'
+      TabOrder = 0
+    end
+    object MaxThreadsLab: TLabel
+      Left = 24
+      Height = 16
+      Top = 124
+      Width = 140
+      Caption = 'Max number of threads'
+    end
+    object MAX_THREADS: TEdit
+      Left = 184
+      Height = 21
+      Top = 120
+      Width = 48
+      TabOrder = 2
+      Text = 'MAX_THREADS'
+    end
+    object FORCE_NUM_THREADS: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 144
+      Width = 193
+      Caption = 'Force max number of threads'
+      TabOrder = 3
+    end
+    object BATCH: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 168
+      Width = 97
+      Caption = 'Use batches'
+      TabOrder = 4
+    end
+    object TALKATIVE: TCheckBox
+      Left = 24
+      Height = 18
+      Top = 192
+      Width = 210
+      Caption = 'More feedback in multithreading'
+      TabOrder = 5
+    end
+  end
+end

@@ -1,0 +1,424 @@
+object GraphsForm: TGraphsForm
+  Left = 26
+  Height = 788
+  Top = 143
+  Width = 1091
+  HorzScrollBar.Page = 1088
+  VertScrollBar.Page = 788
+  AutoScroll = True
+  Caption = 'Graphs'
+  ClientHeight = 788
+  ClientWidth = 1091
+  LCLVersion = '4.0.0.4'
+  OnActivate = FormActivate
+  OnCreate = FormCreate
+  OnResize = FormResize
+  object PageControl1: TPageControl
+    Left = 0
+    Height = 788
+    Top = 0
+    Width = 1088
+    ActivePage = OutputsKinshipSheet
+    TabIndex = 4
+    TabOrder = 0
+    OnChange = SimulationStatusEnter
+    object ChildGroomSheet: TTabSheet
+      Caption = 'ChildrenGroomsSelectInfo'
+      ClientHeight = 752
+      ClientWidth = 1082
+      OnHide = ChildGroomClose
+      OnShow = ChildGroomEnter
+      object Chart5: TChart
+        Left = 7
+        Height = 712
+        Top = 47
+        Width = 1072
+        AxisList = <        
+          item
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelFont.Orientation = 900
+            Title.LabelBrush.Style = bsClear
+          end        
+          item
+            Alignment = calBottom
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelBrush.Style = bsClear
+          end>
+        Foot.Brush.Color = clBtnFace
+        Foot.Font.Color = clBlue
+        Title.Brush.Color = clBtnFace
+        Title.Font.Color = clBlue
+        Title.Text.Strings = (
+          'TAChart'
+        )
+      end
+      object ChildGroomList: TComboBox
+        Left = 408
+        Height = 20
+        Top = 3
+        Width = 272
+        ItemHeight = 18
+        TabOrder = 1
+        Text = 'ChildGroomList'
+        OnChange = ChildGroomChange
+      end
+      object SaveToFileChildGroomInfo: TButton
+        Left = 840
+        Height = 25
+        Top = 3
+        Width = 123
+        Caption = 'Save to file'
+        TabOrder = 2
+        OnClick = SaveToFileChildGroomInfoClick
+      end
+      object OKChildGroom: TButton
+        Left = 984
+        Height = 25
+        Top = 3
+        Width = 75
+        Caption = 'OK'
+        TabOrder = 3
+        OnClick = OKOutputKinshipClick
+      end
+    end
+    object InputsSheet: TTabSheet
+      Caption = 'Fixed Inputs'
+      ClientHeight = 752
+      ClientWidth = 1082
+      OnHide = InputsClose
+      OnShow = InputsEnter
+      object Chart1: TChart
+        Left = 7
+        Height = 712
+        Top = 47
+        Width = 1072
+        AxisList = <        
+          item
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelFont.Orientation = 900
+            Title.LabelBrush.Style = bsClear
+          end        
+          item
+            Alignment = calBottom
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelBrush.Style = bsClear
+          end>
+        Foot.Brush.Color = clBtnFace
+        Foot.Font.Color = clBlue
+        Title.Brush.Color = clBtnFace
+        Title.Font.Color = clBlue
+        Title.Text.Strings = (
+          'TAChart'
+        )
+      end
+      object InputsList: TComboBox
+        Left = 408
+        Height = 20
+        Top = 3
+        Width = 272
+        ItemHeight = 18
+        TabOrder = 1
+        Text = 'InputsList'
+        OnChange = InputsChange
+      end
+      object SaveToFileFixedOutputs: TButton
+        Left = 840
+        Height = 25
+        Top = 3
+        Width = 123
+        Caption = 'Save to file'
+        TabOrder = 2
+        OnClick = SaveToFileFixedInputsClick
+      end
+      object OKFixedInputs: TButton
+        Left = 984
+        Height = 25
+        Top = 3
+        Width = 75
+        Caption = 'OK'
+        TabOrder = 3
+        OnClick = OKOutputKinshipClick
+      end
+    end
+    object InputsVarSheet: TTabSheet
+      Caption = 'Variable inputs'
+      ClientHeight = 752
+      ClientWidth = 1082
+      OnHide = InputsVarClose
+      OnShow = InputsVarEnter
+      object Chart2: TChart
+        Left = 7
+        Height = 712
+        Top = 47
+        Width = 1072
+        AxisList = <        
+          item
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelFont.Orientation = 900
+            Title.LabelBrush.Style = bsClear
+          end        
+          item
+            Alignment = calBottom
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelBrush.Style = bsClear
+          end>
+        Foot.Brush.Color = clBtnFace
+        Foot.Font.Color = clBlue
+        Title.Brush.Color = clBtnFace
+        Title.Font.Color = clBlue
+        Title.Text.Strings = (
+          'TAChart'
+        )
+      end
+      object InputsVarList: TComboBox
+        Left = 408
+        Height = 20
+        Top = 3
+        Width = 272
+        ItemHeight = 18
+        TabOrder = 1
+        Text = 'InputsVarList'
+        OnChange = InputsVarChange
+      end
+      object SaveToFileVariableOutputs: TButton
+        Left = 840
+        Height = 25
+        Top = 3
+        Width = 123
+        Caption = 'Save to file'
+        TabOrder = 2
+        OnClick = SaveToFileVariableInputsClick
+      end
+      object OKVariableInputs: TButton
+        Left = 984
+        Height = 25
+        Top = 3
+        Width = 75
+        Caption = 'OK'
+        TabOrder = 3
+        OnClick = OKOutputKinshipClick
+      end
+      object InputsVarCohorts: TComboBox
+        Left = 272
+        Height = 20
+        Top = 3
+        Width = 100
+        ItemHeight = 18
+        TabOrder = 4
+        Text = 'InputsVarCohorts'
+        OnChange = InputsVarCohortsChange
+      end
+      object SimulationStatus: TLabel
+        Left = 7
+        Height = 16
+        Top = 30
+        Width = 102
+        Caption = 'SimulationStatus'
+        ParentColor = False
+      end
+    end
+    object outputsFertilitySheet: TTabSheet
+      Caption = 'Outputs Fertility'
+      ClientHeight = 752
+      ClientWidth = 1082
+      OnHide = OutputsClose
+      OnShow = OutputsEnter
+      object Chart3: TChart
+        Left = 7
+        Height = 712
+        Top = 47
+        Width = 1072
+        AxisList = <        
+          item
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelFont.Orientation = 900
+            Title.LabelBrush.Style = bsClear
+          end        
+          item
+            Alignment = calBottom
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelBrush.Style = bsClear
+          end>
+        Foot.Brush.Color = clBtnFace
+        Foot.Font.Color = clBlue
+        Title.Brush.Color = clBtnFace
+        Title.Font.Color = clBlue
+        Title.Text.Strings = (
+          'TAChart'
+        )
+      end
+      object OutputsList: TComboBox
+        Left = 408
+        Height = 20
+        Top = 3
+        Width = 272
+        ItemHeight = 18
+        TabOrder = 1
+        Text = 'OutputsList'
+        OnChange = OutputsChange
+      end
+      object SimulationStatusOutputs: TLabel
+        Left = 7
+        Height = 16
+        Top = 30
+        Width = 151
+        Caption = 'SimulationStatusOutputs'
+        ParentColor = False
+      end
+      object SaveToFileOutputsFertility: TButton
+        Left = 840
+        Height = 25
+        Top = 3
+        Width = 123
+        Caption = 'Save to file'
+        TabOrder = 2
+        OnClick = SaveToFileOutputsFertilityClick
+      end
+      object OKOutputFertility: TButton
+        Left = 984
+        Height = 25
+        Top = 3
+        Width = 75
+        Caption = 'OK'
+        TabOrder = 3
+        OnClick = OKOutputKinshipClick
+      end
+    end
+    object OutputsKinshipSheet: TTabSheet
+      Caption = 'Outputs Kinship'
+      ClientHeight = 752
+      ClientWidth = 1082
+      OnHide = OutputsKinshipClose
+      OnShow = OutputsKinshipEnter
+      object Chart4: TChart
+        Left = 7
+        Height = 712
+        Top = 47
+        Width = 1072
+        AxisList = <        
+          item
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelFont.Orientation = 900
+            Title.LabelBrush.Style = bsClear
+          end        
+          item
+            Alignment = calBottom
+            Marks.LabelBrush.Style = bsClear
+            Minors = <>
+            Title.LabelBrush.Style = bsClear
+          end>
+        Foot.Brush.Color = clBtnFace
+        Foot.Font.Color = clBlue
+        Title.Brush.Color = clBtnFace
+        Title.Font.Color = clBlue
+        Title.Text.Strings = (
+          'TAChart'
+        )
+      end
+      object SimulationStatusOutputsKinship: TLabel
+        Left = 7
+        Height = 16
+        Top = 30
+        Width = 195
+        Caption = 'SimulationStatusOutputsKinship'
+        ParentColor = False
+      end
+      object OutputsKinshipList: TComboBox
+        Left = 432
+        Height = 20
+        Top = 3
+        Width = 376
+        ItemHeight = 18
+        TabOrder = 1
+        Text = 'OutputsKinshipList'
+        OnChange = OutputsKinshipChange
+      end
+      object SaveToFileOutputsKinship: TButton
+        Left = 840
+        Height = 25
+        Top = 3
+        Width = 123
+        Caption = 'Save to file'
+        TabOrder = 2
+        OnClick = SaveToFileOutputsKinshipClick
+      end
+      object AgeKinshipList: TComboBox
+        Left = 64
+        Height = 20
+        Top = 3
+        Width = 56
+        ItemHeight = 18
+        TabOrder = 3
+        Text = 'AgeKinshipList'
+        OnChange = AgeKinshipChange
+      end
+      object KinTypesList: TComboBox
+        Left = 248
+        Height = 20
+        Top = 3
+        Width = 176
+        ItemHeight = 18
+        ItemWidth = 300
+        TabOrder = 4
+        Text = 'KinTypesList'
+        OnChange = KinTypesChange
+      end
+      object ageEgoLab: TLabel
+        Left = 7
+        Height = 16
+        Top = 5
+        Width = 54
+        Caption = 'Age Ego:'
+        ParentColor = False
+      end
+      object kinEgoLab: TLabel
+        Left = 224
+        Height = 16
+        Top = 5
+        Width = 21
+        Caption = 'kin:'
+        ParentColor = False
+      end
+      object sexEgoLab: TLabel
+        Left = 124
+        Height = 16
+        Top = 5
+        Width = 24
+        Caption = 'sex:'
+        ParentColor = False
+      end
+      object sexList: TComboBox
+        Left = 152
+        Height = 20
+        Top = 3
+        Width = 68
+        ItemHeight = 18
+        TabOrder = 5
+        Text = 'sexList'
+        OnChange = SexChange
+      end
+      object OKOutputKinship: TButton
+        Left = 984
+        Height = 25
+        Top = 3
+        Width = 75
+        Caption = 'OK'
+        TabOrder = 6
+        OnClick = OKOutputKinshipClick
+      end
+    end
+  end
+  object SaveDialog: TSaveDialog
+    Left = 928
+    Top = 24
+  end
+end

@@ -1,0 +1,199 @@
+object LowLevelForm: TLowLevelForm
+  Left = 103
+  Height = 580
+  Top = 29
+  Width = 495
+  Caption = 'LowLevel'
+  ClientHeight = 580
+  ClientWidth = 495
+  OnActivate = FormActivate
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  LCLVersion = '3.4.0.0'
+  object LowLevelFecundabilityGroup: TGroupBox
+    Left = 16
+    Height = 120
+    Top = 24
+    Width = 464
+    Caption = 'FECUNDABILITY'
+    ClientHeight = 93
+    ClientWidth = 454
+    TabOrder = 0
+    object HOMOGENEOUS_FECUNDABILITY: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 8
+      Width = 185
+      Caption = 'Homogeneous fecundability'
+      TabOrder = 0
+    end
+    object RESHUFFLED_FECUNDABILITY: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 32
+      Width = 316
+      Caption = 'Relative fecundability level change for each interval'
+      TabOrder = 1
+    end
+    object NORMAL_HETEROGENEITY_FECUNDABILITY: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 56
+      Width = 350
+      Caption = 'Relative Fecundability level follows a Gauss or a Beta law '
+      Color = clScrollBar
+      ParentColor = False
+      TabOrder = 2
+    end
+  end
+  object LowLevelSterilityGroup: TGroupBox
+    Left = 16
+    Height = 120
+    Top = 152
+    Width = 464
+    Caption = 'STERILITY'
+    ClientHeight = 93
+    ClientWidth = 454
+    TabOrder = 1
+    object LERIDON_STERILITY: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 0
+      Width = 237
+      Caption = 'Leridon (2008) Sterility by age model'
+      TabOrder = 0
+    end
+    object KINFERT_STERILITY: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 24
+      Width = 202
+      Caption = 'KINFERT Sterility by age model'
+      TabOrder = 1
+    end
+    object NO_INITIAL_STERILITY: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 48
+      Width = 168
+      Caption = 'Sterility null up to age 25'
+      TabOrder = 2
+    end
+    object FIXED_DEFINITIVE_STERILITY: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 72
+      Width = 315
+      Caption = 'Sterility constant from its level at age 25 up to age:'
+      TabOrder = 3
+    end
+    object AGE_FIXED_DEFINITIVE_STERILITY_: TEdit
+      Left = 368
+      Height = 22
+      Top = 68
+      Width = 80
+      TabOrder = 4
+      Text = 'AGE_FIXED_DEFINITIVE_STERILITY_'
+    end
+  end
+  object OKBtn: TButton
+    Left = 405
+    Height = 25
+    Top = 544
+    Width = 75
+    Caption = 'OK'
+    Default = True
+    TabOrder = 2
+    OnClick = OKBtnClick
+  end
+  object LowLevelOthersGroup: TGroupBox
+    Left = 16
+    Height = 120
+    Top = 408
+    Width = 464
+    Caption = 'KINSHIP'
+    ClientHeight = 93
+    ClientWidth = 454
+    TabOrder = 3
+    object NUMBER_WOMEN: TEdit
+      Left = 368
+      Height = 22
+      Top = 2
+      Width = 80
+      TabOrder = 0
+      Text = 'NUMBER_WOMEN'
+    end
+    object BaseNumberLab: TLabel
+      Left = 16
+      Height = 16
+      Top = 8
+      Width = 298
+      Caption = 'Number of mothers / brides for the kinship model'
+      ParentColor = False
+    end
+    object modEgoLab: TLabel
+      Left = 16
+      Height = 16
+      Top = 32
+      Width = 296
+      Caption = 'modEgo (for showing current count of ego trees)'
+    end
+    object MODEGO: TEdit
+      Left = 368
+      Height = 22
+      Top = 26
+      Width = 80
+      TabOrder = 1
+      Text = 'MODEGO'
+    end
+    object optimalTreesLab: TLabel
+      Left = 15
+      Height = 16
+      Top = 56
+      Width = 319
+      Caption = 'Optimal number of trees per thread in multithreading'
+    end
+    object OPTIMAL_TREES: TEdit
+      Left = 368
+      Height = 22
+      Top = 50
+      Width = 80
+      TabOrder = 2
+      Text = 'OPTIMAL_TREES'
+    end
+  end
+  object LowLevelFertilityGroup: TGroupBox
+    Left = 15
+    Height = 120
+    Top = 280
+    Width = 464
+    Caption = 'FERTILITY'
+    ClientHeight = 93
+    ClientWidth = 454
+    TabOrder = 4
+    object FORCE_PPR_TARGET: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 0
+      Width = 314
+      Caption = 'Force computation of Fertility PPR target iterations'
+      TabOrder = 0
+    end
+    object USE_ARRAY_CHILDREN: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 48
+      Width = 232
+      Caption = 'use ARRAYCHILDREN data structure'
+      TabOrder = 1
+    end
+    object FORCE_SEP_ITER: TCheckBox
+      Left = 16
+      Height = 18
+      Top = 24
+      Width = 267
+      Caption = 'Force computation of separation iterations'
+      TabOrder = 2
+    end
+  end
+end

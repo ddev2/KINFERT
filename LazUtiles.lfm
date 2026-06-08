@@ -1,0 +1,146 @@
+object UtilesForm: TUtilesForm
+  Left = 278
+  Height = 369
+  Top = 25
+  Width = 450
+  Caption = 'Utiles'
+  ClientHeight = 369
+  ClientWidth = 450
+  OnActivate = FormActivate
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  object DemocareCheck: TButton
+    Left = 24
+    Height = 25
+    Top = 16
+    Width = 131
+    Caption = 'Check DemoCare'
+    TabOrder = 1
+    OnClick = DemocareCheckClick
+  end
+  object OKBtn: TButton
+    Left = 352
+    Height = 25
+    Top = 328
+    Width = 75
+    Caption = 'OK'
+    TabOrder = 0
+    OnClick = OKBtnClick
+  end
+  object BACKFOR: TCheckBox
+    Left = 24
+    Height = 18
+    Top = 72
+    Width = 118
+    Caption = 'BACKFOR mode'
+    TabOrder = 2
+    OnChange = BACKFORChange
+  end
+  object DEBUG: TCheckBox
+    Left = 200
+    Height = 18
+    Top = 72
+    Width = 112
+    Caption = 'Activate debug'
+    TabOrder = 3
+    OnChange = DEBUGChange
+  end
+  object RealBACKFOR: TCheckBox
+    Left = 24
+    Height = 18
+    Top = 96
+    Width = 112
+    Caption = 'Pure BACKFOR'
+    TabOrder = 4
+    OnChange = RealBACKFORChange
+  end
+  object CAMSIM1987: TCheckBox
+    Left = 24
+    Height = 18
+    Top = 120
+    Width = 106
+    Caption = 'CAMSIM 1987'
+    TabOrder = 5
+    OnChange = CAMSIM1987Change
+  end
+  object CAMSIM1993: TCheckBox
+    Left = 24
+    Height = 18
+    Top = 144
+    Width = 107
+    Caption = 'CAMSIM 1993'
+    TabOrder = 6
+    OnChange = CAMSIM1993Change
+  end
+  object CAMSIM1993_AgeUnionUnbounded: TCheckBox
+    Left = 96
+    Height = 18
+    Top = 168
+    Width = 275
+    Caption = 'Unbounded random drawing of age at union'
+    TabOrder = 7
+    OnChange = CAMSIM1993_AgeUnionUnboundedChange
+  end
+  object ViewGeoInfo: TGroupBox
+    Left = 24
+    Height = 117
+    Top = 203
+    Width = 403
+    Caption = 'View genealogy info'
+    ClientHeight = 90
+    ClientWidth = 393
+    TabOrder = 8
+    object Label1: TLabel
+      Left = 14
+      Height = 16
+      Top = 3
+      Width = 73
+      Caption = 'From Family'
+      ParentColor = False
+    end
+    object Label2: TLabel
+      Left = 14
+      Height = 16
+      Top = 24
+      Width = 57
+      Caption = 'To Family'
+      ParentColor = False
+    end
+    object FromEgoValue: TEdit
+      Left = 96
+      Height = 21
+      Top = 0
+      Width = 64
+      TabOrder = 0
+      Text = 'FromEgoValue'
+    end
+    object ToEgoValue: TEdit
+      Left = 96
+      Height = 21
+      Top = 24
+      Width = 64
+      TabOrder = 1
+      Text = 'ToEgoValue'
+    end
+    object Label3: TLabel
+      Left = 14
+      Height = 16
+      Top = 56
+      Width = 49
+      Caption = 'Families'
+      ParentColor = False
+    end
+    object EgoValues: TEdit
+      Left = 96
+      Height = 21
+      Top = 50
+      Width = 280
+      TabOrder = 2
+      Text = 'EgoValues'
+    end
+  end
+  object OpenDemocare: TOpenDialog
+    Left = 200
+    Top = 16
+  end
+end
