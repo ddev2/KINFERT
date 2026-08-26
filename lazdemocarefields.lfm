@@ -1,0 +1,41 @@
+object DemoCareFields: TDemoCareFields
+  Left = 22
+  Height = 150
+  Top = 168
+  Width = 340
+  Caption = 'DemoCare output fields'
+  ClientHeight = 150
+  ClientWidth = 340
+  LCLVersion = '4.0.0.1'
+  OnActivate = FormActivate
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  object opFieldsGroup: TGroupBox
+    Left = 8
+    Height = 90
+    Top = 8
+    Width = 324
+    Caption = 'Columns written in the DemoCare individual file'
+    ClientHeight = 63
+    ClientWidth = 314
+    TabOrder = 0
+    object DEMOCARE_LARGE_FIELDS: TCheckBox
+      Left = 8
+      Height = 18
+      Top = 8
+      Width = 290
+      Caption = 'Extended column set'
+      TabOrder = 0
+    end
+  end
+  object OkBtn: TButton
+    Left = 257
+    Height = 25
+    Top = 112
+    Width = 75
+    Caption = 'OK'
+    Default = True
+    TabOrder = 1
+    OnClick = OkBtnClick
+  end
+end

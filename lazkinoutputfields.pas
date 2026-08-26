@@ -193,9 +193,15 @@ begin
 end;
 
 procedure TKinOutputFields.componentsInfoDestroy;
+var
+	ind: FieldNamesTypes;
 begin
 	FreeAndNil (myComponentHelper);
 	FreeAndNil (firstComponentChange);
+	{the BooleanName objects are created in componentsInfoCreate with no owner,
+	 so they have to be released here, otherwise every open of this dialog leaks}
+	for ind := low(FieldNamesTypes) to high(FieldNamesTypes) do
+		FreeAndNil (checkBoxValues[ind]);
 end;
 
 procedure TKinOutputFields.NoOnChange;

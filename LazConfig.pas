@@ -200,6 +200,9 @@ uses
 	LazMain, LazLowlevel, DocForm,
 	ReadCmdFileUnit, DemographicRegime, FertilityRuntime, Utilities;
 
+const
+	kCaption_sameRandomSequence = 'Same Random Sequence';
+
 var
 	gNullIntObj: longintName;
 { TConfigForm }
@@ -468,6 +471,21 @@ begin
 	myComponentHelper.CreateComponentChange(FindComponent ('PPR_TARGET'), g_GENPARAM.PPR_TARGET, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('SEP_TARGET'), g_GENPARAM.SEP_TARGET, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('INIT_RANDOM_NUMBERS'), g_GENPARAM.INIT_RANDOM_NUMBERS, currentComponentChange, onChangeHandler);
+	{A fixed random sequence cannot be honoured while the simulation is multithreaded:
+	 the order in which the threads draw their random numbers is not determined.
+	 Rather than accept the option and ignore it at run time, we disable it and say why.}
+	if runDrawsFromSeveralThreads then begin
+		INIT_RANDOM_NUMBERS.Enabled := false;
+		INIT_RANDOM_NUMBERS.Caption := kCaption_sameRandomSequence + ' (switch MULTITHREADING off to use it)';
+		INIT_RANDOM_NUMBERS.Hint := 'Not available while MULTITHREADING is ON.' + LineEnding +
+			'Several threads draw random numbers in an order that is not determined,' + LineEnding +
+			'so the same sequence cannot be reproduced from one run to the next.' + LineEnding +
+			'Switch multithreading off in the Outputs dialog if you need reproducible runs.';
+		INIT_RANDOM_NUMBERS.ShowHint := true;
+	end else begin
+		INIT_RANDOM_NUMBERS.Enabled := true;
+		INIT_RANDOM_NUMBERS.Caption := kCaption_sameRandomSequence;
+	end;
 	myComponentHelper.CreateComponentChange(FindComponent ('MEAN_AGE_UNION'), g_pDEM_REG^.dp[meanAgeUnionWomenLow], currentComponentChange, onChangeHandler, kIsDouble, 10, 59);
 	myComponentHelper.CreateComponentChange(FindComponent ('MEAN_AGE_UNION_HIGH'), g_pDEM_REG^.dp[meanAgeUnionWomenHigh], currentComponentChange, onChangeHandler, kIsDouble, 10, 59);
 	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_UNION_MEAN'), g_GENPARAM.RUNTIME[nStepsUnion_mean], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);

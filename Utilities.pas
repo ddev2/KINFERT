@@ -107,8 +107,8 @@ var
 	function openFileWriteConfig ( s: ansistring; name: string; out f: TFileType): boolean;	
 	function initDebugFile: boolean;
 
-	function openFileOut(sFichOut: string; name: string; out outFile: TFileType; aSync: boolean = true): boolean;
-	function openFileOutWithPath(sFichOut: string; name: string; out outFile: TFileType; aSync: boolean = true): boolean;
+	function openFileOut(sFichOut: string; name: string; out outFile: TFileType; aSync: boolean = true; mode: fileModes = f_rewrite): boolean;
+	function openFileOutWithPath(sFichOut: string; name: string; out outFile: TFileType; aSync: boolean = true; mode: fileModes = f_rewrite): boolean;
 	function initSpecificFileOut(sFichOut: string; bootstrap_ind: longint): boolean;
 	function initAggrKinshipFile (s: string; checkFileExists: boolean; bootstrap_ind: longint): boolean;
 
@@ -181,6 +181,7 @@ var
 {$IFDEF UnionStatesType}
 	function UnionStateToStr (s: UnionStatesType): string;
 {$ENDIF}
+	function runDrawsFromSeveralThreads: boolean;
 	function PartnershipStatusToStr (s: PartnershipStatusesType): string;
 	
 	function writeResults (res: outputKind_boolean): boolean;
@@ -869,7 +870,7 @@ end;
 		end;
 	end;
 
-	function openFileOut(sFichOut: string; name: string; out outFile: TFileType; aSync: boolean = true): boolean;
+	function openFileOut(sFichOut: string; name: string; out outFile: TFileType; aSync: boolean = true; mode: fileModes = f_rewrite): boolean;
 	// openAndClose will be true for multithreading, when read / write ops will be made async and each ops will open and close the file
 	begin
 		result := false;
@@ -878,17 +879,17 @@ end;
 			exit;
 		end;
 
-		result := openFileOutWithPath (gPathToResult + sFichOut, name, outFile, aSync);
+		result := openFileOutWithPath (gPathToResult + sFichOut, name, outFile, aSync, mode);
 		if result and (name = 'gDEBUGFILE') then
 			InitCriticalSection(g_CriticalSection);
 	end;
 	
-	function openFileOutWithPath(sFichOut: string; name: string; out outFile: TFileType; aSync: boolean = true): boolean;
+	function openFileOutWithPath(sFichOut: string; name: string; out outFile: TFileType; aSync: boolean = true; mode: fileModes = f_rewrite): boolean;
 	var
 		res: longint;
 	begin
 		result := false;
-		outFile := TFileType.Create (sFichOut, res, name);
+		outFile := TFileType.Create (sFichOut, res, name, mode);
 		if ( res = 0 ) then
 		begin
 			outFile.aSync := aSync;
@@ -1600,6 +1601,18 @@ end;
 	end;
 {$ENDIF}
 
+	function runDrawsFromSeveralThreads: boolean;
+	{TRUE when at least one phase that draws random numbers runs on several threads.
+	 Only such a run cannot repeat the same random sequence: the order in which the
+	 threads draw is not determined. A run whose threaded phases are all switched off
+	 is single threaded for the random numbers and CAN be reproduced.}
+	begin
+		result := g_GENPARAM.MULTITHREADING.value and
+				  ( g_GENPARAM.MULTITHREADING_SIMKIN.value or
+					g_GENPARAM.MULTITHREADING_INITMOTHERHOOD.value ) and
+				  (gMaxThreads > 1);
+	end;
+
 	function PartnershipStatusToStr (s: PartnershipStatusesType): string;
 	begin
 		case s of
@@ -1610,6 +1623,7 @@ end;
 			separated: PartnershipStatusToStr := 'separated';
 			everInUnion: PartnershipStatusToStr := 'ever in union';
 			any: PartnershipStatusToStr := 'any';
+			dead: PartnershipStatusToStr := 'dead';
 		end;
 	end;
 	

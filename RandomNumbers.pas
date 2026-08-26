@@ -45,6 +45,7 @@ type
 		Destructor Destroy; override;
 		procedure init (dummy: longint = -1);
 		procedure initRandomized();
+		procedure initWithSeed (seed: longint);
 		function alea0 (deterministic: boolean = false): double;
 		function alea (min, max: double; deterministic: boolean = false): double;
 	end;
@@ -52,8 +53,11 @@ type
 	var
 		gRandomGenerator: TRandomNumberGenerator;
 		gRandomGeneratorAlreadyExists: longint = 0;
+		gSeedBase: longint = 0;
+		gSeedCounter: longint = 0;
 		
 	procedure initRandomNumbers (dummy: longint = -1);
+	function nextThreadSeed: longint;
 	procedure stopRandomNumbers;
 	procedure RandomizeInitRandomNumbers;
 	procedure initCheckRN;
@@ -305,8 +309,29 @@ implementation
 	end;
 
 	procedure TRandomNumberGenerator.initRandomized();
+	{DO NOT call this from a worker thread. It uses the RTL random(), which reads and
+	 writes the global RandSeed with no lock, so two threads seeding at the same moment
+	 can be handed the SAME seed and then produce identical sequences. Threads must be
+	 given a seed computed on the main thread: see initWithSeed and nextThreadSeed.}
 	begin
 		self.init (-random(DateTimeToMilliseconds(Now())));
+	end;
+
+	procedure TRandomNumberGenerator.initWithSeed (seed: longint);
+	{seed is expected to be a distinct positive value per generator}
+	begin
+		self.init (-abs(seed));
+	end;
+
+	function nextThreadSeed: longint;
+	{Hands out one distinct seed per call. Called on the MAIN thread only, before the
+	 worker threads are started, so the RTL random() is never used concurrently.}
+	begin
+		if (gSeedCounter = 0) then
+			gSeedBase := random (MaxInt - 1) + 1;
+		Inc (gSeedCounter);
+		{a large odd stride keeps successive seeds far apart in the generator's state}
+		result := 1 + ( (gSeedBase + gSeedCounter * 7919) mod (MaxInt - 1) );
 	end;
 
 	procedure initRandomNumbers (dummy: longint = -1);

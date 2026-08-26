@@ -414,7 +414,6 @@ var
 			g_GENPARAM.MULTITHREADING_INITMOTHERHOOD.value := TRUE;
 			g_GENPARAM.MULTITHREADING_SIMKIN.value := TRUE;
 			g_GENPARAM.FORCE_NUM_THREADS.value := FALSE;
-			g_GENPARAM.BATCH.value := FALSE;
 			g_GENPARAM.USE_ARRAY_CHILDREN.value := FALSE;
 			g_GENPARAM.MODEGO.value := 200;
 			g_GENPARAM.OPTIMAL_TREES.value := 200;
@@ -452,6 +451,7 @@ var
 			g_GENPARAM.OUTPUT_FERT_SURVEY.value := FALSE;
 			g_GENPARAM.OUTPUT_SHORTFILENAME.value := TRUE;
 			g_GENPARAM.CHECK_DATASTRUCT.value := FALSE;
+			g_GENPARAM.DEMOCARE_LARGE_FIELDS.value := FALSE;
 			g_GENPARAM.DEBUG.value := FALSE;
 			g_GENPARAM.NEW_INIT_MOTHERHOOD.value := TRUE;
 
@@ -460,6 +460,8 @@ var
 			g_GENPARAM.HEIRS_KINTYPES.value := gPossibleHeirs;
 			g_GENPARAM.DECEDENTS_KINTYPES.value := gPossibleDecedents;
 			g_GENPARAM.OUTPUT_KINTYPES.value := gStdKinSet;
+			g_GENPARAM.OUTPUT_KINTYPES_STD.value := gStdKinSet;
+			g_GENPARAM.OUTPUT_KINTYPES_DEMOCARE.value := gDemoCareKinSet;
 			g_GENPARAM.OUTPUT_FIELDS.value := stdFieldSet;
 			g_GENPARAM.OUTPUT_DIRECTORY.value := '';
 		end;
@@ -511,9 +513,6 @@ var
 					g_GENPARAM.listOfParams);
 			g_GENPARAM.FORCE_NUM_THREADS := BooleanName.Create(FALSE, 'FORCE_NUM_THREADS',
 					'Forces the application to use the maximum number of threads specified',
-					g_GENPARAM.listOfParams);
-			g_GENPARAM.BATCH := BooleanName.Create(FALSE, 'BATCH',
-					'Use an EXPERIMENTAL different algorithm for multithreading (multiple batches of threads, some executing while one is saving to disk)',
 					g_GENPARAM.listOfParams);
 			g_GENPARAM.USE_ARRAY_CHILDREN := BooleanName.Create(TRUE, 'USE_ARRAY_CHILDREN',
 					'Internals: optimization of malloc for the children list',
@@ -590,6 +589,9 @@ var
 			'Write as a fertility survey, truncating the information for each woman at a random age: the age range can be adjusted below (default is OFF)', g_GENPARAM.listOfParams);
 			g_GENPARAM.OUTPUT_SHORTFILENAME := BooleanName.Create(TRUE, 'OUTPUT_SHORTFILENAME', 'The name of output file is short and does not contain information on the steps (default is ON)', g_GENPARAM.listOfParams);
 			g_GENPARAM.CHECK_DATASTRUCT := BooleanName.Create(FALSE, 'CHECK_DATASTRUCT', 'Thoroughly check internal data structures, especially for KINSHIP', g_GENPARAM.listOfParams);
+			g_GENPARAM.DEMOCARE_LARGE_FIELDS := BooleanName.Create(FALSE, 'DEMOCARE_LARGE_FIELDS',
+			'DemoCare individual file: write the extended set of columns instead of the short one (default is OFF)',
+			g_GENPARAM.listOfParams);
 			g_GENPARAM.DEBUG := BooleanName.Create(FALSE, 'DEBUG', 'Debug mode', g_GENPARAM.listOfParams);
 			g_GENPARAM.NEW_INIT_MOTHERHOOD := BooleanName.Create(TRUE, 'NEW_INIT_MOTHERHOOD',
 			'New algo for mothers and brides mode: for stable populations, we separate the generation of mothers and brides', g_GENPARAM.listOfParams);
@@ -597,6 +599,8 @@ var
 			g_GENPARAM.HEIRS_KINTYPES := KinListName.Create(gPossibleHeirs, 'HEIRS_KINTYPES', 'Set of kin who can be ego''s heirs', g_GENPARAM.listOfParams);
 			g_GENPARAM.DECEDENTS_KINTYPES := KinListName.Create(gPossibleDecedents, 'DECEDENTS_KINTYPES', 'Set of kin who can be ego''s decedents', g_GENPARAM.listOfParams);
 			g_GENPARAM.OUTPUT_KINTYPES := KinListName.Create(gStdKinSet, 'OUTPUT_KINTYPES', 'Kin types written in individual file (apply only to Genealogy files)', g_GENPARAM.listOfParams);
+			g_GENPARAM.OUTPUT_KINTYPES_STD := KinListName.Create(gStdKinSet, 'OUTPUT_KINTYPES_STD', 'Kin types written in individual file, ego genealogy format', g_GENPARAM.listOfParams);
+			g_GENPARAM.OUTPUT_KINTYPES_DEMOCARE := KinListName.Create(gDemoCareKinSet, 'OUTPUT_KINTYPES_DEMOCARE', 'Kin types written in individual file, DemoCare format', g_GENPARAM.listOfParams);
 			g_GENPARAM.OUTPUT_FIELDS := FieldListName.Create(stdFieldSet, 'OUTPUT_FIELDS', 'Optional fields in individual file (apply only to Genealogy files)', g_GENPARAM.listOfParams);
 			g_GENPARAM.OUTPUT_DIRECTORY := StringName.Create('', 'OUTPUT_DIRECTORY', 'The complete path for output files', g_GENPARAM.listOfParams);
 		end;

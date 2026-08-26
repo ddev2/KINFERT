@@ -854,8 +854,8 @@ implementation
 		writeON_OFF (outFile, g_GENPARAM.MULTITHREADING);
 		writeON_OFF (outFile, g_GENPARAM.MULTITHREADING_INIT);
 		writeON_OFF (outFile, g_GENPARAM.MULTITHREADING_INITMOTHERHOOD);
+		writeON_OFF (outFile, g_GENPARAM.MULTITHREADING_SIMKIN);
 		writeON_OFF (outFile, g_GENPARAM.FORCE_NUM_THREADS);
-		writeON_OFF (outFile, g_GENPARAM.BATCH);
 		//writeComment (outFile, 'Instead of ON/OFF, can be the name of the extended DUMP file  (default is KINFERT_DUMP.TXT)');
 		writeON_OFF (outFile, g_GENPARAM.DUMPALLCOHORTS);
 		writeON_OFF (outFile, g_GENPARAM.CREATE_COHORT_FILE);
@@ -952,6 +952,7 @@ implementation
 			bWriteLn(outFile, [g_GENPARAM.countryInheritance.name, '=', ord(g_GENPARAM.countryInheritance.value)]);
 		writeKinSet (outFile, g_GENPARAM.OUTPUT_KINTYPES);
 		writeFieldSet (outFile, g_GENPARAM.OUTPUT_FIELDS);
+		writeON_OFF (outFile, g_GENPARAM.DEMOCARE_LARGE_FIELDS);
 		writeON_OFF (outFile, g_GENPARAM.NON_BIO_KIN);
 		writeON_OFF (outFile, g_GENPARAM.INHERITANCE);
 		writeKinSet (outFile, g_GENPARAM.HEIRS_KINTYPES);
@@ -1168,6 +1169,7 @@ implementation
 	function command ( aLine: string ): boolean;
 	var
 		aCommand: string;
+		aCommand_raw: string;	{throwaway: see the second extractCommand call}
 		aState, aState_NotProcessed: string;
 		aBooleanState: boolean;
 
@@ -1203,7 +1205,10 @@ implementation
 	begin
 		command := FALSE;
 		if not extractCommand (aLine, aCommand, aState, aBooleanState) then exit;
-		extractCommand (gLineReadString_NotProcessed, aCommand, aState_NotProcessed, aBooleanState, false);
+		{a throwaway for the command name: this second call exists ONLY to recover the
+		 VALUE in its original case. Passing aCommand here overwrote the clean upper-cased
+		 name with the raw one, so a hand-written 'kinship=on' matched no branch.}
+		extractCommand (gLineReadString_NotProcessed, aCommand_raw, aState_NotProcessed, aBooleanState, false);
 		command := true;
 		if ( aCommand = 'DUMPALL') then
 			g_GENPARAM.DUMPALL.readValue (dumpCommand ())
@@ -1225,10 +1230,10 @@ implementation
 			g_GENPARAM.MULTITHREADING_INIT.readValue (dumpCommand ())
 		else if ( aCommand = 'MULTITHREADING_INITMOTHERHOOD') then
 			g_GENPARAM.MULTITHREADING_INITMOTHERHOOD.readValue (dumpCommand ())
+		else if ( aCommand = 'MULTITHREADING_SIMKIN') then
+			g_GENPARAM.MULTITHREADING_SIMKIN.readValue (dumpCommand ())
 		else if ( aCommand = 'FORCE_NUM_THREADS') then
 			g_GENPARAM.FORCE_NUM_THREADS.readValue (dumpCommand ())
-		else if ( aCommand = 'BATCH') then
-			g_GENPARAM.BATCH.readValue (dumpCommand ())
 		else if ( aCommand = 'DETAILED_COHORT_DATA') then
 			g_GENPARAM.DETAILED_COHORT_DATA.readValue (dumpCommand ())
 		else if ( aCommand = 'WRITE_ADJUSTED_VALUES') then
@@ -1277,6 +1282,8 @@ implementation
 			g_GENPARAM.OUTPUT_INDIVIDUAL_KINSHIP_INFO.readValue (aBooleanState)
 		else if ( aCommand = 'OUTPUT_INDIVIDUAL_AGE_FLOAT' ) then
 			g_GENPARAM.OUTPUT_INDIVIDUAL_AGE_FLOAT.readValue (aBooleanState)
+		else if ( aCommand = 'DEMOCARE_LARGE_FIELDS' ) then
+			g_GENPARAM.DEMOCARE_LARGE_FIELDS.readValue (aBooleanState)
 		else if ( aCommand = 'NON_BIO_KIN' ) then
 			g_GENPARAM.NON_BIO_KIN.readValue (aBooleanState)
 		else if ( aCommand = 'INHERITANCE' ) then
@@ -1571,7 +1578,15 @@ function readCmdFile (	filename: string;
     				memoWriteLn(['Using: ', gMaxThreads, ' threads for multithreading']);
     		end;
 
-            if g_GENPARAM.INIT_RANDOM_NUMBERS.value and not g_GENPARAM.MULTITHREADING.value then begin
+			if g_GENPARAM.INIT_RANDOM_NUMBERS.value and runDrawsFromSeveralThreads then begin
+				memoWriteLn (['=====================================================================']);
+				memoWriteLn (['WARNING: INIT_RANDOM_NUMBERS (same random sequence) is ON but IGNORED,']);
+				memoWriteLn (['because MULTITHREADING is ON. The order in which the threads draw']);
+				memoWriteLn (['random numbers is not determined, so this run is NOT reproducible.']);
+				memoWriteLn (['Set MULTITHREADING=OFF if you need the same sequence in every run.']);
+				memoWriteLn (['=====================================================================']);
+			end;
+            if g_GENPARAM.INIT_RANDOM_NUMBERS.value and not runDrawsFromSeveralThreads then begin
 				gRandomGenerator.init();
     			memoWriteLn (['First random number (fixed): ', floatToStr (gRandomGenerator.alea0)]);
 			end
@@ -1589,6 +1604,7 @@ function readCmdFile (	filename: string;
 					addToCohortSet (currCohort, gCohortSet);
 					currCohort := currCohort + g_GENPARAM.RUNTIME[cmd_stepCohort].value;
 				end;
+				setInfoParents;
 				initComputeStatesKinship (gCohortSet);
 			end;
 

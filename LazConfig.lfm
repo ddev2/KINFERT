@@ -1,12 +1,13 @@
 object ConfigForm: TConfigForm
   Left = 29
   Height = 817
-  Top = 29
+  Top = 30
   Width = 1212
   BorderStyle = bsDialog
   Caption = 'Config'
   ClientHeight = 817
   ClientWidth = 1212
+  LCLVersion = '4.6.0.0'
   OnActivate = FormActivate
   OnCloseQuery = FormCloseQuery
   OnCreate = FormCreate
@@ -997,7 +998,7 @@ object ConfigForm: TConfigForm
     object CohortFileName: TLabel
       Left = 8
       Height = 16
-      Top = 34
+      Top = 24
       Width = 175
       Caption = 'File name for cohorts             '
       ParentColor = False
@@ -1006,7 +1007,7 @@ object ConfigForm: TConfigForm
     object DEM_REG_FILENAME: TEdit
       Left = 176
       Height = 21
-      Top = 31
+      Top = 24
       Width = 192
       TabOrder = 0
       Text = 'DEM_REG_FILENAME'
@@ -1014,7 +1015,7 @@ object ConfigForm: TConfigForm
     object RootFileName: TLabel
       Left = 8
       Height = 16
-      Top = 8
+      Top = 2
       Width = 228
       Caption = 'Root of output files name:                    '
       ParentColor = False
@@ -1023,7 +1024,7 @@ object ConfigForm: TConfigForm
     object FILENAME: TEdit
       Left = 176
       Height = 21
-      Top = 5
+      Top = 0
       Width = 192
       TabOrder = 1
       Text = 'FILENAME'
@@ -1035,15 +1036,17 @@ object ConfigForm: TConfigForm
       Width = 80
       TabOrder = 2
       Text = 'BOOTSTRAP_NRUNS'
+      Visible = False
     end
     object Boostrapping: TLabel
       Left = 8
       Height = 16
       Top = 61
-      Width = 181
-      Caption = 'Boostrapping                            '
+      Width = 186
+      Caption = 'Bootstrapping                            '
       ParentColor = False
       Transparent = False
+      Visible = False
     end
     object OUTPUT_BOOTSTRAP_MULTIPLE_INDIV_FILES: TCheckBox
       Left = 272
@@ -1052,6 +1055,7 @@ object ConfigForm: TConfigForm
       Width = 82
       Caption = 'Mult. files'
       TabOrder = 3
+      Visible = False
     end
   end
   object EducationGB: TGroupBox
@@ -1162,9 +1166,9 @@ object ConfigForm: TConfigForm
     ParentColor = False
     TabOrder = 10
     object INIT_RANDOM_NUMBERS: TCheckBox
-      Left = 21
+      Left = 8
       Height = 18
-      Top = 12
+      Top = 0
       Width = 167
       Caption = 'Same Random Sequence'
       TabOrder = 0

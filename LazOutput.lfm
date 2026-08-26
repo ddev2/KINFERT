@@ -691,14 +691,6 @@ object OutputForm: TOutputForm
       Caption = 'Force max number of threads'
       TabOrder = 3
     end
-    object BATCH: TCheckBox
-      Left = 24
-      Height = 18
-      Top = 168
-      Width = 97
-      Caption = 'Use batches'
-      TabOrder = 4
-    end
     object TALKATIVE: TCheckBox
       Left = 24
       Height = 18

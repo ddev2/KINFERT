@@ -101,6 +101,7 @@ var
 	gKinWithNoDescendance: KinSetType = [kt_greatGrandChild, kt_greatGrandNieceNephew, kt_cousin_thrice_removed, kt_second_cousin_twice_removed];
 	gStdKinSet: KinSetType = [kt_ego, kt_partner, kt_father, kt_mother, kt_sibling, kt_grandFather, kt_grandMother,
 								kt_auntUncle, kt_cousin, kt_nieceNephew, kt_child, kt_grandChild];
+	gDemoCareKinSet: KinSetType = [kt_ego, kt_partner, kt_child, kt_grandChild];
 	// list of possible heirs of ego (we will need to add egos's kt_partner later)
 	gPossibleHeirs: KinSetType = [kt_partner, kt_child, kt_grandChild, kt_greatGrandChild, kt_father, kt_mother,
 							kt_sibling, kt_nieceNephew, kt_grandNieceNephew,
@@ -239,7 +240,9 @@ type
 
 {Nuptiality}
 	typTabNupt = (normal, aggregated);
-	PartnershipStatusesType = (neverInUnion, firstUnion, secondUnions, widow, separated, everInUnion, any);
+	{'dead' is added AFTER 'any' on purpose: several arrays are indexed by this type and
+	 many loops run 'neverInUnion to any', so appending keeps every existing ordinal.}
+	PartnershipStatusesType = (neverInUnion, firstUnion, secondUnions, widow, separated, everInUnion, any, dead);
 	// any = neverInUnion + firstUnion + secondUnions + widow + separated
 	// everInUnion = firstUnion + secondUnions + widow + separated
 	UnionGenStatesType = (ongoing, endedAge50);
@@ -706,7 +709,7 @@ type
 		{COMMAND FILE}
 		DUMP, DUMPALL, DUMPALLCOHORTS, CREATE_COHORT_FILE, ZIP_INDIVIDUAL, SAVE_LOG, TALKATIVE,
 		MULTITHREADING, MULTITHREADING_INIT, MULTITHREADING_INITMOTHERHOOD, MULTITHREADING_SIMKIN,
-		FORCE_NUM_THREADS, BATCH, USE_ARRAY_CHILDREN,
+		FORCE_NUM_THREADS, USE_ARRAY_CHILDREN,
 		DETAILED_COHORT_DATA, WRITE_ADJUSTED_VALUES, WRITE_ONLY_CHANGES, WRITE_FOLDER,
 		FERTILITY, KINSHIP, SURVIVALPARENTS, FIXED_FERTILITY,
 		STABLE_POPULATION, PPR_TARGET, FORCE_PPR_TARGET, SEP_TARGET, FORCE_SEP_ITER,
@@ -724,6 +727,7 @@ type
 		OUTPUT_FERT_SURVEY,
 		OUTPUT_SHORTFILENAME,
 		CHECK_DATASTRUCT,
+		DEMOCARE_LARGE_FIELDS,
 		DEBUG: BooleanName;
 		NEW_INIT_MOTHERHOOD: BooleanName;
 		FIXED_FERTILITY_VALUE: LongintName;
@@ -734,6 +738,7 @@ type
 		HEIRS_KINTYPES: KinListName;
 		DECEDENTS_KINTYPES: KinListName;
 		OUTPUT_KINTYPES: KinListName;
+		OUTPUT_KINTYPES_STD, OUTPUT_KINTYPES_DEMOCARE: KinListName;
 		OUTPUT_FIELDS: FieldListName;
 		OUTPUT_DIRECTORY: stringName;
 		

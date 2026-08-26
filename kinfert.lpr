@@ -8,7 +8,7 @@ uses
 	Interfaces, // this includes the LCL widgetset
 	Dialogs, sysutils, Forms, tachartlazaruspkg, Declarations, LazMain, LazConfig,
         LazOutput, ComponentHelper, LazGraph, LazUtiles, LazLowlevel, DocForm,
-        LazKinSelection, Lazkinoutputfields, LazKinHeirSet, LazKinDecedentSet;
+        LazKinSelection, Lazkinoutputfields, LazDemoCareFields, LazKinHeirSet, LazKinDecedentSet;
 
 {$R *.res}
 var
@@ -55,6 +55,7 @@ begin
 	Documentation.Height := 268;
         Application.CreateForm(TKinSelectionForm, KinSelectionForm);
   Application.CreateForm(TKinOutputFields, KinOutputFields);
+  Application.CreateForm(TDemoCareFields, DemoCareFields);
   Application.CreateForm(THeirsSet, HeirsSet);
   Application.CreateForm(TDecedentsSet, DecedentsSet);
 	Application.Run;

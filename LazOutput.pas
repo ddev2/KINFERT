@@ -9,7 +9,7 @@ uses
 	cthreads,
 	{$ENDIF}
 	Classes, SysUtils, Forms, Controls, Graphics, Dialogs, StdCtrls,
-	LazKinHeirSet, LazKinDecedentSet, LazKinSelection, LazKinOutputFields, ComponentHelper;
+	LazKinHeirSet, LazKinDecedentSet, LazKinSelection, LazKinOutputFields, LazDemoCareFields, ComponentHelper;
 
 type
 
@@ -18,7 +18,6 @@ type
 	TOutputForm = class(TForm)
 		AGE_CHILDBEARING: TCheckBox;
 		ALL_NONE: TButton;
-		BATCH: TCheckBox;
 		ALL_EGO_PARTNERS_GENEALOGY: TCheckBox;
         FERT_SURVEY_MAX: TEdit;
         FERT_SURVEY_MIN: TEdit;
@@ -211,7 +210,12 @@ procedure TOutputForm.optionalFieldsBtnClick(Sender: TObject);
 begin
 
 	NoOnChange;
-	KinOutputFields.ShowModal;
+	{each output file format has its own set of optional fields}
+	if g_GENPARAM.kinIndFmt.value = out_DemoCare then
+		DemoCareFields.ShowModal
+	else if g_GENPARAM.kinIndFmt.value = out_EgoGenealogy then
+		KinOutputFields.ShowModal;
+	{out_GEDCOM has no optional fields yet: the button is disabled in TKinFmtComboBoxChange.selectFields}
 	ChangesMadeToDefaultValues := ChangesMadeToDefaultValues or OutputForm.ChangesMadeToDefaultValues;
 end;
 
@@ -367,7 +371,6 @@ begin
 	currentComponentChange.ActivateDisabling (FindComponent ('MULTITHREADING_INITMOTHERHOOD'));
 	currentComponentChange.ActivateDisabling (FindComponent ('MULTITHREADING_SIMKIN'));
 	myComponentHelper.CreateComponentChange(FindComponent ('FORCE_NUM_THREADS'), g_GENPARAM.FORCE_NUM_THREADS, currentComponentChange, onChangeHandler);
-	myComponentHelper.CreateComponentChange(FindComponent ('BATCH'), g_GENPARAM.BATCH, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('MAX_THREADS'), g_GENPARAM.outputs_fmt [res_maxThreads], currentComponentChange, onChangeHandler, kIsInteger, 1, 999999);
 
 	myComponentHelper.CreateComponentChange(FindComponent ('OUTPUT_AGGREGATE_FERTILITY'), g_GENPARAM.OUTPUT_AGGREGATE_FERTILITY, currentComponentChange, onChangeHandler);

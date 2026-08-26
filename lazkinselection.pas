@@ -174,9 +174,15 @@ begin
 end;
 
 procedure TKinSelectionForm.componentsInfoDestroy;
+var
+	ind: KinTypes;
 begin
 	FreeAndNil (myComponentHelper);
 	FreeAndNil (firstComponentChange);
+	{the BooleanName objects are created in componentsInfoCreate with no owner,
+	 so they have to be released here, otherwise every open of this dialog leaks}
+	for ind := low(KinTypes) to high(KinTypes) do
+		FreeAndNil (checkBoxValues[ind]);
 end;
 
 procedure TKinSelectionForm.NoOnChange;

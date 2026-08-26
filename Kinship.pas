@@ -58,7 +58,7 @@ var
 	// count of feminine egos who reach 50 years of age by number of offsprings
 	// 0 to 49 are the number of women having 0, 1, ..., 49 children
 	// 50 is the total number of women
-	gChildren: array of array of longint;
+	gChildren: array of array of longint; // MADE THREAD SAFE (using InterlockedIncrement)
 	
 const
 	// when looking at mothers, brides or year of unions, we may have a lot of values out of range
@@ -73,6 +73,7 @@ const
 	procedure disposeMotherhood;
 	procedure disposeMotherhood_DemReg;
 	procedure survivalParents (randomGenerator: TRandomNumberGenerator; cohort: longint; writeAges, writeSurvival: boolean);
+	procedure setInfoParents;
 	procedure setKinshipToSimulate (kinToSimulate: KinSetType; writeIt: boolean = false);
 	procedure initComputeStatesKinship (sCohorts: setCohorts);
 	procedure simulateKinship (randomGenerator: TRandomNumberGenerator; cohortToSimulate: longint; bootstrap_ind: longint; loopPhase: loopTypes);
@@ -221,7 +222,9 @@ implementation
 		resMultipleType = (mu_never, mu_FirstWidowhood, mu_FirstSeparation, mu_SecondUnionWidowhood, mu_SecondUnionSeparation);
 		arrayMultipleType = array [Sex] of array [resMultipleType] of double;
 		
-		DemocareTypes = (dt_id,dt_sex,dt_age,dt_ageDef,dt_status,dt_tickIn,dt_tickOut,dt_linked,dt_ego,dt_useful,dt_partnershipStatus,dt_cohort,dt_cohortRegDem,dt_relative,dt_alliance,dt_ageAtTickZero,dt_nChildren);
+		{column order of the DemoCare individual file, as written by header_democare and writeKinDemoCare.
+		 The short layout stops after dt_ego; the extended layout writes all of them.}
+		DemocareTypes = (dt_idFamily, dt_id,dt_sex,dt_age,dt_ageDef,dt_status,dt_tickIn,dt_tickOut,dt_ego,dt_partnershipStatus,dt_cohort,dt_cohortRegDem,dt_relative,dt_alliance,dt_ageAtTickZero,dt_nChildren);
 
 	var
 		gThisIsNotAnArrayOfBrides: boolean = true; // this is a mothers' array!!
@@ -236,8 +239,14 @@ gCheckRelativesMax: longint = 0;
 gNumEgoMen, gNumEgoWomen, gChildrenEgoMen, gChildrenEgoWomen: longint;
 gIndMother: longint = 0;
 {$ENDIF}
-		// DemoCare file does not have age at union info so 'g_AgeUnionAvailable' keeps track of that...
-		g_AgeUnionAvailable: boolean = true;
+		// DemoCare file does not have info for ego's mother or father so 'g_InfoParents' keeps track of that...
+		// if false then we don't keep track of info about parents and siblings
+		g_InfoParents: boolean = true;
+		{first family number and first individual number of the cohort being written:
+		 they keep the numbering unique across the cohorts that share one output file}
+		gFirstFamilyInFile: longint = 0;
+		gFirstRelativeInFile: longint = 0;
+		gIndividualsInFile: longint = 0;
 		// Arrays used for computing fertility and nuptiality levels from kin networks in order to check the results
 		// 1. Fertility by age for egos' mothers, taking the sex of ego into account
 		g_fertilityEgoMothers: array of array [Sex] of array [personsOrBirths] of array [FecundAges] of longint; // MAIN THREAD
@@ -304,7 +313,7 @@ gIndMother: longint = 0;
 		g_RangeBridesForGrooms_Nb: array of array of longint; // global used in MAIN THREAD only
 		g_RangeBridesForGrooms_Info: array of array of array of longint; // global used in MAIN THREAD only
 		// one array of statistical nature to keep track of grooms by cohort and age at union with no corresponding bride
-		g_RangeBridesForGrooms_NotFound: array of array of longint; // global used in MAIN THREAD only
+		g_RangeBridesForGrooms_NotFound: array of array of longint; // written from the worker threads (using InterlockedIncrement)
 		// GROOMS FOR BRIDES
 		{Two arrays to keep track of grooms classified by brides' birth cohort and age at union}
 		g_RangeGroomsForBrides_Nb: array of array of longint; // global used in MAIN THREAD only
@@ -315,7 +324,7 @@ gIndMother: longint = 0;
 		{******* ALTERNATE AND OBSOLETE *****}
 		{Two more arrays to keep track of possible brides according to year of union and age at union of grooms}
 		g_RangeYearUnionsNb: array of array of longint; // global used in MAIN THREAD only
-		g_RangeYearUnionsNotFound: array of array of longint; // global used in MAIN THREAD only
+		g_RangeYearUnionsNotFound: array of array of longint; // written from the worker threads (using InterlockedIncrement)
 		g_RangeYearUnionsInfo: array of array of array of longint; // global used in MAIN THREAD only
 		{******* END *****}
 		{******* ALTERNATE AND OBSOLETE *****}
@@ -717,17 +726,17 @@ end;
 		nCohorts := length (sCohorts);
 		gCohortSet := sCohorts;
 		setLength (gChildren, nCohorts, 51);
-		SetLength (g_fertilityEgoMothers, nCohorts);
 		SetLength (g_fertilityEgosWithAtLeastOneChild, nCohorts);
 		SetLength (g_fertilityEgos, nCohorts);
 		SetLength (g_fertilityEgoPartners, nCohorts);
-		SetLength (g_NumChildrenEgoMothers, nCohorts);
 		SetLength (g_NumChildrenEgos, nCohorts);
 		SetLength (g_NumChildrenEgoPartners, nCohorts);
 		SetLength (g_DistNbChildren, nCohorts);
-		if g_AgeUnionAvailable then begin
-			SetLength (g_UnionTable, nCohorts);
+		SetLength (g_UnionTable, nCohorts);
+		if g_InfoParents then begin
 			SetLength (g_UnionTableEgoParents, nCohorts);
+			SetLength (g_fertilityEgoMothers, nCohorts);
+			SetLength (g_NumChildrenEgoMothers, nCohorts);
 		end;
 		SetLength (g_Union, nCohorts);
 		SetLength (g_UnionMultiState, nCohorts);
@@ -737,8 +746,10 @@ end;
 		for indCohort := 0 to nCohorts-1 do begin
 			for aSex := man to woman do begin
 				for ageFec := low(FecundAges) to high(FecundAges) do begin
-					g_fertilityEgoMothers[indCohort, aSex, cf_persons, ageFec] := 0;
-					g_fertilityEgoMothers[indCohort, aSex, cf_births, ageFec] := 0;
+					if g_InfoParents then begin
+						g_fertilityEgoMothers[indCohort, aSex, cf_persons, ageFec] := 0;
+						g_fertilityEgoMothers[indCohort, aSex, cf_births, ageFec] := 0;
+					end;
 					g_fertilityEgosWithAtLeastOneChild[indCohort, aSex, cf_persons, ageFec] := 0;
 					g_fertilityEgosWithAtLeastOneChild[indCohort, aSex, cf_births, ageFec] := 0;
 					g_fertilityEgos[indCohort, cf_persons, aSex, ageFec] := 0;
@@ -747,7 +758,8 @@ end;
 					g_fertilityEgoPartners[indCohort, cf_births, aSex, ageFec] := 0;
 				end;
 				for indChild := 0 to kMaxNbChildren do begin
-					g_NumChildrenEgoMothers [indCohort, aSex, indChild] := 0;
+					if g_InfoParents then
+						g_NumChildrenEgoMothers [indCohort, aSex, indChild] := 0;
 					g_NumChildrenEgos [indCohort, aSex, indChild] := 0;
 					g_NumChildrenEgoPartners [indCohort, aSex, indChild] := 0;
 				end;
@@ -756,13 +768,14 @@ end;
 					g_DistNbChildren [indCohort, alive50EverInUnion, indChild] := 0;
 					g_DistNbChildren [indCohort, aliveWithFirstPartner50, indChild] := 0;
 				end;
-				if g_AgeUnionAvailable then
-					for ageUnion := kMinAgeUnion to kMaxAgeUnion do begin
-						g_UnionTable[indCohort, aSex, ageUnion] := 0;
-						g_UnionTable[indCohort, aSex, ageUnion] := 0;
+				for ageUnion := kMinAgeUnion to kMaxAgeUnion do begin
+					g_UnionTable[indCohort, aSex, ageUnion] := 0;
+					g_UnionTable[indCohort, aSex, ageUnion] := 0;
+					if g_InfoParents then begin
 						g_UnionTableEgoParents[indCohort, aSex, ageUnion] := 0;
 						g_UnionTableEgoParents[indCohort, aSex, ageUnion] := 0;
 					end;
+				end;
  				for aUnionState := low(catUnion) to high(catUnion) do
 					g_Union[indCohort, aSex, aUnionState] := 0;
      			for aUnionMultiState := low(catMulti) to high(catMulti) do begin
@@ -1021,7 +1034,8 @@ if gRunFromIDE then
 				end;
 			end;
 		end else
-			writeAndWait ('ERROR ==> No mother!!');
+			if g_InfoParents then
+				writeAndWait ('ERROR ==> No mother!!');
 
 		// Fertility of egos
 		// in order to compare with egos' mother
@@ -1060,12 +1074,12 @@ else
 		if pEgo^.ageDeath < 50 then exit;
 		indCohort := inCohortSet (pEgo^.cohort, gCohortSet);
 		aSex := pEgo^.gender;
-		if g_AgeUnionAvailable then begin
-			if pEgo^.nUnions > 0 then begin
-				// first union only
-				ageUnionInt := trunc(getAgeUnion (pEgo, 1));
-				Inc ( g_UnionTable[indCohort, aSex, ageUnionInt]);
-			end;
+		if pEgo^.nUnions > 0 then begin
+			// first union only
+			ageUnionInt := trunc(getAgeUnion (pEgo, 1));
+			Inc ( g_UnionTable[indCohort, aSex, ageUnionInt]);
+		end;
+		if g_InfoParents then begin
 			ageUnionInt := trunc(getAgeUnion (pEgo^.mother, 1));
 			Inc (g_UnionTableEgoParents[indCohort, woman, ageUnionInt]);
 			ageUnionInt := trunc(getAgeUnion (pEgo^.father, 1));
@@ -1490,19 +1504,20 @@ else
 				sumParents := 0;
 				meanAgeUnion_egos [indCohort, aSex] := 0;
 				meanAgeUnion_egoParents [indCohort, aSex] := 0;
-				if g_AgeUnionAvailable then begin
-					for ageUnion := kMinAgeUnion to kMaxAgeUnion do begin
-						rate := 0;
-						if g_Union [indCohort, aSex, cu_person] > 0 then
-							rate := g_UnionTable[indCohort, aSex, ageUnion] / g_Union[indCohort, aSex, cu_person];
-						sumRates := sumRates + rate;
-						meanAgeUnion_egos [indCohort, aSex] := meanAgeUnion_egos [indCohort, aSex] + ( ageUnion + 0.5 ) * rate;
+				for ageUnion := kMinAgeUnion to kMaxAgeUnion do begin
+					rate := 0;
+					if g_Union [indCohort, aSex, cu_person] > 0 then
+						rate := g_UnionTable[indCohort, aSex, ageUnion] / g_Union[indCohort, aSex, cu_person];
+					sumRates := sumRates + rate;
+					meanAgeUnion_egos [indCohort, aSex] := meanAgeUnion_egos [indCohort, aSex] + ( ageUnion + 0.5 ) * rate;
+					if g_InfoParents then begin
 						sumParents := sumParents + g_UnionTableEgoParents[indCohort, aSex, ageUnion];
 						meanAgeUnion_egoParents [indCohort, aSex] := meanAgeUnion_egoParents [indCohort, aSex] + ( ageUnion + 0.5 ) * g_UnionTableEgoParents[indCohort, aSex, ageUnion];
 					end;
-					meanAgeUnion_egos [indCohort, aSex] := meanAgeUnion_egos [indCohort, aSex] / sumRates;
-					meanAgeUnion_egoParents [indCohort, aSex] := meanAgeUnion_egoParents [indCohort, aSex] / sumParents;
 				end;
+				meanAgeUnion_egos [indCohort, aSex] := meanAgeUnion_egos [indCohort, aSex] / sumRates;
+				if g_InfoParents then
+					meanAgeUnion_egoParents [indCohort, aSex] := meanAgeUnion_egoParents [indCohort, aSex] / sumParents;
 				if g_Union [indCohort, aSex, cu_person] > 0 then
 					PropSingle [indCohort, aSex] := g_Union [indCohort, aSex, cu_firstUnion] /
 						g_Union [indCohort, aSex, cu_person];
@@ -1526,11 +1541,13 @@ else
 			{Fertility of egos' mother and father and of egos}
 			for ageFec := low (FecundAges) to high(FecundAges) do
 				for aSex := man to woman do begin
-					rate := 0;
-					if g_fertilityEgoMothers[indCohort, aSex, cf_persons, ageFec] > 0 then
-						rate := g_fertilityEgoMothers[indCohort, aSex, cf_births, ageFec] /
-							g_fertilityEgoMothers[indCohort, aSex, cf_persons, ageFec];
-					TFR1PLUS_egoMothers[indCohort, aSex] := TFR1PLUS_egoMothers[indCohort, aSex] + rate;
+					if g_InfoParents then begin
+						rate := 0;
+						if g_fertilityEgoMothers[indCohort, aSex, cf_persons, ageFec] > 0 then
+							rate := g_fertilityEgoMothers[indCohort, aSex, cf_births, ageFec] /
+								g_fertilityEgoMothers[indCohort, aSex, cf_persons, ageFec];
+						TFR1PLUS_egoMothers[indCohort, aSex] := TFR1PLUS_egoMothers[indCohort, aSex] + rate;
+					end;
 					rate := 0;
 					if g_fertilityEgosWithAtLeastOneChild[indCohort, aSex, cf_persons, ageFec] > 0 then
 						rate := g_fertilityEgosWithAtLeastOneChild[indCohort, aSex, cf_births, ageFec] /
@@ -1565,10 +1582,16 @@ else
 					VAR_egos [indCohort, aSex] := VAR_egos [indCohort, aSex] +
 						indChildren * indChildren * g_NumChildrenEgos [indCohort, aSex, indChildren];
 				end;
-				TFR_egos_NC [indCohort, aSex] := TFR_egos_NC [indCohort, aSex] / sumEgos;
-				TFR_egoMothers_NC [indCohort, aSex] := TFR_egoMothers_NC [indCohort, aSex] / sumEgoMothers;
-				TFR_egoPartners_NC [indCohort, aSex] := TFR_egoPartners_NC [indCohort, aSex] / sumEgoPartners;
-				VAR_egos [indCohort, aSex] := VAR_egos [indCohort, aSex] / sumEgos -
+				{a sum can legitimately be zero when the kin set contains no mother, no father
+				 or no partner: do not divide in that case}
+				if sumEgos > 0 then
+					TFR_egos_NC [indCohort, aSex] := TFR_egos_NC [indCohort, aSex] / sumEgos;
+				if sumEgoMothers > 0 then
+					TFR_egoMothers_NC [indCohort, aSex] := TFR_egoMothers_NC [indCohort, aSex] / sumEgoMothers;
+				if sumEgoPartners > 0 then
+					TFR_egoPartners_NC [indCohort, aSex] := TFR_egoPartners_NC [indCohort, aSex] / sumEgoPartners;
+				if sumEgos > 0 then
+					VAR_egos [indCohort, aSex] := VAR_egos [indCohort, aSex] / sumEgos -
 						 TFR_egos_NC [indCohort, aSex] * TFR_egos_NC [indCohort, aSex];
 			end;
 		end; {indCohort}
@@ -1721,14 +1744,14 @@ else
 		setLength (MultiRes, 0);
 		setLength (gCohortSet, 0);
 		setLength (gChildren, 0);
-		SetLength (g_fertilityEgoMothers, 0);
 		SetLength (g_fertilityEgosWithAtLeastOneChild, 0);
 		SetLength (g_fertilityEgos, 0);
-		SetLength (g_NumChildrenEgoMothers, 0);
 		SetLength (g_NumChildrenEgos, 0);
 		SetLength (g_DistNbChildren, 0);
-		if g_AgeUnionAvailable then begin
-			SetLength (g_UnionTable, 0);
+		SetLength (g_UnionTable, 0);
+		if g_InfoParents then begin
+			SetLength (g_fertilityEgoMothers, 0);
+			SetLength (g_NumChildrenEgoMothers, 0);
 			SetLength (g_UnionTableEgoParents, 0);
 		end;
 		SetLength (g_Union, 0);
@@ -1736,38 +1759,38 @@ else
 		SetLength (g_UnionDurationMultiState, 0);
 	end;
 
-	procedure stuffStringsInRelative (Header, A: TStringArray; cohortEgo: longint; var pRelative: pRelativeType);
+	procedure stuffStringsInRelative (Header, A: TStringArray; cohortEgo, offset_idFamily: longint; var pRelative: pRelativeType);
 	var
 		s: string;
 		longHeader: boolean = true;
 		age, ageDef, tickIn, tickOut, cohortIn: longint;
 
 	begin
-	// id,sex,age,ageDef,status,tickIn,tickOut,ego
+	// idFamily,id,sex,age,ageDef,status,tickIn,tickOut,linked,ego,useful
 
-		longHeader := (length (Header) > 10);
-		age := StrToInt (A[ord(dt_age)]);
-		ageDef := StrToInt (A[ord(dt_agedef)]);
-		tickIn := StrToInt (A[ord(dt_tickin)]);
-		tickOut := StrToInt (A[ord(dt_tickOut)]);
+		longHeader := (length (Header) > 12);
+		age := StrToInt (A[ord(dt_age) + offset_idFamily]);
+		ageDef := StrToInt (A[ord(dt_agedef) + offset_idFamily]);
+		tickIn := StrToInt (A[ord(dt_tickin) + offset_idFamily]);
+		tickOut := StrToInt (A[ord(dt_tickOut) + offset_idFamily]);
 		with pRelative^ do begin
 			//typeOfKin: KinTypes;
 			//kinOf: pRelativeType;
 			//birthOrder : longint;
 			//ageMotherAtChildbirth: double;
-			indNumber := StrToInt (A[ord(dt_id)]);
-			s := A[ord(dt_sex)];
+			indNumber := StrToInt (A[ord(dt_id) + offset_idFamily]);
+			s := A[ord(dt_sex) + offset_idFamily];
 			if s = 'M' then
 				gender := man
 			else
 				gender := woman;
-			status := A[ord(dt_status)];
+			status := A[ord(dt_status) + offset_idFamily];
 			//scanned: boolean;
 			ageDeath := ageDef;
 			ageAtBirthOfEgo := age - tickIn - 50;
 			if longHeader then begin
-				cohort := StrToInt (A[ord(dt_cohort)]);
-				cohortDemReg := StrToInt (A[ord(dt_cohortRegDem)]);
+				cohort := StrToInt (A[ord(dt_cohort) + offset_idFamily]);
+				cohortDemReg := StrToInt (A[ord(dt_cohortRegDem) + offset_idFamily]);
 			end;
 			cohortIn := cohortEgo - ageAtBirthOfEgo;
 			if not longHeader then cohort := cohortIn;
@@ -1851,11 +1874,12 @@ else
 		id,idLink,idFamily: longint;
 		linkType: string;
 		indKinship, ind: longint;
+		indKt: longint;
 		nbTotRelatives: longint = 0;
-		
+		offset_idFamily: longint = 0;
 	begin
 		result := false;
-		g_AgeUnionAvailable := false;
+		g_InfoParents := false;
 		memoWriteLn(['File: ' + path + filename]);
 		f := TFileType.Create (path + filename, res, 'READDEMOCAREFILE', f_reset);
 		if res <> 0 then begin
@@ -1863,19 +1887,30 @@ else
 			exit;
 		end;
 		cohortEgo := lookForCohortInName (filename);
+		// read header
 		readLn (f.fileHandle, aLine);
 		Header := aLine.Split (',');
-		if (length (Header) < 6) or (Header[5] <> 'tickIn') then begin
+		{the leading idFamily column is optional: files written before it was added
+		 start directly with 'id'. offset_idFamily shifts every column index accordingly}
+		if (length (Header) > 0) and (CompareText (Header[0], 'idFamily') = 0) then
+			offset_idFamily := 0
+		else
+			offset_idFamily := -1;
+		if (length (Header) < ord(dt_tickIn) + offset_idFamily + 1) or
+			(CompareText (Header[ord(dt_tickIn) + offset_idFamily], 'tickIn') <> 0) then begin
 			writeAndWait ('Not a Democare Kinship file');
+			f.Destroy;
 			exit;
 		end;
 		nRel := 0;
 		SetLength (pRels{%H-}, kRelativeNetworks);
-		// id,sex,age,ageDef,status,tickIn,tickOut,ego
+		// the two layouts, short (9 columns) and extended (16 columns):
+		// [idFamily,]id,sex,age,ageDef,status,tickIn,tickOut,ego
+		// [idFamily,]id,sex,age,ageDef,status,tickIn,tickOut,ego,partnershipStatus,cohort,cohortRegDem,relative,byUnion,ageAtTickZero,nChildren
 		while not eof (f.fileHandle) do begin
 			readLn (f.fileHandle, aLine);
 			A := aLine.Split (',');
-			indEgo := ord(dt_ego);
+			indEgo := ord(dt_ego) + offset_idFamily;
 			if A[indEgo] = 'TRUE' then begin
 				Inc (nRel);
 				if nRel > length (pRels) then
@@ -1886,11 +1921,19 @@ else
 				pRels[nRel-1].pEgo := pEgo;
 				pRels[nRel-1].nKin := 1;
 			end else begin
+				{the extended layout records the true kin type in the 'relative' column.
+				 Without this a child or a grandchild came back as kt_nonBio and the kin
+				 taxonomy of the file was lost on read-back.}
 				kt := kt_nonBio;
+				if (length (Header) > 12) and (length (A) > ord(dt_relative) + offset_idFamily) then begin
+					indKt := GetEnumValue (TypeInfo(KinTypes), A[ord(dt_relative) + offset_idFamily]);
+					if (indKt >= ord(low(KinTypes))) and (indKt <= ord(high(KinTypes))) then
+						kt := KinTypes (indKt);
+				end;
 				pLastRelative := newRelative(pLastRelative, pEgo, nbTotRelatives, kt);
 				Inc (pRels[nRel-1].nKin);
 			end;
-			stuffStringsInRelative (Header, A, cohortEgo, pLastRelative);
+			stuffStringsInRelative (Header, A, cohortEgo, offset_idFamily, pLastRelative);
 		end;
 		f.Destroy;
 		// Link file
@@ -1912,13 +1955,18 @@ else
 			pEgo := pRels[idFamily-1].pEgo;
 			pId := lookForRelativeById (pEgo, id);
 			pIdLink := lookForRelativeById (pEgo, idLink);
-			if (pId = nil) or (pIdLink = nil) then
-			writeAndWait ('Link not found');
+			if (pId = nil) or (pIdLink = nil) then begin
+				writeAndWait ('Link not found');
+				continue;
+			end;
 			if linkType = 'M' then begin
 				addLastPartner (pId, pIdLink);
-				if pIdLink^.typeOfKin <> kt_ego then begin
-				pIdLink^.typeOfKin := kt_partner;
-				pIdLink^.kinOf := pId;
+				{a marriage row is written from BOTH partners, so the reverse row would
+				 otherwise turn a child or a grandchild of ego into a partner. Only a
+				 relative whose type is still unknown may be typed here.}
+				if (pIdLink^.typeOfKin = kt_nonBio) then begin
+					pIdLink^.typeOfKin := kt_partner;
+					pIdLink^.kinOf := pId;
 				end;
 			end else begin
 				addChildToParent (pId, pIdLink);
@@ -2699,6 +2747,10 @@ end;
 		myData.womenCollection := pData^.womenCollection;
 		myThreadNumber := ind;
 		myRandomGenerator := TRandomNumberGenerator.Create(false);
+		{seeded here, on the main thread. Seeding inside Execute used the RTL random(),
+		 which is not thread safe: two threads could receive the same seed and then
+		 generate identical sequences.}
+		myRandomGenerator.initWithSeed (nextThreadSeed);
 		FAFinished := false;
 	end;
 
@@ -2713,7 +2765,6 @@ end;
 		ran: double;
 	begin
 		FAFinished := false;
-		myRandomGenerator.initRandomized();
 		ran := myRandomGenerator.alea0;
 		if g_GENPARAM.DEBUG.value then
             memoWriteLn (['TCohortWomenSet.Execute first random number: ', ran]);
@@ -2730,6 +2781,10 @@ end;
 		myThreadNumber := ind;
 		MyWomenCount := 0;
 		myRandomGenerator := TRandomNumberGenerator.Create (false);
+		{seeded here, on the main thread. Seeding inside Execute used the RTL random(),
+		 which is not thread safe: two threads could receive the same seed and then
+		 generate identical sequences.}
+		myRandomGenerator.initWithSeed (nextThreadSeed);
 		FAFinished := false;
 	end;
 
@@ -2748,7 +2803,6 @@ end;
 		FAFinished := false;
 		cohortData.womenType := myData.womenType;
 		cohortData.womenCollection := myData.womenCollection;
-		myRandomGenerator.initRandomized();
 		ran := myRandomGenerator.alea0;
 		if g_GENPARAM.DEBUG.value then
             memoWriteLn (['TBigCohortsWomenSet.Execute first random number: ', ran]);
@@ -3262,24 +3316,52 @@ end;
 	end;
 	
 	function getPartnershipStatus (pRelative: pRelativeType; isFirstUnion: boolean; ageRef: longint): PartnershipStatusesType;
-	// No test for ageRef > age of death of pRelative
+	{ageRef is an age of EGO. The age of the relative at that moment is
+	 ageRef + ageAtBirthOfEgo. Every union in this model is given an age and a cause
+	 of ending (separation, widowhood, or the death of the relative), so a union that
+	 has begun by the reference is either still running or has a known cause of ending.}
+	var
+		ageAtRef: double;
+		ind, lastBegun: longint;
 	begin
 		if (pRelative^.typeOfKin in gKinWithNoDescendance) then begin
 			getPartnershipStatus := any;
 			exit;
 		end;
-		if (pRelative^.nUnions = 0) then
-			getPartnershipStatus := neverInUnion
-		else begin
-			if getAgeUnion (pRelative, 1) - pRelative^.ageAtBirthOfEgo < ageRef then
-				getPartnershipStatus := neverInUnion
-			else if getAgeEndUnion (pRelative, 1) - pRelative^.ageAtBirthOfEgo <= ageRef then
-				getPartnershipStatus := firstUnion;
-			if (getCauseEndUnion (pRelative, 1) = end_by_separation) then
-				getPartnershipStatus := separated
-			else
-				getPartnershipStatus := widow;
+		ageAtRef := ageRef + pRelative^.ageAtBirthOfEgo;
+
+		if (pRelative^.ageDeath < ageAtRef) then begin
+			{the relative was no longer alive when ego reached the reference age}
+			getPartnershipStatus := dead;
+			exit;
 		end;
+		if (pRelative^.nUnions = 0) then begin
+			getPartnershipStatus := neverInUnion;
+			exit;
+		end;
+
+		{index of the last union that had begun when ego reached the reference age}
+		lastBegun := 0;
+		for ind := 1 to pRelative^.nUnions do
+			if getAgeUnion (pRelative, ind) <= ageAtRef then
+				lastBegun := ind;
+
+		if (lastBegun = 0) then
+			{no union had begun yet}
+			getPartnershipStatus := neverInUnion
+		else if getAgeEndUnion (pRelative, lastBegun) > ageAtRef then begin
+			{still in that union at the reference}
+			if (lastBegun = 1) then
+				getPartnershipStatus := firstUnion
+			else
+				getPartnershipStatus := secondUnions;
+		end
+		else if (getCauseEndUnion (pRelative, lastBegun) = end_by_separation) then
+			getPartnershipStatus := separated
+		else
+			{end_by_widowhood. end_by_death cannot arrive here: it means the relative
+			 died at the end of that union, which the 'dead' test above has caught.}
+			getPartnershipStatus := widow;
 		
 	end;
 
@@ -3474,7 +3556,15 @@ if the age at first union > age at death, then no union}
 		CalcChildren := n;
 	end;
 	
-	function writeKinDemoCare (ageRefEgo, nbFamily: longint; pEgo: pRelativeType; pRelative: pRelativeType; checkLinks: boolean): boolean;
+	function aliveAtEgoAge (pRelative: pRelativeType; ageRefEgo: longint): boolean;
+	{TRUE when the relative was still alive at the moment ego reached ageRefEgo.
+	 The age of the relative at that moment is ageRefEgo + ageAtBirthOfEgo.}
+	begin
+		result := (pRelative <> nil) and
+				  ( trunc (pRelative^.ageDeath) >= (ageRefEgo + pRelative^.ageAtBirthOfEgo) );
+	end;
+
+	function writeKinDemoCare (ageRefEgo, indFamily: longint; pEgo: pRelativeType; pRelative: pRelativeType): boolean;
 	var
 		i: longint = 1;
 		tickIn, tickOut: longint;
@@ -3489,10 +3579,11 @@ if the age at first union > age at death, then no union}
 	begin
 		isEgo := ( pEgo = pRelative );
 		
+		{the number of children is written for every row, not only for ego}
+		nChildren := getNumChildren (pRelative);
 		if isEgo then begin
-			nChildren := CalcChildren (pRelative);
-			if ( nChildren <> getNumChildren (pEgo) ) then
-				writeAndWait ('ERROR ==> tontou!!!!');
+			if ( CalcChildren (pRelative) <> getNumChildren (pEgo) ) then
+				writeAndWait ('ERROR ==> inconsistent number of children for ego');
 		end;
 		
 		with pRelative^ do begin
@@ -3528,28 +3619,20 @@ if the age at first union > age at death, then no union}
 			tickOut2 := ageDeathInt - ageRefEgo - ageAtBirthOfEgo;
 			ageRel2 := ageRel - tickIn;
 			
-			if checkLinks then begin
-				if (tickOut < 0) then begin
-				{case of relatives who died before ego reached reference age}
-				{we drop them if they don't contribute a link to the kin network}
-					if (typeOfKin = kt_partner) and (gender = man) then begin
-						writeKinDemoCare := FALSE;
-						exit;
-					end;
-					if (gender = woman) and (getNumChildren (pRelative) = 0) then begin
-						writeKinDemoCare := FALSE;
-						exit;
-					end;
-					if (nUnions = 0) then begin
-						writeKinDemoCare := FALSE;
-						exit;
-					end;
-				end;
-			end else begin
+			{a relative who was already dead when ego reached the reference age is not
+			 written to the DemoCare file. tickOut < 0 is exactly that case. No link row
+			 may point at such a person either, see the two loops below.}
+			if (tickOut < 0) then begin
+				writeKinDemoCare := FALSE;
+				exit;
+			end;
+
+			begin
 				if RP.wKey then bWrite (gOutFileIndivKin, [RP.key, comma]);
 
-				if g_GENPARAM.DUMPALL.value then begin
+				if g_GENPARAM.DEMOCARE_LARGE_FIELDS.value then begin
 					bWriteLn(gOutFileIndivKin, [
+						indFamily, comma,
 						indNumber, comma,
 						str_gender[gender], comma,
 						ageRel, comma,
@@ -3571,6 +3654,7 @@ if the age at first union > age at death, then no union}
 					]);
 				end else begin
 					bWriteLn(gOutFileIndivKin, [
+						indFamily, comma,
 						indNumber, comma,
 						str_gender[gender], comma,
 						ageRel, comma,
@@ -3587,24 +3671,19 @@ if the age at first union > age at death, then no union}
 			
 			i := 1;
 			while (i <= nUnions) and (getPartner (pRelative, i) <> nil) do begin
-				if checkLinks then begin
-					inKinSet := true;
-					pPartner := getPartner (pRelative, i);
-					pPartner^.inKinSet := true;
-					setPartner (pRelative, i, pPartner);
-				end else begin
+				pPartner := getPartner (pRelative, i);
+				{skip the link when the partner was dropped, so the link file never names
+				 an id that is absent from the main file}
+				if aliveAtEgoAge (pPartner, ageRefEgo) then begin
 					if RP.wKey then bWrite (gOutFileIndivKin_link, [RP.key, comma]);
-					bWriteLn(gOutFileIndivKin_link, [indNumber, comma, getPartner (pRelative, i)^.indNumber, comma, 'M',comma, nbFamily]);
+					bWriteLn(gOutFileIndivKin_link, [indNumber, comma, pPartner^.indNumber, comma, 'M',comma, indFamily]);
 				end;
 				i := i + 1;
 			end;
 			if (typeOfKin in [kt_child, kt_grandChild]) and not byUnion (pEgo, pRelative) then begin
-				if checkLinks then begin
-					mother^.inKinSet := true;
-					inKinSet := true;
-				end else begin
+				if aliveAtEgoAge (mother, ageRefEgo) then begin
 					if RP.wKey then bWrite (gOutFileIndivKin_link, [RP.key, comma]);
-					bWriteLn(gOutFileIndivKin_link, [mother^.indNumber, comma, indNumber, comma, 'D',comma, nbFamily]);
+					bWriteLn(gOutFileIndivKin_link, [mother^.indNumber, comma, indNumber, comma, 'D',comma, indFamily]);
 				end;
 			end;
 		end; {with pRelative^ do}
@@ -3617,7 +3696,7 @@ if the age at first union > age at death, then no union}
 		s := Copy(s, 1, length(s)-1);
 	end;
 	
-	function writeKinEgoGenealogy (nbFamily: longint;
+	function writeKinEgoGenealogy (indFamily: longint;
 									pEgo: pRelativeType; pRelative: pRelativeType;
 									indThread: longint = 0): boolean;
 	var
@@ -3639,11 +3718,15 @@ if the age at first union > age at death, then no union}
 		sep: char=comma;
 	begin
 		result := False;
-		if RP.wKey then bWrite (gOutFileIndivKin, [RP.key, sep]);
 
 		idEgo := pEgo^.indNumber;
 		with pRelative^ do begin
 			if not (typeOfKin in g_GENPARAM.OUTPUT_KINTYPES.value) then exit;
+			{the key must be written only once we know a row WILL be written for this
+			 relative, otherwise the skipped relatives leave an orphan key in front of
+			 the next row. gKinToSimulate is a superset of OUTPUT_KINTYPES, so the exit
+			 above fires routinely.}
+			if RP.wKey then bWrite (gOutFileIndivKin, [RP.key, sep]);
 			if nUnions > 0 then begin
 				idSpouses := '';
 				str_AgeUnion := '';
@@ -3741,7 +3824,7 @@ if the age at first union > age at death, then no union}
 			if father <> nil then idFather := father^.indNumber;
 			if mother <> nil then idMother := mother^.indNumber;
 			idBaseKin := kinOf^.indNumber;
-			bWrite (gOutFileIndivKin, 	[nbFamily, sep, indNumber, sep, idBaseKin, sep, str_kinship [typeOfKin], sep,
+			bWrite (gOutFileIndivKin, 	[indFamily, sep, indNumber, sep, idBaseKin, sep, str_kinship [typeOfKin], sep,
 										str_kinship [kinOf^.typeOfKin],
 										sep, str_gender [gender], sep, idEgo, sep, idFather, sep, idMother, sep, nUnions, sep, idSpouses]);
 										
@@ -3794,22 +3877,23 @@ if the age at first union > age at death, then no union}
 			checkSumShareHeirs := checkSumShareHeirs;
 	end;
 
-	function writeKinGEDCOM (nbFamily: longint; pEgo: pRelativeType; pRelative: pRelativeType): boolean;
+	function writeKinGEDCOM (indFamily: longint; pEgo: pRelativeType; pRelative: pRelativeType): boolean;
 	begin
 		result := False;
 	end;
 	
-	function writeKin (ageRefEgo, nbFamily: longint;
+	function writeKin (ageRefEgo, indFamily: longint;
 						pEgo: pRelativeType; pRelative: pRelativeType;
-						checkLinks: boolean; fileFormat: Kinship_FileFormat;
+						fileFormat: Kinship_FileFormat;
 						indThread: longint = 0): boolean;
 	begin
+		writeKin := False;
 		if fileFormat = out_DemoCare then
-			writeKin := writeKinDemoCare (ageRefEgo, nbFamily, pEgo, pRelative, checkLinks)
+			writeKin := writeKinDemoCare (ageRefEgo, indFamily, pEgo, pRelative)
 		else if fileFormat = out_EgoGenealogy then
-			writeKin := writeKinEgoGenealogy (nbFamily, pEgo, pRelative, indThread)
+			writeKin := writeKinEgoGenealogy (indFamily, pEgo, pRelative, indThread)
 		else if fileFormat = out_GEDCOM then
-			writeKin := writeKinGEDCOM (nbFamily, pEgo, pRelative)
+			writeKin := writeKinGEDCOM (indFamily, pEgo, pRelative)
 	end;
 
 	function byUnionOfKinInSet (pEgo, pRelative: pRelativeType; relativesSet: KinSetType): boolean;
@@ -3860,9 +3944,13 @@ if the age at first union > age at death, then no union}
 			pRelative^.inKinSet := false;
 			if includeKinInNetwork (pEgo, pRelative, relativesSet, fileFormat) then
 			begin
-				nbRelatives := nbRelatives + 1;
-				pRelative^.inKinSet := true;
-				writeKin (ageRefEgo, indFamily, pEgo, pRelative, false, fileFormat, indThread);
+				{count only the relatives for which a row was really written: a writer can
+				 still refuse one (kin type not selected, or dead before the reference age)}
+				if writeKin (ageRefEgo, indFamily, pEgo, pRelative, fileFormat, indThread) then
+				begin
+					nbRelatives := nbRelatives + 1;
+					pRelative^.inKinSet := true;
+				end;
 			end;
 			pRelative := pRelative^.nextRelative;
 		end;
@@ -4789,8 +4877,9 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 
 					if (pWoman^.typeOfKin = kt_ego) and (pWoman^.ageDeath >= 50) then
 					begin
-						Inc (gChildren [inCohortSet (pWoman^.cohort, gCohortSet), 50]);
-						Inc (gChildren [inCohortSet (pWoman^.cohort, gCohortSet), nbChildren]);
+						{reached from every worker thread: a plain Inc loses increments}
+						InterlockedIncrement (gChildren [inCohortSet (pWoman^.cohort, gCohortSet), 50]);
+						InterlockedIncrement (gChildren [inCohortSet (pWoman^.cohort, gCohortSet), nbChildren]);
 					end;
 					
 					copyWomanPartnershipInfoToWomanAsRelative (unionStates, pWoman);
@@ -5064,7 +5153,8 @@ end;
 		grow := ( yearUnionInd < (length (g_RangeYearUnionsNb) / 2) ) and ( ageUnion < 40 );
 		yearUnionTemp := yearUnionInd;
 		if nUnions = 0 then
-		Inc (g_RangeYearUnionsNotFound [yearUnionInd, ageUnionInd]);
+			{reached from every worker thread: a plain Inc loses increments}
+			InterlockedIncrement (g_RangeYearUnionsNotFound [yearUnionInd, ageUnionInd]);
 
 		while (nUnions = 0) and (yearUnionTemp > 0) and (yearUnionTemp < length (g_RangeYearUnionsNb)) do begin
 			if grow then
@@ -5142,7 +5232,8 @@ end;
 		ageUnionIndTemp := ageUnionInd;
 		if nBrides = 0 then
 			// No bride for this age at union of the groom. We keep track of that
-			Inc (g_RangeBridesForGrooms_NotFound [cohortGroomInd, ageUnionInd]);
+			// (reached from every worker thread: a plain Inc loses increments)
+			InterlockedIncrement (g_RangeBridesForGrooms_NotFound [cohortGroomInd, ageUnionInd]);
 
 		while (nBrides = 0) and (ageUnionIndTemp < (kMaxAgeUnion_men - kMinAgeUnion_men)) do begin
 			// if there is no bride, we change the men's age at union up or down, depending on its level
@@ -5773,6 +5864,17 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		end;
 	end; {end checkRelatives}
 
+	procedure setInfoParents;
+	{Statistics about ego's mother and father only make sense when those parents are
+	 actually simulated. With the DemoCare format the kin set never contains them, and
+	 a user of the genealogy format can also choose a kin set without ascendants.
+	 This must be called BEFORE initComputeStatesKinship, which sizes and zeroes the
+	 g_fertilityEgoMothers / g_NumChildrenEgoMothers / g_UnionTableEgoParents arrays.}
+	begin
+		setKinshipToSimulate (g_GENPARAM.OUTPUT_KINTYPES.value);
+		g_InfoParents := (kt_mother in gKinToSimulate) and (kt_father in gKinToSimulate);
+	end;
+
 	procedure setKinshipToSimulate (kinToSimulate: KinSetType; writeIt: boolean = false);
 	var
 		aKin: KinTypes;
@@ -5796,15 +5898,15 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		arrayKinBranchUp [kt_grandNieceNephew] := [kt_nieceNephew] + arrayKinBranchUp [kt_nieceNephew];
 		arrayKinBranchUp [kt_greatGrandNieceNephew] := [kt_grandNieceNephew] + arrayKinBranchUp [kt_grandNieceNephew];
 
-		arrayKinBranchUp [kt_grandMother] := arrayKinBranchUp [kt_father];
-		arrayKinBranchUp [kt_grandFather] := [kt_grandMother] + arrayKinBranchUp [kt_father];
+		arrayKinBranchUp [kt_grandMother] := [kt_father] + arrayKinBranchUp [kt_father];
+		arrayKinBranchUp [kt_grandFather] := [kt_grandMother] + arrayKinBranchUp [kt_grandMother];
 		arrayKinBranchUp [kt_auntUncle] := [kt_grandFather] + arrayKinBranchUp [kt_grandFather];
 		arrayKinBranchUp [kt_cousin] := [kt_auntUncle] + arrayKinBranchUp [kt_auntUncle];
 		arrayKinBranchUp [kt_cousin_removed] := [kt_cousin] + arrayKinBranchUp [kt_cousin];
 		arrayKinBranchUp [kt_cousin_twice_removed] := [kt_cousin_removed] + arrayKinBranchUp [kt_cousin_removed];
 		arrayKinBranchUp [kt_cousin_thrice_removed] := [kt_cousin_twice_removed] + arrayKinBranchUp [kt_cousin_twice_removed];
 
-		arrayKinBranchUp [kt_greatGrandMother] := arrayKinBranchUp [kt_grandFather];
+		arrayKinBranchUp [kt_greatGrandMother] := [kt_grandFather] + arrayKinBranchUp [kt_grandFather];
 		arrayKinBranchUp [kt_greatGrandFather] := [kt_greatGrandMother] + arrayKinBranchUp [kt_greatGrandMother];
 		arrayKinBranchUp [kt_grandAuntUncle] := [kt_greatGrandFather] + arrayKinBranchUp [kt_greatGrandFather];
 		arrayKinBranchUp [kt_great_cousin_removed] := [kt_grandAuntUncle] + arrayKinBranchUp [kt_grandAuntUncle];
@@ -5994,7 +6096,7 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 						  posInFamily := pLastRelative^.indNumber - nbTotRelatives_init + 1;
 				end;
 					{great grand niece/nephews => DESCENDANCE 3}
-					if allKin or (kt_grandNieceNephew in relativeSet) then begin
+					if allKin or (kt_greatGrandNieceNephew in relativeSet) then begin
 						while calcStateMan(randomGenerator, kt_grandNieceNephew, kt_greatGrandNieceNephew, pOfWhom, arrayChildren, pLastRelative, nbTotRelatives) do
 							  posInFamily := pLastRelative^.indNumber - nbTotRelatives_init + 1;
 						while calcStateWoman(randomGenerator, kt_grandNieceNephew, kt_greatGrandNieceNephew, pOfWhom, arrayChildren, pLastRelative, nbTotRelatives) do
@@ -6571,6 +6673,10 @@ if (ageEgo = 0) then
 		CreateArrayChildren(arrayChildren);
 		myNumTreesStored := 0;
 		myRandomGenerator := TRandomNumberGenerator.Create (false);
+		{seeded here, on the main thread. Seeding inside Execute used the RTL random(),
+		 which is not thread safe: two threads could receive the same seed and then
+		 generate identical sequences.}
+		myRandomGenerator.initWithSeed (nextThreadSeed);
 		inherited Create(false); // start execution now!
 	end;
 
@@ -6636,8 +6742,7 @@ if (ageEgo = 0) then
 				tSetup := Now() - tSetup;
  				tCompute := Now();
 				myTotalKinCount := 0;
-				myRandomGenerator.initRandomized();
-                ran := myRandomGenerator.alea0;
+		                ran := myRandomGenerator.alea0;
                 if g_GENPARAM.DEBUG.value then
                 	memoWriteLn (['TSimulEgoTree.Execute first random number: ', ran]);
 				self.initTrees (myNumTreesStored);
@@ -6993,7 +7098,7 @@ if (ageEgo = 0) then
 					' (option ' + g_GENPARAM.outputs_opt[res_kin_dist].name + ')']);
 			for typeOfKin := kt_ego to kt_total do
 			begin
-				if typeOfKin in gKinToSimulate then begin
+				if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then begin
 					bWrite(gOutFileKin, [nOf, str_kinship[typeOfKin]]);
 					for ageEgo in kSetAgesEgo do
 						bWrite(gOutFileKin, [tab, ageEgo]);
@@ -7015,7 +7120,7 @@ if (ageEgo = 0) then
 				bWriteLn (gOutFileKin, ['===> ', sSexTotal [aSexT]]);
 				for typeOfKin := kt_ego to kt_total do
 				begin
-					if typeOfKin in gKinToSimulate then begin
+					if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then begin
 						bWrite(gOutFileKin, [nOf, str_kinship[typeOfKin]]);
 						for ageEgo in kSetAgesEgo do
 							bWrite(gOutFileKin, [tab, ageEgo]);
@@ -7038,7 +7143,7 @@ if (ageEgo = 0) then
 				bWriteLn (gOutFileKin, ['===> ', sSexTotal [aSexT]]);
 				for typeOfKin := kt_ego to kt_total do
 				begin
-					if typeOfKin in gKinToSimulate then begin
+					if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then begin
 						bWrite(gOutFileKin, [nOf, str_kinship[typeOfKin]]);
 						for ageEgo in kSetAgesEgo do
 							bWrite(gOutFileKin, [tab, ageEgo]);
@@ -7065,7 +7170,7 @@ if (ageEgo = 0) then
 				bWriteLn (gOutFileKin, ['===> ', sSexTotal [aSexT]]);
 				for typeOfKin := kt_partner to kt_total do
 				begin
-					if typeOfKin in gKinToSimulate then begin
+					if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then begin
 						bWrite(gOutFileKin, [nOf, str_kinship[typeOfKin]]);
 						for ageEgo in kSetAgesEgo do
 							bWrite(gOutFileKin, [tab, ageEgo]);
@@ -7095,7 +7200,7 @@ if (ageEgo = 0) then
 				bWriteLn (gOutFileKin, ['===> ', sSexTotal [aSexT]]);
 				for typeOfKin := kt_partner to kt_total do
 				begin
-					if typeOfKin in gKinToSimulate then begin
+					if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then begin
 						bWrite(gOutFileKin, [nOf, str_kinship[typeOfKin]]);
 						for ageEgo in kSetAgesEgo do
 							bWrite(gOutFileKin, [tab, ageEgo]);
@@ -7128,7 +7233,7 @@ if (ageEgo = 0) then
 
 				for typeOfKin := kt_ego to kt_total do
 				begin
-					if typeOfKin in gKinToSimulate then begin
+					if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then begin
 						bWrite(gOutFileKin, ['age of ', str_kinship[typeOfKin]]);
 						for ageEgo in kSetAgesEgo do
 							bWrite(gOutFileKin, [tab, ageEgo]);
@@ -7162,13 +7267,13 @@ if (ageEgo = 0) then
 				bWriteLn (gOutFileKin, ['For: ', aSexT]);
 				bWrite (gOutFileKin, ['Age', tab]);
 				for typeOfKin := kt_ego to kt_total do
-					if typeOfKin in gKinToSimulate then
+					if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then
 						bWrite (gOutFileKin, [str_kinship[typeOfKin], tab]);
 				cWriteLn (gOutFileKin);
 				for ageEgo := kMinAgeLife to kMaxAgeLife do begin
 					bWrite (gOutFileKin, [ageEgo, tab]);
 					for typeOfKin := kt_ego to kt_total do
-						if typeOfKin in gKinToSimulate then
+						if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then
 							bWrite (gOutFileKin, [g_NumKinByAgeEgo[g_nRuns_aggrKinship-1, aSexT, ageEgo, typeOfKin], tab]);
 					cWriteLn (gOutFileKin);
 				end;
@@ -7179,13 +7284,13 @@ if (ageEgo = 0) then
 				bWriteLn (gOutFileKin, ['For: ', aSexT]);
 				bWrite (gOutFileKin, ['Age', tab]);
 				for typeOfKin := kt_partner to kt_total do
-					if typeOfKin in gKinToSimulate then
+					if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then
 						bWrite (gOutFileKin, [str_kinship[typeOfKin], tab]);
 				cWriteLn (gOutFileKin);
 				for ageEgo := kMinAgeLife to kMaxAgeLife do begin
 					bWrite (gOutFileKin, [ageEgo, tab]);
 					for typeOfKin := kt_partner to kt_total do
-						if typeOfKin in gKinToSimulate then begin
+						if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then begin
 							if g_NumKinByAgeEgo[g_nRuns_aggrKinship-1, aSexT, ageEgo, kt_ego] > 0 then
 								bWrite (gOutFileKin,
 									[g_NumKinByAgeEgo[g_nRuns_aggrKinship-1, aSexT, ageEgo, typeOfKin] /
@@ -7242,7 +7347,7 @@ if (ageEgo = 0) then
 		
 				for typeOfKin := kt_ego to kt_total do
 				begin
-					if (typeOfKin in gKinToSimulate) then begin
+					if ((typeOfKin in gKinToSimulate) or (typeOfKin = kt_total)) then begin
 						outputTabString [0] := str_kinship[typeOfKin];
 						nbRelatives_calc := g_TotalBornKinship[ord(typeOfKin), ord(aSexT), kTotal-kTotal] / g_TotalBornKinship[ord(kt_ego), ord(aSexT), kTotal-kTotal];
 						outputTabString [2] := FloatToStrF (nbRelatives_calc, fffixed, 6, 3, gFormatSettings);
@@ -7261,16 +7366,16 @@ if (ageEgo = 0) then
 	
 	procedure header_democare;
 	begin
-		if RP.wKey then bWrite (gOutFileIndivKin, ['key', tab]);
-		if RP.wKey then bWrite (gOutFileIndivKin_link, ['key', tab]);
+		if RP.wKey then bWrite (gOutFileIndivKin, ['key', comma]);
+		if RP.wKey then bWrite (gOutFileIndivKin_link, ['key', comma]);
 		bWriteLn (gOutFileIndivKin_link, ['id', comma, 'idLink', comma, 'linkType', comma, 'idFamily']);
-		if g_GENPARAM.DUMPALL.value then begin
-			bWriteLn (gOutFileIndivKin, ['id', comma, 'sex', comma, 'age', comma, 'ageDef', comma,
+		if g_GENPARAM.DEMOCARE_LARGE_FIELDS.value then begin
+			bWriteLn (gOutFileIndivKin, ['idFamily', comma,'id', comma, 'sex', comma, 'age', comma, 'ageDef', comma,
 			'status', comma, 'tickIn', comma, 'tickOut', comma, 'ego', comma, 'partnershipStatus',
 			comma, 'cohort', comma, 'cohortRegDem', comma, 'relative', comma, 'byUnion',
 			comma, 'ageAtTickZero', comma, 'nChildren']);
 		end else begin
-			bWriteLn (gOutFileIndivKin, ['id', comma, 'sex', comma, 'age', comma, 'ageDef', comma,
+			bWriteLn (gOutFileIndivKin, ['idFamily', comma,'id', comma, 'sex', comma, 'age', comma, 'ageDef', comma,
 			'status', comma, 'tickIn', comma, 'tickOut', comma, 'ego']);
 		end;
 	end;
@@ -7324,8 +7429,11 @@ if (ageEgo = 0) then
 
 	procedure header_GEDCOM;
 	begin
-		if RP.wKey then bWrite (gOutFileIndivKin, ['key', tab]);
-        if RP.wKey then bWrite (gOutFileIndivKin_link, ['key', tab]);
+		{gOutFileIndivKin_link is opened for the DemoCare format ONLY, so the second line
+		 this procedure used to have wrote to a handle that GEDCOM never opens. If the
+		 GEDCOM writer ever needs a second file, open it in individualKin_openFile first.
+		 The separator is a comma, like every other header in this unit.}
+		if RP.wKey then bWrite (gOutFileIndivKin, ['key', comma]);
 	end;
 	
 
@@ -7338,6 +7446,9 @@ if (ageEgo = 0) then
 		
 	var
 		sNum: string;
+		fname_link: string;
+		sharedBootstrapFile: boolean;
+		openMode: fileModes;
 		
 		ftype, ftype_link: string;
 		
@@ -7366,21 +7477,32 @@ if (ageEgo = 0) then
 			ftype_link := '';
 		end;
 		
+		{when several bootstrap replicates share ONE file, the replicates after the first
+		 must be appended, otherwise each one truncates the work of the previous ones}
+		sharedBootstrapFile := ( g_GENPARAM.RUNTIME[gBootstrap_nRuns].value > 1 ) and
+								not g_GENPARAM.OUTPUT_BOOTSTRAP_MULTIPLE_INDIV_FILES.value and
+								(bootstrap_ind > 1);
+		if sharedBootstrapFile then
+			openMode := f_append
+		else
+			openMode := f_rewrite;
+
 		fname := g_FileName.value;
 		fname := concat (fname, sNum, ftype);
 		if openFile then begin 
-			if ( not openFileOut(fname, 'gOUTFILEINDIVKIN', gOutFileIndivKin, kAsyncFalse) ) then
+			if ( not openFileOut(fname, 'gOUTFILEINDIVKIN', gOutFileIndivKin, kAsyncFalse, openMode) ) then
 			begin
 				screenFileWriteLn(concat('Problem opening file: ', fname));
 				result := [kt_none];
 				exit;
 			end;
 			if (fileFormat = out_DemoCare) then begin
-				fname := g_FileName.value;
-				fname := concat (fname, sNum, ftype_link);
-				if ( not openFileOut(fname, 'gOUTFILEINDIVKIN_LINK', gOutFileIndivKin_link, kAsyncFalse) ) then
+				{a local name: fname must keep the name of the MAIN file, because the caller
+				 uses it afterwards (individualKin_end zips it)}
+				fname_link := concat (g_FileName.value, sNum, ftype_link);
+				if ( not openFileOut(fname_link, 'gOUTFILEINDIVKIN_LINK', gOutFileIndivKin_link, kAsyncFalse, openMode) ) then
 				begin
-					screenFileWriteLn(concat('Problem opening file: ', fname));
+					screenFileWriteLn(concat('Problem opening file: ', fname_link));
 					result := [kt_none];
 					exit;
 				end;
@@ -7389,19 +7511,19 @@ if (ageEgo = 0) then
 			
 		if (fileFormat = out_DemoCare) then begin
 
-			if openFile then header_democare;
+			if openFile and not sharedBootstrapFile then header_democare;
 			
-			result := [kt_ego, kt_partner, kt_child, kt_grandChild];
+			result := gKinToSimulate;
 			
 		end else if fileFormat = out_EgoGenealogy then begin
 		
-			if openFile then header_EgoGenealogy;
+			if openFile and not sharedBootstrapFile then header_EgoGenealogy;
 
 			result := gKinToSimulate;
 			
 		end else if fileFormat = out_GEDCOM then begin
 		
-			if openFile then header_GEDCOM;
+			if openFile and not sharedBootstrapFile then header_GEDCOM;
 
 			result := gKinToSimulate;
 
@@ -7435,7 +7557,11 @@ if (ageEgo = 0) then
 			stepEgos := stepEgos + modEgo;
 			nEgosSimulatedInTimeSlot := indEgo - nEgosSimulatedInTimeSlot;
 			msElapsed := DateTimeToMilliseconds (Now() - timeForTrees);
-			nEgosPerSecond := 1000 * nEgosSimulatedInTimeSlot / msElapsed;
+			{msElapsed is whole milliseconds and is 0 when less than one has passed}
+			if (msElapsed > 0) then
+				nEgosPerSecond := 1000 * nEgosSimulatedInTimeSlot / msElapsed
+			else
+				nEgosPerSecond := 0;
 			if (threadNum = 0) then
             	memoWriteLn([stepEgos, indivs, ' (', nEgosPerSecond, ' trees per second)'])
             else
@@ -7463,18 +7589,27 @@ if (ageEgo = 0) then
 {$ENDIF}
 	end;
 	
-	procedure individualKin_end (fileFormat: Kinship_FileFormat; nbFamily, nIndividuals: longint; fname: string);
+	procedure individualKin_end (fileFormat: Kinship_FileFormat; indFamily, nIndividuals: longint; fname: string;
+								 closeIt: boolean = true);
+	{closeIt is FALSE for every cohort except the last one: the individual file is opened
+	 once, on the first cohort, and must stay open until the last cohort has been written.
+	 Closing it earlier sent every later cohort to a closed handle, and the failure was
+	 swallowed by {$I-}, so the file silently contained only the first cohort.}
 	var
 		tStart: TDateTime;  // Begin and end of measurement, and difference
 		iHours, iMinutes, iSeconds, iMilliseconds: Word;  // Time components
 
 	begin
 		if not g_GENPARAM.OUTPUT_INDIVIDUAL_KINSHIP_INFO.value then exit;
+		if not closeIt then begin
+			flushIO;
+			exit;
+		end;
 
 		gOutFileIndivKin.myCloseFile;
 		if (fileFormat = out_DemoCare) then
 			gOutFileIndivKin_link.myCloseFile;
-		memoWriteLn(['========== Num families written: ', nbFamily, ', num individuals: ', nIndividuals, ' ==========']);
+		memoWriteLn(['========== Num families written: ', indFamily, ', num individuals: ', nIndividuals, ' ==========']);
 		memoWriteLn(['======================================================================']);
 
 		if (g_GENPARAM.ZIP_INDIVIDUAL.value) then
@@ -7513,93 +7648,14 @@ if (ageEgo = 0) then
 		tStart, tStart_interm, timeForTrees: TDateTime;  // Begin and end of measurement, and difference
 		
 		MULTITHREADING: boolean = false;
-        indBatch, nBatches: longint;
         
 {$IFDEF DEBUG}
 arr: array [0..1] of longint;
 indEgoValues: longint;
 {$ENDIF}
 
-		procedure startBatchOfThreads (firstThreadInBatch, lastThreadInBatch: longint; nEgos: longint = 0);
-        var
-            indThread: longint;
-		begin
-			for indThread := firstThreadInBatch to lastThreadInBatch do begin
-				if ( (nEgos + totalNumberOfEgosToSimulateInThisBatch + optimalNumberOfTrees - 1) <= pDemReg^.lp[nEgoPar].value) then
-					numberOfEgosToSimulateInNextThread := optimalNumberOfTrees
-				else
-					numberOfEgosToSimulateInNextThread := pDemReg^.lp[nEgoPar].value - nEgos - totalNumberOfEgosToSimulateInThisBatch;
-				totalNumberOfEgosToSimulateInThisBatch := totalNumberOfEgosToSimulateInThisBatch + numberOfEgosToSimulateInNextThread;
-				if numberOfEgosToSimulateInNextThread > 0 then begin
-					repeat until gMyThreadObjects[indThread].simulate(numberOfEgosToSimulateInNextThread);
-					Inc (numThreads);
-				end;
-			end;
-		end;
-
-		procedure waitForBatchToFinishComputing (firstThreadInBatch, lastThreadInBatch: longint);
-        var
-            indThread: longint;
-			allThreadsTerminated: boolean;
-		begin
-{$IFDEF VerboseProfiler} timeProfile_start_proc('simulateKinship - computing'); {$ENDIF}
-			allThreadsTerminated := false;
-			while not allThreadsTerminated do begin
-				allThreadsTerminated := true;
-				for indThread := firstThreadInBatch to lastThreadInBatch do
-					if not gMyThreadObjects[indThread].AFinished then allThreadsTerminated := false;
-			end;
-{$IFDEF VerboseProfiler} timeProfile_end_proc('simulateKinship - computing'); {$ENDIF}
-		end;
-		
-		procedure writeTreesToFile (firstThreadInBatch, lastThreadInBatch: longint);
-        var
-            indThread, indTree, msElapsed, timeCompute, timeSetup, timeWrite: longint;
-            nTreesPerSecond, nComputePerSecond, nWritePerSecond: double;
-		begin
-{$IFDEF VerboseProfiler} timeProfile_start_proc('simulateKinship - writing'); {$ENDIF}
-			for indThread := firstThreadInBatch to lastThreadInBatch do
-			begin
-				gMyThreadObjects[indThread].tWrite := Now();
-				UpdateKinNumber (gMyThreadObjects[indThread], nbTotRelatives);
-				nbTotRelatives := nbTotRelatives + gMyThreadObjects[indThread].myTotalKinCount;
-				for indTree := 0 to gMyThreadObjects[indThread].myNumTreesStored - 1 do
-				begin
-					pEgo := gMyThreadObjects[indThread].pMyEgos[indTree];
-					addToTableKinship(pEgo, kSetAgesEgo, gOut_totKinship[g_nRuns_aggrKinship-1], g_NumKinByAgeEgo[g_nRuns_aggrKinship-1]);
-					addToStatesKinship(pEgo);
-			
-					Inc (indEgo);
-					nIndividuals := nIndividuals + writeKinship (indEgo, pEgo, gKinToSimulate, fileFormat);
-					if (indEgo > stepEgos) then
-						individualKin_mid(indEgo, modEgo,
-											indThread + 1,
-											stepEgos,
-											timeForTrees,
-											nEgosSimulatedInTimeSlot);
-				end;
-				gMyThreadObjects[indThread].tWrite := Now() - gMyThreadObjects[indThread].tWrite;
-				with gMyThreadObjects[indThread] do
-                begin
-					msElapsed := DateTimeToMilliseconds (tCompute + tSetup + tWrite);
-                    timeCompute := DateTimeToMilliseconds (tCompute);
-                    timeSetup := DateTimeToMilliseconds (tSetup);
-                    timeWrite := DateTimeToMilliseconds (tWrite);
-				end;
-				nTreesPerSecond := 1000 * gMyThreadObjects[indThread].myNumTreesStored / msElapsed;
-                nComputePerSecond := 1000 * gMyThreadObjects[indThread].myNumTreesStored / timeCompute;
-                nWritePerSecond := 1000 * gMyThreadObjects[indThread].myNumTreesStored / timeWrite;
-				memoWriteLn (['Thread: ', indThread, ', trees/s: ', nTreesPerSecond, ', compute/s: ', nComputePerSecond, ', write/s: ', nWritePerSecond])
-			end;
-{$IFDEF VerboseProfiler} timeProfile_end_proc('simulateKinship - writing'); {$ENDIF}
-		end;
-
 	var
-		nThreadsInBatch, firstThreadInBatch, lastThreadInBatch,
-		firstThreadInNextBatch, lastThreadInNextBatch: longint;
         allThreadsTerminated, allThreadsCleanedUp: boolean;
-		timeCompute, timeSetup, timeWrite: TDateTime;
-		BATCH: boolean = false;
 		tmp: longint;
 		cleanUpThread: TSimulEgoTreeCleanUp;
 		CTFR50: double;
@@ -7631,7 +7687,6 @@ arr[1] := UtilesForm.ToFamily();
 		pDemReg := getCohort_p (cohortToSimulate);
 
 		if MULTITHREADING then begin
-			BATCH := g_GENPARAM.BATCH.value;
 			egoData.yearOfBirthEgo := cohortToSimulate;
 			// estimate the optimal number of genealogical trees for each thread object
 			// simulating 20 trees
@@ -7651,35 +7706,12 @@ arr[1] := UtilesForm.ToFamily();
 				Inc (gNumThreadsUsed);
             if (gNumThreadsUsed < gMaxThreads) then
             begin
-            	if BATCH then
-            	begin
-					// first case where we have so much threads available, we can run everything in one batch.
-					// Nonetheless, we divide into two batches in order to write the trees generated in the first batch
-					// while we simulate the rest of trees in the second batch
-					nBatches := 2;
-					gNumThreadsUsed := gMaxThreads * nBatches;
-					optimalNumberOfTrees := round (pDemReg^.lp[nEgoPar].value / (gNumThreadsUsed * nBatches));
-					while ( pDemReg^.lp[nEgoPar].value > (gNumThreadsUsed * optimalNumberOfTrees * nBatches) ) do
-						Inc (optimalNumberOfTrees);
-				end else begin
-            		nBatches := 1;
-					gNumThreadsUsed := gMaxThreads;
-					optimalNumberOfTrees := round (pDemReg^.lp[nEgoPar].value / gNumThreadsUsed);
-					while ( pDemReg^.lp[nEgoPar].value > (gNumThreadsUsed * optimalNumberOfTrees) ) do
-						Inc (optimalNumberOfTrees);
-				end;
+				gNumThreadsUsed := gMaxThreads;
+				optimalNumberOfTrees := round (pDemReg^.lp[nEgoPar].value / gNumThreadsUsed);
+				while ( pDemReg^.lp[nEgoPar].value > (gNumThreadsUsed * optimalNumberOfTrees) ) do
+					Inc (optimalNumberOfTrees);
             end else begin
-            	if BATCH then
-            	begin
-            		// second case: the number of threads is small and we will need various batches
-            		nBatches := round (pDemReg^.lp[nEgoPar].value  / (gMaxThreads * optimalNumberOfTrees));
-		 			while ( pDemReg^.lp[nEgoPar].value > (gNumThreadsUsed * optimalNumberOfTrees * nBatches) ) do
-						Inc (optimalNumberOfTrees);
-           		end else
-            	begin
-            		nBatches := 1;
-            		gNumThreadsUsed := gMaxThreads;
-            	end;
+            	gNumThreadsUsed := gMaxThreads;
             end;
             allThreadsCleanedUp := false;
             if g_GENPARAM.DEBUG.value then
@@ -7689,7 +7721,6 @@ arr[1] := UtilesForm.ToFamily();
 				gMyThreadObjects[indThread] := TSimulEgoTree.Create(@egoData, indThread, optimalNumberOfTrees);
 			end;
 			memoWriteLn([gNumThreadsUsed, ' threads used, each with: ', optimalNumberOfTrees, ' trees simulated']);
-			nThreadsInBatch := round (gNumThreadsUsed / nBatches);
    		end;
 		writeInfo := g_GENPARAM.OUTPUT_AGGREGATE_KINSHIP.value;
 		
@@ -7707,8 +7738,16 @@ arr[1] := UtilesForm.ToFamily();
 			zero_kinshipStruct ( gOut_totKinship[g_nRuns_aggrKinship-1, ageEgoInd] );
 		end;
 		zero_KinByAgeEgoStruct ( g_NumKinByAgeEgo[g_nRuns_aggrKinship-1] );
-		
-		nbTotRelatives := 0;
+
+		{Family and individual numbers must be unique inside ONE individual file, and that
+		 file spans every cohort of the run. So the two counters restart only when a new
+		 file is opened, and otherwise continue where the previous cohort left them.}
+		if (loopPhase = k_onlyOne) or (loopPhase = k_first) then begin
+			gFirstFamilyInFile := 0;
+			gFirstRelativeInFile := 0;
+			gIndividualsInFile := 0;
+		end;
+		nbTotRelatives := gFirstRelativeInFile;
 		
 {$IFDEF DEBUG}
 gNumEgoMen := 0; gNumEgoWomen := 0; gChildrenEgoMen := 0; gChildrenEgoWomen := 0;
@@ -7717,10 +7756,13 @@ gIndEgo := 0;
 
 		fileFormat := g_GENPARAM.kinIndFmt.value;
 		
+		{g_InfoParents is decided once per run, before initComputeStatesKinship sizes and
+		 zeroes the ego-parent arrays. See setInfoParents in this unit.}
+
 		if not individualKin_init (bootstrap_ind, fileFormat, fname{%H-}, ((loopPhase = k_onlyOne) or (loopPhase = k_first))) then
 			exit;
 
-		indEgo := 0;
+		indEgo := 0;		{counts the egos of THIS cohort: the loop below tests it against nEgoPar}
 		stepEgos := 0;
         //if gRunFromIDE then
 			modEgo := g_GENPARAM.MODEGO.value;
@@ -7757,42 +7799,12 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 			if MULTITHREADING then begin
 				numThreads := 0;
         		totalNumberOfEgosToSimulateInThisBatch := 0;
-        		if BATCH then
-        		begin
-					timeCompute := 0;
-					timeSetup := 0;
-					timeWrite := 0;
-					firstThreadInBatch := 0;
-					lastThreadInBatch := nThreadsInBatch-1;
-					startBatchOfThreads(firstThreadInBatch, lastThreadInBatch);
-					for indBatch := 1 to nBatches do
-					begin
-						waitForBatchToFinishComputing (firstThreadInBatch, lastThreadInBatch);
-						firstThreadInNextBatch := indBatch * nThreadsInBatch;
-						if indBatch+1 = nBatches then
-							lastThreadInNextBatch := gNumThreadsUsed-1
-						else
-							lastThreadInNextBatch := ((indBatch+1) * nThreadsInBatch)-1;
-						if indBatch < nBatches then
-							startBatchOfThreads(firstThreadInNextBatch, lastThreadInNextBatch);
-						writeTreesToFile (firstThreadInBatch, lastThreadInBatch);
-						for indThread := firstThreadInBatch to lastThreadInBatch do
-						begin
-							timeCompute := timeCompute + gMyThreadObjects[indThread].tCompute;
-							timeSetup := timeSetup + gMyThreadObjects[indThread].tSetup;
-							timeWrite := timeWrite + gMyThreadObjects[indThread].tWrite;
-							gMyThreadObjects[indThread].Destroy;
-						end;
-						firstThreadInBatch := firstThreadInNextBatch;
-						lastThreadInBatch := lastThreadInNextBatch;
-					end;
-				end else
 				begin
 					if (g_GENPARAM.TALKATIVE.value) then begin
 						stopTime (tStart_interm, '===== starting one round of multithreading initialisation after: ');
 					end;
 					for indThread := 0 to gNumThreadsUsed - 1 do begin
-						if ( (indEgo + totalNumberOfEgosToSimulateInThisBatch + optimalNumberOfTrees - 1) <= pDemReg^.lp[nEgoPar].value) then
+						if ( (indEgo + totalNumberOfEgosToSimulateInThisBatch + optimalNumberOfTrees) <= pDemReg^.lp[nEgoPar].value) then
 							numberOfEgosToSimulateInNextThread := optimalNumberOfTrees
 						else
 							numberOfEgosToSimulateInNextThread := pDemReg^.lp[nEgoPar].value - indEgo - totalNumberOfEgosToSimulateInThisBatch;
@@ -7827,7 +7839,7 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 							addToStatesKinship(pEgo);
 				
 							Inc (indEgo);
-							nIndividuals := nIndividuals + writeKinship (indEgo, pEgo, gKinToSimulate, fileFormat, indThread);
+							nIndividuals := nIndividuals + writeKinship (gFirstFamilyInFile + indEgo, pEgo, gKinToSimulate, fileFormat, indThread);
 							if (indEgo > stepEgos) then
 								individualKin_mid(indEgo, modEgo, indThread + 1, stepEgos,
 																			timeForTrees,
@@ -7847,7 +7859,7 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 				addToStatesKinship(pEgo);
 				
 				inc (indEgo);
-				nIndividuals := nIndividuals + writeKinship (indEgo, pEgo, gKinToSimulate, fileFormat);
+				nIndividuals := nIndividuals + writeKinship (gFirstFamilyInFile + indEgo, pEgo, gKinToSimulate, fileFormat);
     			if (indEgo mod modEgo = 0) then
     				individualKin_mid(indEgo, modEgo,
 										0,
@@ -7865,34 +7877,30 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 		end; {while indEgo < pDemReg^.lp[nEgoPar].value do}
 		
 		if g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_SIMKIN.value then begin
-			if BATCH then
-			begin
-				memoWriteLn(['Total compute time: ', DateTimeToMilliseconds(timeCompute), 'ms']);
-				memoWriteLn(['Total setup time: ', DateTimeToMilliseconds(timeSetup), 'ms']);
-				memoWriteLn(['Total write to file time: ', DateTimeToMilliseconds(timeWrite), 'ms']);
-			end else begin
-            	if g_GENPARAM.DEBUG.value then
-            		stopCheckRN('SimulEgoTrees.txt');
-				cleanUpThread := TSimulEgoTreeCleanUp.Create (gMyThreadObjects, gNumThreadsUsed);
-				cleanUpThread.start;
-			end;
+            if g_GENPARAM.DEBUG.value then
+            	stopCheckRN('SimulEgoTrees.txt');
+			cleanUpThread := TSimulEgoTreeCleanUp.Create (gMyThreadObjects, gNumThreadsUsed);
+			cleanUpThread.start;
 		end;
+
+		{hand the counters to the next cohort of the same file}
+		gFirstFamilyInFile := gFirstFamilyInFile + indEgo;
+		gFirstRelativeInFile := nbTotRelatives;
+		gIndividualsInFile := gIndividualsInFile + nIndividuals;
 
 		stopTime (tStart, '***=====*** simulateKinship in total lasted: ');
 {$IFDEF VerboseProfiler} timeProfile_start_proc('individualKin_end'); {$ENDIF}
-		individualKin_end (fileFormat, indEgo, nIndividuals, fname);
+		individualKin_end (fileFormat, gFirstFamilyInFile, gIndividualsInFile, fname,
+							((loopPhase = k_onlyOne) or (loopPhase = k_last)));
 		if (g_GENPARAM.TALKATIVE.value) then begin
 			tStart_interm := Now();
 		end;
 {$IFDEF VerboseProfiler} timeProfile_end_proc('individualKin_end'); {$ENDIF}
 
 		if g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_SIMKIN.value then begin
-			if BATCH then
-			else begin
-                cleanUpThread.Terminate;
-                cleanUpThread.WaitFor;
-                allThreadsCleanedUp := true;
-			end;
+            cleanUpThread.Terminate;
+            cleanUpThread.WaitFor;
+            allThreadsCleanedUp := true;
 		end;
 
 try
@@ -7925,9 +7933,6 @@ end;
 {$IFDEF VerboseProfiler} timeProfile_end_proc('simulateKinship'); {$ENDIF}
 
 		if g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_SIMKIN.value then begin
-			if BATCH then
-			begin
-			end else
 				if not allThreadsCleanedUp then begin
 					for indThread := 0 to gNumThreadsUsed - 1 do begin
 						gMyThreadObjects[indThread].CleanUp;

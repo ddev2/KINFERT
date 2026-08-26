@@ -828,6 +828,12 @@ uses
 
 	procedure TKinFmtComboBoxChange.selectFields(itemSelected: longint);
 	begin
+		{GEDCOM (item 2) has no optional-field dialog yet}
+		OutputForm.optionalFieldsBtn.Enabled := (itemSelected <> 2) and g_GENPARAM.OUTPUT_INDIVIDUAL_KINSHIP_INFO.value;
+		if itemSelected = 1 then
+			OutputForm.optionalFieldsBtn.Caption := 'Select DemoCare fields in output file'
+		else
+			OutputForm.optionalFieldsBtn.Caption := 'Select optional fields in output file';
 		//OutputForm.OutputFileFields_.Enabled := not (itemSelected = 1); // DemoCare does not want those...
 		//OutputForm.KinList_.Enabled := not (itemSelected = 1);
 		//OutputForm.AllKinBtn.Enabled := not (itemSelected = 1);
@@ -855,13 +861,30 @@ uses
 	procedure TKinFmtComboBoxChange.myGetValue;
 	var
 		myCombo: TComboBox;
+		oldFmt: Kinship_FileFormat;
 	begin
 		myCombo:= TComboBox(Component);
+		oldFmt := KinFileFmtName(myVal).value;
+	
+		// keep whatever is currently in OUTPUT_KINTYPES for the format we are leaving
+		if oldFmt = out_DemoCare then
+			g_GENPARAM.OUTPUT_KINTYPES_DEMOCARE.value := g_GENPARAM.OUTPUT_KINTYPES.value
+		else
+			g_GENPARAM.OUTPUT_KINTYPES_STD.value := g_GENPARAM.OUTPUT_KINTYPES.value;
+	
 		case myCombo.ItemIndex of	//what entry (which item) has currently been chosen
 			0: KinFileFmtName(myVal).value := out_EgoGenealogy;
 			1: KinFileFmtName(myVal).value := out_DemoCare;
 			2: KinFileFmtName(myVal).value := out_GEDCOM;
 		end;
+	
+		// load the set that belongs to the format just chosen
+		if KinFileFmtName(myVal).value = out_DemoCare then
+			g_GENPARAM.OUTPUT_KINTYPES.value := g_GENPARAM.OUTPUT_KINTYPES_DEMOCARE.value
+		else
+			g_GENPARAM.OUTPUT_KINTYPES.value := g_GENPARAM.OUTPUT_KINTYPES_STD.value;
+	
+		checkKinsetChange (g_GENPARAM.OUTPUT_KINTYPES);
 		selectFields (myCombo.ItemIndex);
 	end;
 
