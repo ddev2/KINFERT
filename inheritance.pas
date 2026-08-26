@@ -75,27 +75,61 @@ implementation
 		end;
 	end;
 	
+// --- CLAUDE 2026-08-26 [4.9] begin -------------------------------------------------
+// The warning had no exit, so it fired once per MISSING kin type, not once per run.
+// gMinKinSetforEgoInheritance has 25 members; with the DemoCare set of four types 21 of
+// them are missing, so 21 messages, and checkInheritanceStatus is called from run_all,
+// that is once per cohort and once per replicate. It now reports once, listing what is
+// missing. gMinKinSetforEgoInheritance is deliberately NOT reduced: it states which kin
+// an inheritance calculation needs in order to be correct, and Spanish succession reaches
+// collaterals of the fourth degree, so a smaller set would produce wrong shares silently
+// instead of warning that it cannot produce right ones.
+// Two questions are left open for the author: whether this should latch gDebugError at
+// all, since it is a configuration mismatch and not a program fault; and whether the
+// inheritance computation should simply be skipped when the kin set cannot support it.
+// was:
+//	procedure checkInheritanceStatus();
+//	var
+//		aKin: KinTypes;
+//	begin
+//		if g_GENPARAM.INHERITANCE.value then
+//			// check whether we are going to simulate enough kin types in order to study inheritance
+//			for aKin in gMinKinSetforEgoInheritance do
+//				if not (aKin in gKinToSimulate) then begin
+//				// 	not enough kin: we deactivate the options to study inheritance
+//	{				if (fn_typeHeirs in g_GENPARAM.OUTPUT_FIELDS.value) or
+//						(fn_heirs in g_GENPARAM.OUTPUT_FIELDS.value) then begin
+//						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_typeHeirs);
+//						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_heirs);
+//						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_inheritances);
+//						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_shares);
+//						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_isHeir);
+//					end;
+//	}
+//					writeAndWait('Warning: ' + str_kinship[akin] + ' not in the set of kin to simulate, when needed for studying inheritance');
+//				end;
+//	end;
 	procedure checkInheritanceStatus();
 	var
 		aKin: KinTypes;
+		missingKin: string = '';
+		nMissing: longint = 0;
 	begin
-		if g_GENPARAM.INHERITANCE.value then
+		if g_GENPARAM.INHERITANCE.value then begin
 			// check whether we are going to simulate enough kin types in order to study inheritance
 			for aKin in gMinKinSetforEgoInheritance do
 				if not (aKin in gKinToSimulate) then begin
-				// 	not enough kin: we deactivate the options to study inheritance
-	{				if (fn_typeHeirs in g_GENPARAM.OUTPUT_FIELDS.value) or
-						(fn_heirs in g_GENPARAM.OUTPUT_FIELDS.value) then begin
-						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_typeHeirs);
-						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_heirs);
-						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_inheritances);
-						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_shares);
-						Exclude (g_GENPARAM.OUTPUT_FIELDS.value, fn_isHeir);
-					end;
-	}
-					writeAndWait('Warning: ' + str_kinship[akin] + ' not in the set of kin to simulate, when needed for studying inheritance');
+					Inc (nMissing);
+					if (missingKin = '') then
+						missingKin := str_kinship[aKin]
+					else
+						missingKin := missingKin + ', ' + str_kinship[aKin];
 				end;
+			if (nMissing > 0) then
+				writeAndWait ('Warning: ' + intToStr (nMissing) + ' kin types needed for studying inheritance are not in the set of kin to simulate: ' + missingKin);
+		end;
 	end;
+// --- CLAUDE 2026-08-26 [4.9] end ---------------------------------------------------
 	
 	function possible_heirFound (pDeadRelative, pPossibleHeir: pRelativeType): boolean;
 	// pPossibleHeir can be an heir if was alive at pDeadRelative's death
@@ -916,7 +950,17 @@ implementation
 		// if we come here, the niece or nephew has no living descendant or ascendant, nor a living partner
 		// all aunts and uncles (including ego) can therefore be heirs
 			numOfPossibleHeirs := 0;
-			if heirFound_add (pDeadRelative, pDeadRelative^.father, 1) or heirFound_add (pDeadRelative, pDeadRelative^.father, 1) then begin
+// --- CLAUDE 2026-08-26 [N23] begin --------------------------------------------------
+// was:
+//			if heirFound_add (pDeadRelative, pDeadRelative^.father, 1) or heirFound_add (pDeadRelative, pDeadRelative^.father, 1) then begin
+// The father was tested twice and the mother never, although the comment on the next
+// line says "either the father or the mother". The second call was also a guaranteed
+// no-op, because heirFound_add exits early on an heir already found. A dead niece or
+// nephew whose mother was alive therefore had the estate distributed to the grandparents
+// and the aunts and uncles. Short-circuit evaluation is kept, so the mother is tested
+// only when the father is not an heir, which is the intended reading.
+			if heirFound_add (pDeadRelative, pDeadRelative^.father, 1) or heirFound_add (pDeadRelative, pDeadRelative^.mother, 1) then begin
+// --- CLAUDE 2026-08-26 [N23] end ----------------------------------------------------
 				// bad as either the father or the mother are alive...
 				if gRunFromIDE then
 {$IFNDEF ARM}
@@ -1563,7 +1607,16 @@ type
 						arrHeirs[indHeir2-1].nParentsInLineage := 2;
 					end;
 			// Now we can allocate the share to each relative
-			for indHeir := 1 to (nHeirs-1) do
+// --- CLAUDE 2026-08-26 [N21] begin --------------------------------------------------
+// was:
+//			for indHeir := 1 to (nHeirs-1) do
+// The loop is already zero-based through arrHeirs[indHeir-1], so the bound nHeirs-1
+// dropped the last ascendant heir while the shares that were paid had been computed
+// assuming it would receive one. Four surviving grandparents therefore shared 0.75 of
+// the estate and three shared 0.5. The pairing loop just above keeps nHeirs-1, which is
+// correct there because it pairs indHeir with indHeir2 running from indHeir+1 to nHeirs.
+			for indHeir := 1 to nHeirs do
+// --- CLAUDE 2026-08-26 [N21] end ----------------------------------------------------
 				addHeir_2 (
 							pDecedent,
 							arrHeirs[indHeir-1].heir,

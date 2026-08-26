@@ -265,6 +265,18 @@ uses Memory;
 	var
 		UInfo: pUnionInfoType = nil;
 	begin
+// --- CLAUDE 2026-08-26 [N27] begin --------------------------------------------------
+// result was assigned only inside {$IFDEF addOldUnionType}, which is not defined anywhere
+// in the tree, so on the guard path below the function returned whatever happened to be
+// in the return register. writeAndWaitConst reports but does not halt, so the caller then
+// dereferenced that value. A defined nil is returned instead, which the callers already
+// handle because getUnionInfoByIndex can also yield nil.
+// was: (nothing here, result was left undefined)
+		result := nil;
+// NOTE, not changed: the guard below uses the literal 20 while kMaxNbUnion is 30, so
+// unions 21 to 30 are rejected with an error message. That changes behaviour rather than
+// only defining it, so it is left for the author to decide.
+// --- CLAUDE 2026-08-26 [N27] end ----------------------------------------------------
 {$IFDEF addOldUnionType}
 		result := pRelative^.partners [indUnion];
 {$ENDIF}

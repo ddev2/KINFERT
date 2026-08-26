@@ -168,6 +168,15 @@ temp: double;
 	
 	function eduLevel (s: string): EduLevels;
 	begin
+// --- CLAUDE 2026-08-26 [N16] begin --------------------------------------------------
+// EduLevels is an integer subrange, so nothing initialised the result and the else arm
+// below assigned nothing: writeAndWaitConst reports but does not halt. Both callers use
+// the value immediately as an index into a table of DoubleCumulName OBJECTS, so a
+// garbage index yielded a garbage class reference. The obvious trigger is the empty
+// string, which an unassigned relative still holds while giveEdStatus walks the list.
+// was: (nothing here, the result was left undefined on the else path)
+		eduLevel := eduLow;	{ defined default: any status that is not B, M or A }
+// --- CLAUDE 2026-08-26 [N16] end ----------------------------------------------------
 		if (s = 'B') then
 			eduLevel := eduLow
 		else if (s = 'M') then

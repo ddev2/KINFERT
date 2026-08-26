@@ -220,6 +220,10 @@ end
 	procedure TPersonMemoryBlock.truncateAtAge (ageUnionTrunc: double);
 	var
 		indUnion, indUnion2: longint;
+// --- CLAUDE 2026-08-26 [N33] begin --------------------------------------------------
+// indUnionCurrent replaces the read of the for-loop counter below.
+		indUnionCurrent: longint;
+// --- CLAUDE 2026-08-26 [N33] end ----------------------------------------------------
 		aSex: Sex;
 		pChild: pInfoChildType;
 		truncateIt: boolean;
@@ -232,11 +236,32 @@ end
 		truncateIt := false;
 		if unionStates.nbUnions = 0 then
 			exit;
+// --- CLAUDE 2026-08-26 [N33] begin --------------------------------------------------
+// was:
+//		for indUnion := 1 to unionStates.nbUnions do
+//			if unionStates.Unions [indUnion - 1].ages[le_union, woman] > ageUnionTrunc then begin
+//				truncateIt := true;
+//				break;
+//			end;
+// A for loop that completes without break leaves its counter undefined in FPC, and
+// indUnion was then read four lines below. The fall-through case is common: it is every
+// woman all of whose unions began at or before ageUnionTrunc, and truncateAtAge is called
+// whenever ageUnionTrunc > 0, not only when something has to be truncated. One of the two
+// plausible leftover values writes four fields past the end of the Unions array and leaves
+// nbUnions one too high.
+// On the fall-through path the union in progress at ageUnionTrunc is the last one, so
+// indUnion is nbUnions. That keeps the convention the truncating branch already follows:
+// after this procedure the in-progress union sits at zero-based index nbUnions, holding
+// the woman's side only, and nbUnions counts the completed unions before it.
+		indUnionCurrent := unionStates.nbUnions;
 		for indUnion := 1 to unionStates.nbUnions do
 			if unionStates.Unions [indUnion - 1].ages[le_union, woman] > ageUnionTrunc then begin
 				truncateIt := true;
+				indUnionCurrent := indUnion;
 				break;
 			end;
+		indUnion := indUnionCurrent;
+// --- CLAUDE 2026-08-26 [N33] end ----------------------------------------------------
 
 		if truncateIt then begin
 			// the last union is to be truncated so we decrement indUnion to get to the current union
@@ -245,10 +270,23 @@ end
 		
 		// Delete info for the union that starts at age 'ageUnionTrunc'
 		// retaining only useful info for the woman
-		unionStates.Unions [indUnion - 1].ages[le_union, man] := kNotDefined;
-		unionStates.Unions [indUnion - 1].ages[le_death, man] := kNotDefined;
-		unionStates.Unions [indUnion - 1].ages[le_endUnion, man] := kNotDefined;
-		unionStates.Unions [indUnion - 1].ages[le_endUnion, woman] := kNotDefined;
+// --- CLAUDE 2026-08-26 [N33b] begin --------------------------------------------------
+// was:
+//		unionStates.Unions [indUnion - 1].ages[le_union, man] := kNotDefined;
+//		unionStates.Unions [indUnion - 1].ages[le_death, man] := kNotDefined;
+//		unionStates.Unions [indUnion - 1].ages[le_endUnion, man] := kNotDefined;
+//		unionStates.Unions [indUnion - 1].ages[le_endUnion, woman] := kNotDefined;
+// indUnion is 0 when the FIRST union already starts after ageUnionTrunc, that is when no
+// union at all was in progress at that age. The four lines below then wrote to
+// Unions[-1], before the start of the array. With no union to keep, there is nothing to
+// clear here and nbUnions becomes 0 through the assignment further down.
+		if (indUnion > 0) then begin
+			unionStates.Unions [indUnion - 1].ages[le_union, man] := kNotDefined;
+			unionStates.Unions [indUnion - 1].ages[le_death, man] := kNotDefined;
+			unionStates.Unions [indUnion - 1].ages[le_endUnion, man] := kNotDefined;
+			unionStates.Unions [indUnion - 1].ages[le_endUnion, woman] := kNotDefined;
+		end;
+// --- CLAUDE 2026-08-26 [N33b] end ----------------------------------------------------
  		// Delete info for unions that start after 'ageUnionTrunc'
 		if truncateIt then begin
 			for indUnion2 := indUnion + 1 to unionStates.nbUnions do

@@ -333,8 +333,24 @@ const
 		if (e0 < lifeTable_e0_min) or (e0 > lifeTable_e0_max) then
 			writeAndWait('e0 too low or too high');
 		
-		for ind_max := 2 to numLifeTable do
-			if lifeTable_e0 [ind_max] >= e0 then break;
+// --- CLAUDE 2026-08-26 [N15] begin --------------------------------------------------
+// was:
+//		for ind_max := 2 to numLifeTable do
+//			if lifeTable_e0 [ind_max] >= e0 then break;
+// A for loop that finishes without break leaves its counter undefined in FPC, so when e0
+// exceeded the last tabulated value ind_max was read undefined two lines below. lifeTable
+// is passed BY VALUE, so the out-of-range read landed in adjacent stack memory: silent
+// corruption rather than a crash. ind_max now always holds a valid table row.
+// This does not change the result for any e0 inside the tabulated range: the loop below
+// stops at the same row the old one broke at. An e0 outside the range still extrapolates,
+// which is item N14 and is left for a separate decision.
+		ind_max := numLifeTable;
+		for i := 2 to numLifeTable do
+			if lifeTable_e0 [i] >= e0 then begin
+				ind_max := i;
+				break;
+			end;
+// --- CLAUDE 2026-08-26 [N15] end ----------------------------------------------------
 		ind_min := ind_max - 1;
 		e0_min := lifeTable_e0 [ind_min];
 		e0_max := lifeTable_e0 [ind_max];

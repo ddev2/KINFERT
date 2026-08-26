@@ -27,6 +27,12 @@ uses
 		freqDiv: double;
 		indAgeUnion, indCelibacy, indStdCel, indFertControl, indFertSeparation, indFertContrUseAfterUnion, indFertAmeno: longint;
 		mean, std, stdv: double; {Union model}
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// std_initial keeps the standard deviation of the age at union as it stood before
+// the loops. pCurrUnionInfo is not copied by DemographicRegimeSettings_copyState,
+// so unlike the dp[] parameters it cannot be recovered from pDemReg_mem.
+		std_initial: double;
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 		meanTimeContr: double;
 		ind, idWomanTemp: longint;
 		arrayChildren: arrayOfInfoChild;
@@ -46,20 +52,51 @@ uses
 		// we use pDemReg_mem to restore the original values
 		pDemReg_mem := DemographicRegimeSettings_create();
 		DemographicRegimeSettings_copyState (pDemReg, pDemReg_mem);
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// Every stepped value below must be computed from the parameters as they stood
+// before the loops, that is from pDemReg_mem, never from pDemReg. The innermost
+// block writes the stepped values into pDemReg^.dp[], so a base read from pDemReg
+// on the next pass returned the previous step's value instead of the original one.
+// For the two multiplicative steps (separation, contraception after union) step 1
+// writes base * 0 = 0, so every later step read 0 and the sweep collapsed.
+		std_initial := pDemReg^.pCurrUnionInfo^.unionParam [woman, stdUnion];
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 		
 		checkStepsAndStablePopulation;  // Steps only make sense when we are in a stable population
 										// (when we have only one demographic regime)		
 		{============== LOOPS ============}
 		for indAgeUnion := 1 to g_GENPARAM.RUNTIME[nStepsUnion_mean].value do
 		begin
-			mean := (pDemReg^.dp[meanAgeUnionWomenLow].value);
-			std := pDemReg^.pCurrUnionInfo^.unionParam [woman, stdUnion];
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// The base of the sweep must come from the untouched copy.
+// was:
+//			mean := (pDemReg^.dp[meanAgeUnionWomenLow].value);
+			mean := (pDemReg_mem^.dp[meanAgeUnionWomenLow].value);
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// dp[stdnupt] is overwritten in the innermost block and initOne then recomputes
+// unionParam[woman, stdUnion] from it, so this read drifted with the previous step.
+// was:
+//			std := pDemReg^.pCurrUnionInfo^.unionParam [woman, stdUnion];
+			std := std_initial;
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 			if g_GENPARAM.RUNTIME[nStepsUnion_mean].value > 1 then
 			begin
 				varyingUnionOrFertility := TRUE;
-				mean := (pDemReg^.dp[meanAgeUnionWomenLow].value) +
-					( RP.indAgeUnion - 1) * (pDemReg^.dp[meanAgeUnionWomenHigh].value-pDemReg^.dp[meanAgeUnionWomenLow].value) /
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// The base of the sweep must come from the untouched copy (continued below).
+// was:
+//				mean := (pDemReg^.dp[meanAgeUnionWomenLow].value) +
+				mean := (pDemReg_mem^.dp[meanAgeUnionWomenLow].value) +
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// RP.indAgeUnion is assigned nine lines below, so it still held the previous step.
+// was:
+//					( RP.indAgeUnion - 1) * (pDemReg^.dp[meanAgeUnionWomenHigh].value-pDemReg^.dp[meanAgeUnionWomenLow].value) /
+//					( g_GENPARAM.RUNTIME[nStepsUnion_mean].value - 1 );
+					( indAgeUnion - 1) * (pDemReg_mem^.dp[meanAgeUnionWomenHigh].value-pDemReg_mem^.dp[meanAgeUnionWomenLow].value) /
 					( g_GENPARAM.RUNTIME[nStepsUnion_mean].value - 1 );
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 
 				if g_GENPARAM.fixedParameters [stdUnionDanielOrCampbellWood].state.value then
 					std := std_Logistic_Dani_2004 (mean, 6.708204)
@@ -73,11 +110,21 @@ uses
 			for indCelibacy := 1 to g_GENPARAM.RUNTIME[nStepsUnion_prop].value do
 			begin
 
-				freqFin_Cel := pDemReg^.dp[propFinalCelibacyLow].value;
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// The base of the sweep must come from the untouched copy.
+// was:
+//				freqFin_Cel := pDemReg^.dp[propFinalCelibacyLow].value;
+				freqFin_Cel := pDemReg_mem^.dp[propFinalCelibacyLow].value;
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 				if g_GENPARAM.RUNTIME[nStepsUnion_prop].value > 1 then
 				begin
 					varyingUnionOrFertility := TRUE;
-					freqFin_Cel := pDemReg^.dp[propFinalCelibacyHigh].value - (pDemReg^.dp[propFinalCelibacyHigh].value - pDemReg^.dp[propFinalCelibacyLow].value) * (RP.indCelibacy - 1) / (g_GENPARAM.RUNTIME[nStepsUnion_prop].value - 1);
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// RP.indCelibacy is assigned three lines below, so it still held the previous step.
+// was:
+//					freqFin_Cel := pDemReg^.dp[propFinalCelibacyHigh].value - (pDemReg^.dp[propFinalCelibacyHigh].value - pDemReg^.dp[propFinalCelibacyLow].value) * (RP.indCelibacy - 1) / (g_GENPARAM.RUNTIME[nStepsUnion_prop].value - 1);
+					freqFin_Cel := pDemReg_mem^.dp[propFinalCelibacyHigh].value - (pDemReg_mem^.dp[propFinalCelibacyHigh].value - pDemReg_mem^.dp[propFinalCelibacyLow].value) * (indCelibacy - 1) / (g_GENPARAM.RUNTIME[nStepsUnion_prop].value - 1);
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 				end;
 
 				RP.indCelibacy := indCelibacy;
@@ -89,8 +136,14 @@ uses
 					stdv := std;
 					if g_GENPARAM.RUNTIME[nStepsUnion_Dev].value > 1 then begin
 						varyingUnionOrFertility := TRUE;
-						stdv := std * (0.5 + (RP.indStdCel - 1) / (g_GENPARAM.RUNTIME[nStepsUnion_Dev].value - 1))
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// RP.indStdCel is assigned three lines below, so it still held the previous step.
+// was:
+//						stdv := std * (0.5 + (RP.indStdCel - 1) / (g_GENPARAM.RUNTIME[nStepsUnion_Dev].value - 1))
+//					end;
+						stdv := std * (0.5 + (indStdCel - 1) / (g_GENPARAM.RUNTIME[nStepsUnion_Dev].value - 1))
 					end;
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 		
 					RP.indStdCel := indStdCel;
 					RP.valStdCel := stdv;
@@ -107,11 +160,24 @@ uses
 						
 						for indFertSeparation := 1 to g_GENPARAM.RUNTIME[nStepsSeparation].value do
 						begin
-							freqDiv := pDemReg^.dp[freqSeparation].value;
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// The base of the sweep must come from the untouched copy.
+// was:
+//							freqDiv := pDemReg^.dp[freqSeparation].value;
+							freqDiv := pDemReg_mem^.dp[freqSeparation].value;
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 							if (g_GENPARAM.RUNTIME[nStepsSeparation].value > 1) then begin
 								varyingUnionOrFertility := TRUE;
-								freqDiv := pDemReg^.dp[freqSeparation].value * (RP.indFertSeparation - 1.0) /
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// RP.indFertSeparation is assigned three lines below, and the base was read from
+// pDemReg, which step 1 had already overwritten with base * 0 = 0. The separation
+// sweep therefore collapsed to zero after the first step and never recovered.
+// was:
+//								freqDiv := pDemReg^.dp[freqSeparation].value * (RP.indFertSeparation - 1.0) /
+//											(g_GENPARAM.RUNTIME[nStepsSeparation].value - 1.0);
+								freqDiv := pDemReg_mem^.dp[freqSeparation].value * (indFertSeparation - 1.0) /
 											(g_GENPARAM.RUNTIME[nStepsSeparation].value - 1.0);
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 							end;
 
 							RP.indFertSeparation := indFertSeparation;
@@ -120,13 +186,27 @@ uses
 							for indFertContrUseAfterUnion := 1 to g_GENPARAM.RUNTIME[nStepsContrUseAfterUnion].value do
 							begin
 							
-								meanTimeContr := pDemReg^.dp[meanTimeContraceptionAfterUnionHigh].value;
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// The base of the sweep must come from the untouched copy.
+// was:
+//								meanTimeContr := pDemReg^.dp[meanTimeContraceptionAfterUnionHigh].value;
+								meanTimeContr := pDemReg_mem^.dp[meanTimeContraceptionAfterUnionHigh].value;
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 								if ( g_GENPARAM.RUNTIME[nStepsContrUseAfterUnion].value > 1 ) then
 								begin
 									varyingUnionOrFertility := TRUE;
-									meanTimeContr := pDemReg^.dp[meanTimeContraceptionAfterUnionHigh].value *
-														(RP.indFertContrUseAfterUnion - 1.0) /
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// RP.indFertContrUseAfterUnion is assigned three lines below, and the base was read
+// from pDemReg, which step 1 had already overwritten with base * 0 = 0. This sweep
+// collapsed to zero in the same way as the separation sweep.
+// was:
+//									meanTimeContr := pDemReg^.dp[meanTimeContraceptionAfterUnionHigh].value *
+//														(RP.indFertContrUseAfterUnion - 1.0) /
+//														(g_GENPARAM.RUNTIME[nStepsContrUseAfterUnion].value - 1.0);
+									meanTimeContr := pDemReg_mem^.dp[meanTimeContraceptionAfterUnionHigh].value *
+														(indFertContrUseAfterUnion - 1.0) /
 														(g_GENPARAM.RUNTIME[nStepsContrUseAfterUnion].value - 1.0);
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 								end;
 
 								RP.indFertContrUseAfterUnion := indFertContrUseAfterUnion;
@@ -136,11 +216,23 @@ uses
 								begin
 
 									RP.indFertAmeno := indFertAmeno;
-									RP.valFertAmeno := pDemReg^.dp[amenorrhea_alpha].value;									
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// The base of the sweep must come from the untouched copy.
+// was:
+//									RP.valFertAmeno := pDemReg^.dp[amenorrhea_alpha].value;									
+									RP.valFertAmeno := pDemReg_mem^.dp[amenorrhea_alpha].value;									
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 									if ( g_GENPARAM.RUNTIME[nStepsAmeno].value > 1 ) then
 									begin
 										varyingUnionOrFertility := TRUE;
-										RP.valFertAmeno := pDemReg^.dp[amenorrhea_alpha].value + 2.4 * (RP.indFertAmeno-1) / (g_GENPARAM.RUNTIME[nStepsAmeno].value-1);
+// --- CLAUDE 2026-08-26 [N1] begin ---------------------------------------------------
+// The index was already assigned before this read, so only the base was wrong: it came
+// from pDemReg, which the previous step had already incremented, so the amenorrhea
+// sweep accumulated its increments instead of stepping from the original value.
+// was:
+//										RP.valFertAmeno := pDemReg^.dp[amenorrhea_alpha].value + 2.4 * (RP.indFertAmeno-1) / (g_GENPARAM.RUNTIME[nStepsAmeno].value-1);
+										RP.valFertAmeno := pDemReg_mem^.dp[amenorrhea_alpha].value + 2.4 * (RP.indFertAmeno-1) / (g_GENPARAM.RUNTIME[nStepsAmeno].value-1);
+// --- CLAUDE 2026-08-26 [N1] end -----------------------------------------------------
 									end;
 									
 									writeKeys;
