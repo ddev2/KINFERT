@@ -1499,10 +1499,27 @@ uses
 
 				case posValues [n].pv of
 					pfk_double: begin
+// --- CLAUDE 2026-08-26 [N12] begin --------------------------------------------------
+// was:
+//						pDemReg^.dp[paramDemReg_double (posValues [n].posTable)].value := resd;
 						pDemReg^.dp[paramDemReg_double (posValues [n].posTable)].value := resd;
+						pDemReg^.dp[paramDemReg_double (posValues [n].posTable)].readInConfigFile := true;
+// --- CLAUDE 2026-08-26 [N12] end ----------------------------------------------------
 					end;
 					pfk_longint: begin
+// --- CLAUDE 2026-08-26 [N12] begin --------------------------------------------------
+// was:
+//						pDemReg^.lp[paramDemReg_longint (posValues [n].posTable)].value := trunc (resd);
+// postProcessCohort tests lp[nWomenPar].readInConfigFile to decide whether the cohort
+// file supplied its own NWOMEN, but readInConfigFile is set only inside the readValue
+// methods of Declarations.pas, and processValuesLine assigns straight to .value. An
+// explicit NWOMEN column was therefore always discarded and replaced by NEGO for every
+// cohort read from the file, while cohort 0 kept its own value. The same is done for the
+// double branch for consistency; readInConfigFile is read in exactly one place, so this
+// changes nothing else.
 						pDemReg^.lp[paramDemReg_longint (posValues [n].posTable)].value := trunc (resd);
+						pDemReg^.lp[paramDemReg_longint (posValues [n].posTable)].readInConfigFile := true;
+// --- CLAUDE 2026-08-26 [N12] end ----------------------------------------------------
 					end;
 					ppr: begin
 						pDemReg^.aPrioriPPR.value [posValues [n].posTable] := resd;
@@ -1624,7 +1641,15 @@ uses
 		readLn (f.fileHandle, aLine); // step over first line which contains variable names
 		while not eof (f.fileHandle) do begin
 			readLn (f.fileHandle, aLine);
-			if not processValuesLine (aLine) then goto onExit;
+// --- CLAUDE 2026-08-26 [A1] begin --------------------------------------------------
+// was:
+//			if not processValuesLine (aLine) then goto onExit;
+// A blank line made processValuesLine fail on the empty year field and the whole cohort
+// file was rejected, although the first pass over the same file, twenty lines above,
+// explicitly tolerates blank lines. The two passes now agree.
+			if (aLine <> '') then
+				if not processValuesLine (aLine) then goto onExit;
+// --- CLAUDE 2026-08-26 [A1] end ----------------------------------------------------
 		end;
 
 		with g_pCOHORT_COLLECTION^ do

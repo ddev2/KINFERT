@@ -887,7 +887,26 @@ implementation
 		writeLongintValue (outFile, g_GENPARAM.MODEGO);
 		writeLongintValue (outFile, g_GENPARAM.OPTIMAL_TREES);
 		
-		writeStringValue (outFile, g_FileName);
+// --- CLAUDE 2026-08-26 [3.e] begin --------------------------------------------------
+// was:
+//		writeStringValue (outFile, g_FileName);
+// g_FileName is the root of every output name of the run: X_CONFIG.TXT, X_ALLCOHORTS.TXT,
+// the genealogy files, X_KEYS.txt, X_INDIVIDUAL_FERTILITY_INFO.CSV, X_UNION_TABLE.TXT,
+// X_statusTable.txt, X_target.txt and DUMP_COHORTS_X.txt. In practice it is the study
+// name, and it is what separates one run's outputs from another's in the same folder.
+// Its changed flag is set only from the Config dialog, and it is created at Init.pas with
+// no default in its parameter list, so under the default WRITE_ONLY_CHANGES a run that
+// never opened that dialog wrote a configuration file with NO FILENAME line at all.
+// Re-running that file then produced KINFERT_* outputs under a different name, and the
+// connection between the two runs was lost. A configuration file without a study name is
+// not reproducible, so this one is written whatever WRITE_ONLY_CHANGES says.
+		{ writeStringValue is bypassed here on purpose: it skips a value whose changed flag
+		  is false, and StringName.setChanged only recomputes that flag from the default,
+		  so it could not force the line out. Forcing changed := true would instead make the
+		  program believe there are unsaved changes. }
+		writeComment (outFile, g_FileName.comment);
+		bWriteln (outFile, [g_FileName.name, '=', g_FileName.value]);
+// --- CLAUDE 2026-08-26 [3.e] end ----------------------------------------------------
 		writeStringValue (outFile, g_GENPARAM.OUTPUT_DIRECTORY);
 		writeStringValue (outFile, g_FileName_DemographicRegime);
 		writeStringValue (outFile, g_FileName_DemographicRegime_save);

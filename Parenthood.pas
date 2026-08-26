@@ -482,6 +482,10 @@ end
 		arrayOfData: array of InfoData;
 		indPar, indCohort, ind: longint;
 		nUnions: longint = 0;
+// --- CLAUDE 2026-08-26 [A2] begin --------------------------------------------------
+// Ratios for a cohort in which no woman was simulated (see below).
+		ratioChildren, ratioChildless: double;
+// --- CLAUDE 2026-08-26 [A2] end ----------------------------------------------------
 		human: TPersonMemoryBlock;
         res: longint;
 	begin
@@ -519,11 +523,29 @@ end
 		bWriteLn(f, []);
 		for indCohort := minYear to maxYear do begin
 			with arrayOfData[indCohort-minYear] do begin
+// --- CLAUDE 2026-08-26 [A2] begin --------------------------------------------------
+// nParents is zero for any cohort in which no woman was simulated, which is ordinary at
+// the ends of a cohort range, and both divisions below then raised a division by zero.
+// Math.IfThen is not usable here because it evaluates both of its value arguments.
+// was: (nothing here, the divisions below were unguarded)
+				if (nParents > 0) then begin
+					ratioChildren := nChildren / nParents;
+					ratioChildless := nChildless / nParents;
+				end else begin
+					ratioChildren := 0.0;
+					ratioChildless := 0.0;
+				end;
+// --- CLAUDE 2026-08-26 [A2] end ----------------------------------------------------
 				bWrite (f, [
 						indCohort, comma,
 						nParents, comma,
-						nChildren / nParents, comma,
-						nChildless / nParents, comma]);
+// --- CLAUDE 2026-08-26 [A2] begin --------------------------------------------------
+// was:
+//						nChildren / nParents, comma,
+//						nChildless / nParents, comma]);
+						ratioChildren, comma,
+						ratioChildless, comma]);
+// --- CLAUDE 2026-08-26 [A2] end ----------------------------------------------------
 				for ind := low (arr_nUnions) to high (arr_nUnions) do
 					bWrite (f,[arr_nUnions[ind], comma]);
 			end;

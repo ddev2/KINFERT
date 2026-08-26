@@ -4585,7 +4585,15 @@ Inc (gAgeChildbearingBACKFOR [result]);
 				//writeDebug ([IntToStr (ageChildbearing) + ' ' + IntToStr (birthOrderSelected)]);
 				endClause := ( ageChildren [ageChildbearing, birthOrderSelected] > 0 );
 			until (fertFunctionRan and endClause) or (nTries > kMaxTries);
-			gBACKFOR_nTries := gBACKFOR_nTries + nTries;
+// --- CLAUDE 2026-08-26 [N40] begin --------------------------------------------------
+// was:
+//			gBACKFOR_nTries := gBACKFOR_nTries + nTries;
+// gBACKFOR_nTries is written from the CAMSIM-1993 and real-BACKFOR mother searches,
+// which run on every worker thread. A read-modify-write on a shared longint loses
+// increments under concurrency, the same class of defect as the three counters fixed
+// on 24 August. InterlockedExchangeAdd is the atomic form of "add and keep going".
+			InterlockedExchangeAdd (gBACKFOR_nTries, nTries);
+// --- CLAUDE 2026-08-26 [N40] end ----------------------------------------------------
 			if nTries > kMaxTries then begin
 				writeAndWait ('ERROR ==> No women found at: ' + IntToStr (gBACKFOR_women + 1) + ' ageChildbearing: ' + FloatToStr (ageChildbearing) + ', ageUnion: ' + FloatToStr (ageUnionWoman));
 				if ageChildbearing > 30 then begin
@@ -4598,7 +4606,12 @@ Inc (gAgeChildbearingBACKFOR [result]);
 				motherFound := true;
 			nTries := 0;
 		end;
-		Inc (gBACKFOR_women);
+// --- CLAUDE 2026-08-26 [N40] begin --------------------------------------------------
+// was:
+//		Inc (gBACKFOR_women);
+// Same as above: incremented from the worker threads.
+		InterlockedIncrement (gBACKFOR_women);
+// --- CLAUDE 2026-08-26 [N40] end ----------------------------------------------------
 		// update age at childbearing of mother for refChild
 		pCh := pChild;
 		gotoToFirstLiveBornChild(pCh);
@@ -4685,7 +4698,15 @@ Inc (gAgeChildbearingBACKFOR [result]);
 								gNilBlock
 							);
 			until (ageChildren [ageChildbearing, 0] > 0) or (nTries > kMaxTries);
-			gBACKFOR_nTries := gBACKFOR_nTries + nTries;
+// --- CLAUDE 2026-08-26 [N40] begin --------------------------------------------------
+// was:
+//			gBACKFOR_nTries := gBACKFOR_nTries + nTries;
+// gBACKFOR_nTries is written from the CAMSIM-1993 and real-BACKFOR mother searches,
+// which run on every worker thread. A read-modify-write on a shared longint loses
+// increments under concurrency, the same class of defect as the three counters fixed
+// on 24 August. InterlockedExchangeAdd is the atomic form of "add and keep going".
+			InterlockedExchangeAdd (gBACKFOR_nTries, nTries);
+// --- CLAUDE 2026-08-26 [N40] end ----------------------------------------------------
 			if nTries > kMaxTries then begin
 				nTries := 0;
 				writeAndWait ('ERROR ==> No women found at: ' + IntToStr (gBACKFOR_women + 1) + ' ageChildbearing: ' + FloatToStr (ageChildbearing) + ', ageUnion: ' + FloatToStr (ageUnionWoman));
@@ -4700,7 +4721,12 @@ Inc (gAgeChildbearingBACKFOR [result]);
 Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 {$ENDIF}
 		
-		Inc (gBACKFOR_women);
+// --- CLAUDE 2026-08-26 [N40] begin --------------------------------------------------
+// was:
+//		Inc (gBACKFOR_women);
+// Same as above: incremented from the worker threads.
+		InterlockedIncrement (gBACKFOR_women);
+// --- CLAUDE 2026-08-26 [N40] end ----------------------------------------------------
 
 		// looking for the refChild in the list of children to update her/his info
 		selectedChild := trunc ( randomGenerator.alea (0, ageChildren [ageChildbearing, 0] - 0.00000000001) );
@@ -7938,10 +7964,21 @@ end;
 						gMyThreadObjects[indThread].CleanUp;
 						gMyThreadObjects[indThread].Terminate;
 					end;
-					allThreadsTerminated := false;
-					while not allThreadsTerminated do
-						for indThread := 0 to gNumThreadsUsed - 1 do
-							allThreadsTerminated := allThreadsTerminated and gMyThreadObjects[indThread].Terminated;
+// --- CLAUDE 2026-08-26 [2.6] begin --------------------------------------------------
+// was:
+//					allThreadsTerminated := false;
+//					while not allThreadsTerminated do
+//						for indThread := 0 to gNumThreadsUsed - 1 do
+//							allThreadsTerminated := allThreadsTerminated and gMyThreadObjects[indThread].Terminated;
+// This loop could never end. allThreadsTerminated starts false and "false and anything"
+// is false, so the inner loop could not make it true; the flag has to be reset to true
+// inside the outer loop, as the correct version of the same idiom around line 7820 does.
+// Worse, the objects have FreeOnTerminate := true and Terminate was called just above,
+// so .Terminated may be read from an object the RTL has already freed. A fallback that
+// hangs the program at 100 per cent CPU is worse than no fallback, and TSimulEgoTreeCleanUp
+// already does this work on the normal path. The loop is therefore removed rather than
+// corrected: no amount of looping makes a use-after-free safe.
+// --- CLAUDE 2026-08-26 [2.6] end ----------------------------------------------------
 					if (g_GENPARAM.TALKATIVE.value) then begin
 						stopTime (tStart_interm, '===== thread objects cleanup lasted: ');
 					end;
