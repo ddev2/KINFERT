@@ -16,6 +16,51 @@ Last updated 26 August 2026, fifth round, after Tier A was applied. Two audit do
 
 ## 1. Explanations you asked for
 
+### N1. What was wrong in the fertility parameter sweeps, and what to check
+
+A "sweep" here is a run in which one of the `NSTEP_*` counts is greater than 1, so `FERTILITY_loops` steps a parameter from its Low value to its High value and simulates at each step. `SpecialRuns.pas` nests seven such loops, one per parameter.
+
+**Scope.** N1 bites only when at least one `NSTEP_*` exceeds 1. Both defects sit inside `if g_GENPARAM.RUNTIME[nSteps...].value > 1 then`, and the block that writes stepped values back into the demographic regime is guarded by `varyingUnionOrFertility`, which is set only inside those same tests. A run with every step count at 1 never enters any of it, so ordinary single-parameterisation results were never affected.
+
+**First error: the index was one step behind.** Each loop head computed its stepped value from the `RP.ind*` field, which is assigned further down the same block:
+
+```pascal
+for indAgeUnion := 1 to g_GENPARAM.RUNTIME[nStepsUnion_mean].value do
+begin
+    ...
+        mean := (pDemReg^.dp[meanAgeUnionWomenLow].value) +
+            ( RP.indAgeUnion - 1) * (High - Low) / ( nSteps - 1 );   { read here }
+    ...
+    RP.indAgeUnion := indAgeUnion;                                   { assigned here }
+```
+
+On pass 2 the calculation used index 1, on pass 3 index 2, and on pass 1 whatever the record held from before the loop began. With three steps from 20 to 26 the intended means were 20, 23 and 26; what ran was a stale value, then 20, then 23. The top of the range was never simulated. The same pattern was at the celibacy, standard deviation, separation and contraception-after-union loops. Only the amenorrhea loop assigned before it read.
+
+**Second error: the base drifted, and two sweeps collapsed to zero.** The innermost block restores the originals and then overwrites them:
+
+```pascal
+if (varyingUnionOrFertility) then begin
+    DemographicRegimeSettings_copyState (pDemReg_mem, pDemReg);   { restore }
+    with pDemReg^ do begin
+        dp[freqSeparation].value := RP.valFertSeparation;          { then overwrite }
+```
+
+The restore is in the right spirit, and `pDemReg_mem` exists for exactly this purpose, but it sits in the innermost loop. The outer loop heads read `pDemReg` **after** those writes and **before** the next restore, so each head took as its base the value the previous step had written rather than the original.
+
+For the two multiplicative parameters this is fatal, because the step 1 multiplier is zero:
+
+```pascal
+freqDiv := pDemReg^.dp[freqSeparation].value * (ind - 1.0) / (nSteps - 1.0);
+```
+
+Step 1 gives `base * 0 = 0`, and 0 is written into `dp[freqSeparation]`. Step 2 reads that 0 as its base, so `0 * 1/(n-1) = 0`, and so on. **`NSTEP_SEPARATION` and `NSTEP_CONTRACEPTION_AFTER_UNION` therefore simulated the same parameterisation, with the parameter at zero, at every step after the first.** Any comparison across those steps was a comparison of identical runs.
+
+The amenorrhea sweep is additive rather than multiplicative, so instead of collapsing it accumulated: with three steps the intended values were alpha, alpha + 1.2, alpha + 2.4, and what ran was alpha, alpha + 1.2, alpha + 3.6. The mean age at union and the celibacy proportion drifted in the same way.
+
+**The fix**, marked `[N1]` in `SpecialRuns.pas` with the old lines commented out above each site. Every base now reads from `pDemReg_mem`, the untouched copy taken before the loops, instead of from `pDemReg`. Every index now uses the loop counter directly; the `RP.ind*` fields are still assigned as before, because the rest of the program reads them. And the age at union standard deviation is captured once into a new local `std_initial` before the loops, because `DemographicRegimeSettings_copyState` copies `dp[]` and `lp[]` but not `pCurrUnionInfo`, so that one value could not be recovered from `pDemReg_mem`.
+
+**What to check when you build.** V14 below is the decisive test: run a two-step separation sweep and confirm that the `SEP` column differs between the two steps and that the second is not zero. It is worth doing early, because it is also the cheapest way to find out which past stepped runs need repeating. Two further checks are worth adding at the same time, V14b and V14c below: that a stepped mean age at union now reaches its High value at the last step, and that a three-step amenorrhea sweep gives evenly spaced values rather than accumulating.
+
 ### D4. Why keys are not only a bootstrapping matter
 
 A key is a run identifier written as the first column of the individual files, with a companion `X_KEYS.txt` file decoding it. `openFileKeys` in `Utilities.pas:755` computes
@@ -328,7 +373,10 @@ Tier A is done. What follows is Tier B, the changes that alter published results
 | V11 | A run with multithreading on and off produces the same number of families |
 | V12 | `MULTITHREADING_SIMKIN` survives a save and a reload (**3.a, to be checked**) |
 | V13 | The Outputs dialog no longer shows the "Use batches" checkbox and nothing references it (**W1, to be checked**) |
-| V14 | **New, for N1.** A two-step separation sweep: the `SEP` column of the two runs must differ, and the second must not be zero |
+| V14 | **For N1, the decisive test.** A two-step separation sweep: the `SEP` column of the two steps must differ, and the second must not be zero. Before the fix both were zero |
+| V14b | **For N1.** A three-step sweep of the mean age at union from Low to High: the three simulated means must be Low, the midpoint, and High. Before the fix the last step never ran and the first used a stale index |
+| V14c | **For N1.** A three-step amenorrhea sweep: the three values of `amenorrhea_alpha` must be evenly spaced from the original value. Before the fix the third was alpha + 3.6 rather than alpha + 2.4 |
+| V14d | **For N1.** A run with every `NSTEP_*` at 1, compared against the same run before the fix. It must be identical: N1 lives entirely inside the `> 1` branches, and this confirms that ordinary runs were never affected |
 | V15 | **New, for N3.** The distribution of age at end of union must not pile up at the oldest ages, and it must be consistent with the age at the first separation drawn |
 | V16 | **New, for N4.** The realised distribution of the fecundability multiplier: its coefficient of variation must match whichever parameterisation you choose in Q1 |
 | V17 | **New, for N2.** Mean birth interval following an infant death compared with the interval following a surviving child. The difference should be of the order of the shortening of breastfeeding, not of nine months |
