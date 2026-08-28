@@ -423,6 +423,9 @@ type
 		relativeFecundabilityLevel: double;
 		{== durationFecundInMonths: longint; ==}
 		levelFecundabilityAge: TabFecundAges;
+		// whether the woman has reached her desired fertility level
+		// which corresponds to the case when a random draw is greater
+		// than the PPR for her current parity
 		stopping: boolean;
 	end;
 	

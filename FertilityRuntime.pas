@@ -643,17 +643,7 @@ which will prevent some things, like the use of the time profiler as well as wri
 				durationUnionWoman: double;
 			begin
 			{DEBUG: CHECK CURRMONTH COUNT SINCE BIRTH}
-// --- CLAUDE 2026-08-26 [N3] begin ---------------------------------------------------
-// endUnion was declared, initialised FALSE at two places and tested in three loops,
-// but assigned TRUE nowhere in this unit, so none of those loops ever stopped at the
-// dissolution of the union. A separation was then drawn every month until the end of
-// the loop, and the line below, which is an unconditional overwrite, recorded the age
-// at the LAST separation drawn instead of the first. One of the loops runs from the end
-// of fecund life to the death of the man, so 40 years or more of monthly draws.
-// The flag is set here, in paramSeparation itself, because that is the one place all
-// three call sites (lines about 708, 1026 and 1124) pass through.
 				endUnion := true;
-// --- CLAUDE 2026-08-26 [N3] end -----------------------------------------------------
 				ageDurationEvents.ages[le_endUnion, woman] := lunarMonthsToAge (currMonth);
 				currPartnershipStatus := separated;
 				// age at end of union for man is computed adding the duration of union
@@ -964,7 +954,7 @@ try // 2-1
 					if (not fecundLife.stopping) and testStopping then
 					begin
 						fecundLife.stopping := (pDemReg^.curr_contracepStopping [nbChildren] < randomGenerator.alea0);
-						testStopping := false;
+						testStopping := false; // stopping condition is reached: we don't test twice
 						if (fecundLife.stopping) then begin
 							ageDurationEvents.monthStop := min (currMonth, ageDurationEvents.monthStop);
 							ageDurationEvents.monthStopIsStopping := true;
@@ -981,17 +971,10 @@ try // 2-1
 						begin
 							monthIncrement := pregnancy ( pDemReg, pCurrChild, monthEnd, currMonth );
 						end
-// --- CLAUDE 2026-08-26 [N5] begin ---------------------------------------------------
-// The else arm was missing. With the default EFF_STOPPING_CONTRACEP = 1.0 the test above
-// never fires, so once a birth had set monthIncrement to about 20 every later stopping
-// month reused that value: the block at 'if ( monthIncrement > 1 )' below rewrote the
-// conception fields of the child already born, repeatedly, and currMonth advanced twenty
-// months at a time instead of one.
-// was: (nothing here, the if had no else)
 						else
+							// no fecundation
 							monthIncrement := 1;
-// --- CLAUDE 2026-08-26 [N5] end -----------------------------------------------------
-					end; {if contracepArret[nbChildren] >= randomGenerator.alea0 then}
+					end;
 				end else
 				begin
 					{we go to the next month}

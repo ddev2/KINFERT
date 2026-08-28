@@ -1497,59 +1497,68 @@ uses
 				val (s, resd, code);
 				if not checkCode ( s, code ) then exit;
 
+// --- CLAUDE 2026-08-26 [N12] begin --------------------------------------------------
+// postProcessCohort tests lp[nWomenPar].readInConfigFile to decide whether the cohort
+// file supplied its own NWOMEN column. That flag is set only inside the readValue methods
+// of Declarations.pas, and processValuesLine assigns straight to .value, so it stayed
+// false and an explicit NWOMEN column was always discarded and replaced by NEGO for every
+// cohort read from the file. Cohort 0, which does not come through here, kept its own value.
+//
+// Every branch of the case below now sets readInConfigFile on the object it writes to, so
+// the flag means what its declaration says: this value came from the cohort file. The
+// original code set it in none of them; those are the only added lines, each marked
+// { N12 } at the end. Only lp[nWomenPar] is read anywhere today, at the single site in
+// postProcessCohort, so the other nine assignments change no behaviour now. They exist so
+// that a future test of this flag on any other parameter is not silently wrong, which is
+// exactly how this bug arose.
+
 				case posValues [n].pv of
 					pfk_double: begin
-// --- CLAUDE 2026-08-26 [N12] begin --------------------------------------------------
-// was:
-//						pDemReg^.dp[paramDemReg_double (posValues [n].posTable)].value := resd;
 						pDemReg^.dp[paramDemReg_double (posValues [n].posTable)].value := resd;
-						pDemReg^.dp[paramDemReg_double (posValues [n].posTable)].readInConfigFile := true;
-// --- CLAUDE 2026-08-26 [N12] end ----------------------------------------------------
+						pDemReg^.dp[paramDemReg_double (posValues [n].posTable)].readInConfigFile := true;	{ N12 }
 					end;
 					pfk_longint: begin
-// --- CLAUDE 2026-08-26 [N12] begin --------------------------------------------------
-// was:
-//						pDemReg^.lp[paramDemReg_longint (posValues [n].posTable)].value := trunc (resd);
-// postProcessCohort tests lp[nWomenPar].readInConfigFile to decide whether the cohort
-// file supplied its own NWOMEN, but readInConfigFile is set only inside the readValue
-// methods of Declarations.pas, and processValuesLine assigns straight to .value. An
-// explicit NWOMEN column was therefore always discarded and replaced by NEGO for every
-// cohort read from the file, while cohort 0 kept its own value. The same is done for the
-// double branch for consistency; readInConfigFile is read in exactly one place, so this
-// changes nothing else.
 						pDemReg^.lp[paramDemReg_longint (posValues [n].posTable)].value := trunc (resd);
-						pDemReg^.lp[paramDemReg_longint (posValues [n].posTable)].readInConfigFile := true;
-// --- CLAUDE 2026-08-26 [N12] end ----------------------------------------------------
+						pDemReg^.lp[paramDemReg_longint (posValues [n].posTable)].readInConfigFile := true;	{ N12 }
 					end;
 					ppr: begin
 						pDemReg^.aPrioriPPR.value [posValues [n].posTable] := resd;
+						pDemReg^.aPrioriPPR.readInConfigFile := true;	{ N12 }
 						lastPPR := posValues [n].posTable;
 					end;
 					ppr_adjusted: begin
 						pDemReg^.aPrioriPPR_adjusted.value [posValues [n].posTable] := resd;
+						pDemReg^.aPrioriPPR_adjusted.readInConfigFile := true;	{ N12 }
 						lastPPR_adjusted := posValues [n].posTable;
 					end;
 					effStopping: begin
 						pDemReg^.effStopping.value [posValues [n].posTable] := resd;
+						pDemReg^.effStopping.readInConfigFile := true;	{ N12 }
 						lastEffStopping := posValues [n].posTable;
 					end;
 					effSpacing: begin
 						pDemReg^.effSpacing.value [posValues [n].posTable] := resd;
+						pDemReg^.effSpacing.readInConfigFile := true;	{ N12 }
 						lastEffSpacing := posValues [n].posTable;
 					end;
 					meanWaitingTimeSpacing: begin
 						pDemReg^.meanTimeSpacing.value [posValues [n].posTable] := resd;
+						pDemReg^.meanTimeSpacing.readInConfigFile := true;	{ N12 }
 						lastMeanTimeSpacing := posValues [n].posTable;
 					end;
 					eduOwn: begin
 						pDemReg^.eduEgo [EduLevels(dPos (posValues [n].posTable, 2)), Sex(dPos (posValues [n].posTable, 1))].value := resd;
+						pDemReg^.eduEgo [EduLevels(dPos (posValues [n].posTable, 2)), Sex(dPos (posValues [n].posTable, 1))].readInConfigFile := true;	{ N12 }
 					end;
 					eduPartner: begin
 						pDemReg^.eduEgoPartner [EduLevels(dPos (posValues [n].posTable, 3)), Sex(dPos (posValues [n].posTable, 2)), EduLevels(dPos (posValues [n].posTable, 1))].value := resd;
+						pDemReg^.eduEgoPartner [EduLevels(dPos (posValues [n].posTable, 3)), Sex(dPos (posValues [n].posTable, 2)), EduLevels(dPos (posValues [n].posTable, 1))].readInConfigFile := true;	{ N12 }
 					end;
 					eduChildren: begin
 						pDemReg^.eduEgoPartnerChildren [EduLevels(dPos (posValues [n].posTable, 3)), EduLevels(dPos (posValues [n].posTable, 2)), EduLevels(dPos (posValues [n].posTable, 1))].value := resd;
+						pDemReg^.eduEgoPartnerChildren [EduLevels(dPos (posValues [n].posTable, 3)), EduLevels(dPos (posValues [n].posTable, 2)), EduLevels(dPos (posValues [n].posTable, 1))].readInConfigFile := true;	{ N12 }
 					end;
+// --- CLAUDE 2026-08-26 [N12] end ----------------------------------------------------
 				else
 					begin
 						writeAndWaitConst(['===> ERROR: Problem while reading cohort file col ', n, ' year ', year]);
