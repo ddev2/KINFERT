@@ -1,5 +1,8 @@
 # KinFert: open work before release
 
+> **SUPERSEDED, 28 August 2026.** The working list is now `docs/KinFert-Status-2026-08-28.md`, whose line numbers were re-checked against the tree after the Tier A review markers were removed. The line numbers below are stale. This file is kept for the explanations in section 1.
+
+
 Last updated 26 August 2026, fifth round, after Tier A was applied. Two audit documents hold the evidence: `docs/KinFert-PreRelease-Audit.md` for the individual-file output path, and `docs/KinFert-PreRelease-Audit-2.md` for the demographic engine. This file is the working list and carries the line numbers you asked for.
 
 **Line numbers are current** as of this update, after the BATCH removal, which moved roughly 100 lines in `Kinship.pas`. They will move again with the next edit; procedure names are the stable reference.

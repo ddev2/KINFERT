@@ -4585,15 +4585,7 @@ Inc (gAgeChildbearingBACKFOR [result]);
 				//writeDebug ([IntToStr (ageChildbearing) + ' ' + IntToStr (birthOrderSelected)]);
 				endClause := ( ageChildren [ageChildbearing, birthOrderSelected] > 0 );
 			until (fertFunctionRan and endClause) or (nTries > kMaxTries);
-// --- CLAUDE 2026-08-26 [N40] begin --------------------------------------------------
-// was:
-//			gBACKFOR_nTries := gBACKFOR_nTries + nTries;
-// gBACKFOR_nTries is written from the CAMSIM-1993 and real-BACKFOR mother searches,
-// which run on every worker thread. A read-modify-write on a shared longint loses
-// increments under concurrency, the same class of defect as the three counters fixed
-// on 24 August. InterlockedExchangeAdd is the atomic form of "add and keep going".
 			InterlockedExchangeAdd (gBACKFOR_nTries, nTries);
-// --- CLAUDE 2026-08-26 [N40] end ----------------------------------------------------
 			if nTries > kMaxTries then begin
 				writeAndWait ('ERROR ==> No women found at: ' + IntToStr (gBACKFOR_women + 1) + ' ageChildbearing: ' + FloatToStr (ageChildbearing) + ', ageUnion: ' + FloatToStr (ageUnionWoman));
 				if ageChildbearing > 30 then begin
@@ -4606,12 +4598,7 @@ Inc (gAgeChildbearingBACKFOR [result]);
 				motherFound := true;
 			nTries := 0;
 		end;
-// --- CLAUDE 2026-08-26 [N40] begin --------------------------------------------------
-// was:
-//		Inc (gBACKFOR_women);
-// Same as above: incremented from the worker threads.
 		InterlockedIncrement (gBACKFOR_women);
-// --- CLAUDE 2026-08-26 [N40] end ----------------------------------------------------
 		// update age at childbearing of mother for refChild
 		pCh := pChild;
 		gotoToFirstLiveBornChild(pCh);
@@ -4698,15 +4685,7 @@ Inc (gAgeChildbearingBACKFOR [result]);
 								gNilBlock
 							);
 			until (ageChildren [ageChildbearing, 0] > 0) or (nTries > kMaxTries);
-// --- CLAUDE 2026-08-26 [N40] begin --------------------------------------------------
-// was:
-//			gBACKFOR_nTries := gBACKFOR_nTries + nTries;
-// gBACKFOR_nTries is written from the CAMSIM-1993 and real-BACKFOR mother searches,
-// which run on every worker thread. A read-modify-write on a shared longint loses
-// increments under concurrency, the same class of defect as the three counters fixed
-// on 24 August. InterlockedExchangeAdd is the atomic form of "add and keep going".
 			InterlockedExchangeAdd (gBACKFOR_nTries, nTries);
-// --- CLAUDE 2026-08-26 [N40] end ----------------------------------------------------
 			if nTries > kMaxTries then begin
 				nTries := 0;
 				writeAndWait ('ERROR ==> No women found at: ' + IntToStr (gBACKFOR_women + 1) + ' ageChildbearing: ' + FloatToStr (ageChildbearing) + ', ageUnion: ' + FloatToStr (ageUnionWoman));
@@ -4721,12 +4700,7 @@ Inc (gAgeChildbearingBACKFOR [result]);
 Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 {$ENDIF}
 		
-// --- CLAUDE 2026-08-26 [N40] begin --------------------------------------------------
-// was:
-//		Inc (gBACKFOR_women);
-// Same as above: incremented from the worker threads.
 		InterlockedIncrement (gBACKFOR_women);
-// --- CLAUDE 2026-08-26 [N40] end ----------------------------------------------------
 
 		// looking for the refChild in the list of children to update her/his info
 		selectedChild := trunc ( randomGenerator.alea (0, ageChildren [ageChildbearing, 0] - 0.00000000001) );
