@@ -173,6 +173,7 @@ end;
 procedure TUtilesForm.DEBUGChange(Sender: TObject);
 begin
  g_GENPARAM.DEBUG.value := DEBUG.checked;
+ gDebugSession := DEBUG.checked;
  g_GENPARAM.DEBUG.changed := (g_GENPARAM.DEBUG.value <> g_GENPARAM.DEBUG.default);
 end;
 

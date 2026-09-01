@@ -14,9 +14,7 @@ uses
 	EducationalLevel, RandomNumbers, Utilities, Init, StringResources;
 
 var
-{$IFDEF DEBUG}
 		gAllBirths: array of longint;
-{$ENDIF}
     g_endInitMotherhood: boolean;
 	// Birth cohorts of egos or egos' ancestors to be simulated by the backward algorithm:
 	// they are the years of births of egos as simulated by their possible mothers
@@ -50,9 +48,7 @@ var
 	gStateChildren, gStateGrooms: array of longint;
 	// OBSOLETE
 	gStateBrides, gStateMothers, gStateYearUnions: array of longint;
-{$IFDEF DEBUG}
 	gAgeChildbearing, gAgeChildbearingBACKFOR, gAgeChildbearingBACKFOR_post: array [FecundAges] of longint;
-{$ENDIF}
 	// set of cohorts for which we simulate the kinship
 	gCohortSet: setCohorts;
 	// count of feminine egos who reach 50 years of age by number of offsprings
@@ -233,12 +229,10 @@ implementation
         gNumThreadsUsed: longint = 0;
 
 	var
-{$IFDEF DEBUG}
 gCheckRelativesCount: longint = 0;
 gCheckRelativesMax: longint = 0;
 gNumEgoMen, gNumEgoWomen, gChildrenEgoMen, gChildrenEgoWomen: longint;
 gIndMother: longint = 0;
-{$ENDIF}
 		// DemoCare file does not have info for ego's mother or father so 'g_InfoParents' keeps track of that...
 		// if false then we don't keep track of info about parents and siblings
 		g_InfoParents: boolean = true;
@@ -597,15 +591,12 @@ if (pRelative^.ageDeath < 1) or (pPartner^.ageDeath < 1) then
 	end;
 
 	procedure addChildToParent (pRelative, pChild: pRelativeType);
-{$IFDEF DEBUG}
 	var
 		indCh: longint;
-{$ENDIF}
 	begin
 		if (pRelative = nil) or (pChild = nil) then
 			exit;
-{$IFDEF DEBUG}
-if g_GENPARAM.CHECK_DATASTRUCT.value then
+if g_GENPARAM.DEBUG.value then
 begin
 	if isChildAlreadyInList (pRelative, pChild) then
 	// check we don't add the same child two times
@@ -618,7 +609,6 @@ begin
 			myHalt (['Not child of that mother!']);
 	end;
 end;
-{$ENDIF}
 		addChildToRelative (pRelative, pChild);
 	end;
 
@@ -922,7 +912,7 @@ end;
 {$IFNDEF ARM}
 						asm int 3 end;
 {$ELSE}
-						assert(true);
+						assert(false);
 {$ENDIF}
  				end;
 			end else
@@ -958,9 +948,7 @@ end;
 			ageFecund: longint;
 			aSex: Sex;
 			egoChild: pRelativeType;
-{$IFDEF DEBUG}
 pRelative, pMother: pRelativeType;
-{$ENDIF}
 		begin
 			// 1. number of children for egos who survive up to ageLimit
 			if (pEgo^.ageDeath >= ageLimit) then
@@ -981,11 +969,9 @@ pRelative, pMother: pRelativeType;
 				while (egoChild <> nil) do begin
 					Inc (nC);
 					ageChildbearing := trunc (egoChild^.ageMotherAtChildbirth);
-{$IFDEF DEBUG}
 if gRunFromIDE then
 	if not checkDebugLongint (ageChildbearing, kMinAgeFert, kMaxAgeFert) then
 		writeAndWait ('ERROR ==> Bad ageChildbearing in addToTFTtables');
-{$ENDIF}
 					Inc ( g_fertilityEgosWithAtLeastOneChild[indCohort, pEgo^.gender, cf_births, ageChildbearing] );
 					Inc ( g_fertilityEgos[indCohort, cf_births, pEgo^.gender, ageChildbearing] );
 					egoChild := LookingForRelative(pEgo, kt_child, aSex);
@@ -1050,11 +1036,9 @@ if gRunFromIDE then
 		if (pEgo^.nUnions > 0) then begin
 			for indUnion := 1 to pEgo^.nUnions do begin
 				partner := getPartner (pEgo, indUnion);
-{$IFDEF DEBUG}
 if partner = nil then
 	writeAndWait ('ERROR ==> partner is nil in addWoman')
 else
-{$ENDIF}
 				if (partner^.gender = woman) then
 					egoPartnerAddPersonsAndBirths (partner, 50, indCohort)
 				else
@@ -2001,7 +1985,6 @@ else
 		yearBirthToCompute := yearBirthRef + diffAge;
 	end;
 
-{$IFDEF DEBUG}
 procedure scanChildrenList (pChildrenList: pInfoChildType);
 // good for having a look inside the debugger...
 var
@@ -2022,7 +2005,6 @@ begin
 		gotoToNextLiveBornChild(pCh);
 	end;
 end;
-{$ENDIF}
 
 	function isBloodKin (pRelative: pRelativeType): boolean;
 	begin
@@ -2079,7 +2061,6 @@ end;
 		result := lookInRange (yearUnion, gFirstYearUnions, gLastYearUnions, gStateYearUnions);
 	end;
 	
-{$IFDEF DEBUG}
 	procedure checkBrides (where: string; arrayMothers: boolean = true);
 	var
 		cohortWomanInd, ageUnionWomanInd, ind, size, res: longint;
@@ -2186,7 +2167,6 @@ procedure checkChildren (where: string);
 			f.Destroy;
 		end;
 end;
-{$ENDIF}
 
 	function findEgo (pRelative: pRelativeType): pRelativeType;
 	begin
@@ -2230,12 +2210,10 @@ end;
 		if numPossibleGrooms > 1 then begin
 			indUnionSelected := longint ( elementInSet (setGrooms, trunc (randomGenerator.alea (0, numPossibleGrooms-0.0000000001))) );
 		end;
-{$IFDEF DEBUG}
 if (numPossibleGrooms = 0) or (indUnionSelected = 0) then
 	writeAndWait ('ERROR ==> no possible groom in getAgeUnionSelected');
 if (indUnionSelected > 9) then
 	writeAndWait ('WARNING ==> indUnionSelected greater than 6 in getAgeUnionSelected');
-{$ENDIF}
 		result := womanMemBlock.unionStates.Unions [indUnionSelected - 1].ages[le_union, woman];
 	end;
 	
@@ -2248,10 +2226,8 @@ if (indUnionSelected > 9) then
 	begin
 		cohortWomanInd := lookInBridesRange (cohortWoman);
 		ageUnionWomanInd := min (kMaxAgeUnion_women, max(ageUnionWoman, kMinAgeUnion_women)) - kMinAgeUnion_women;
-{$IFDEF DEBUG}
 if (ageUnionWomanInd < 0) or ( ageUnionWomanInd >= length(g_RangeBridesNb[cohortWomanInd]) ) then
 	writeAndWait ('ERROR ==> Bad value of ageUnionWomanInd in lookingForABrideByAgeAndCohort');
-{$ENDIF}
 		// we randomly select a bride
 		while g_RangeBridesNb[cohortWomanInd, ageUnionWomanInd] = 0 do begin
 			//we look for a bride with approximately the same age at union
@@ -2371,9 +2347,7 @@ if (ageUnionWomanInd < 0) or ( ageUnionWomanInd >= length(g_RangeBridesNb[cohort
 			while pChild <> nil do begin
 				n := n + 1;
 				calcDateBirth (pChild^.yearBirth, getWomanFromBigArray (womanInd).yearBirth, 0, pChild^.ageMotherAtChildbirth);
-{$IFDEF DEBUG}
 				Inc(gAllBirths[trunc (pChild^.yearBirth)]);
-{$ENDIF}
 				if (trunc (pChild^.yearBirth) >= gFirstCohortAncestorsChildren) and (trunc (pChild^.yearBirth) <= gLastCohortAncestorsChildren) then begin
 					indCohort := trunc (pChild^.yearBirth) - gFirstCohortAncestorsChildren;
 					if g_RangeBirthsNb[indCohort] >= length(g_RangeBirthsInfo[indCohort]) then
@@ -2485,7 +2459,7 @@ if (ageUnionWomanInd < 0) or ( ageUnionWomanInd >= length(g_RangeBridesNb[cohort
 		f: TFileType; // Main thread only
 		res: longint;
 	begin
-		if not g_GENPARAM.CHECK_DATASTRUCT.value then exit;
+		if not g_GENPARAM.DEBUG.value then exit;
 		if checkDirResult () then begin
 			f := TFileType.Create (gPathToResult + fileName, res, fileInfo);
 			if res <> 0 then begin
@@ -2511,7 +2485,7 @@ if (ageUnionWomanInd < 0) or ( ageUnionWomanInd >= length(g_RangeBridesNb[cohort
 		f: TFileType; // Main thread only
 		res: longint;
 	begin
-		if not g_GENPARAM.CHECK_DATASTRUCT.value then exit;
+		if not g_GENPARAM.DEBUG.value then exit;
 		if checkDirResult () then begin
 			f := TFileType.Create (gPathToResult + 'Grooms.txt', res, 'WRITEINFOGROOMS');
 			if res <> 0 then begin
@@ -2541,7 +2515,7 @@ if (ageUnionWomanInd < 0) or ( ageUnionWomanInd >= length(g_RangeBridesNb[cohort
 		f: TFileType; // Main thread only
 		res: longint;
 	begin
-		if not g_GENPARAM.CHECK_DATASTRUCT.value and not g_GENPARAM.MULTITHREADING.value then exit;
+		if not g_GENPARAM.DEBUG.value then exit;
 		if checkDirResult () then begin
 			f := TFileType.Create (gPathToResult + 'unionsYear.txt', res, 'WRITEINFOBRIDESYEAR');
 			if res <> 0 then begin
@@ -2572,7 +2546,7 @@ if (ageUnionWomanInd < 0) or ( ageUnionWomanInd >= length(g_RangeBridesNb[cohort
 		f: TFileType; // Main thread only
 		res: longint;
 	begin
-		if not g_GENPARAM.CHECK_DATASTRUCT.value then exit;
+		if not g_GENPARAM.DEBUG.value then exit;
 		if checkDirResult () then begin
 			f := TFileType.Create (gPathToResult + 'MenWomen.txt', res, 'WRITEINFOMENWOMEN');
 			if res <> 0 then begin
@@ -2586,7 +2560,6 @@ if (ageUnionWomanInd < 0) or ( ageUnionWomanInd >= length(g_RangeBridesNb[cohort
 					ageManInd := ageMan - kMinAgeUnion_men;
 					for ageWoman := kMinAgeUnion_women to kMaxAgeUnion_women do begin
 						ageWomanInd := ageWoman - kMinAgeUnion_women;
-{$IFDEF DEBUG}
 if (ageMan < 0) or (ageWoman < 0) then
 	writeAndWait ('ERROR ==> age union bad for gMen_Women');
 if (indCohort < 0) or (indCohort >= length(gMen_Women)) then
@@ -2595,7 +2568,6 @@ if (ageManInd < kNotDefined) or (ageManInd >= length(gMen_Women[0])) then
 	writeAndWait ('ERROR ==> Bad value for ageUnionMan in gMen_Women: ' + IntToStr (ageMan));
 if (ageWomanInd < kNotDefined) or (ageWomanInd >= length(gMen_Women[0, 0])) then
 	writeAndWait ('ERROR ==> Bad value for ageUnionWoman in gMen_Women: ' + IntToStr (ageWoman));
-{$ENDIF}
 
 						bWriteln(f, [cohort, tab, ageMan, tab, ageWoman, tab, gMen_Women[indCohort, ageManInd, ageWomanInd]]);
 					end;
@@ -2610,7 +2582,7 @@ if (ageWomanInd < kNotDefined) or (ageWomanInd >= length(gMen_Women[0, 0])) then
 		index, indexInd, res: longint;
 		f: TFileType; // Main thread only
 	begin
-		if not g_GENPARAM.CHECK_DATASTRUCT.value then exit;
+		if not g_GENPARAM.DEBUG.value then exit;
 		if checkDirResult () then begin
 			f := TFileType.Create (gPathToResult + s + '.txt', res, 'WRITESTATE');
 			if res = 0 then begin
@@ -2630,7 +2602,7 @@ if (ageWomanInd < kNotDefined) or (ageWomanInd >= length(gMen_Women[0, 0])) then
 	
 	procedure writeStates;
 	begin
-		if not g_GENPARAM.CHECK_DATASTRUCT.value then exit;
+		if not g_GENPARAM.DEBUG.value then exit;
 		writeState ('gStateChildren', gStateChildren, gFirstCohortAncestorsChildren, gLastCohortAncestorsChildren);
 		//writeState ('gStateBrides', gStateBrides, gFirstCohortBrides, gLastCohortBrides);
 		//writeState ('gStateMothers', gStateMothers, gFirstCohortWomen, gLastCohortWomen);
@@ -2681,12 +2653,6 @@ if not isThreaded then begin
 	Inc (gIndMother);
 end;
 
-{$IFDEF DEBUG}
-if not isThreaded then begin
-	if (gIndMother = 1803149) or (gIndMother = 135202) then
-		gIndMother := gIndMother;
-end;
-{$ENDIF}
 			// all the women should enter an union to be considered as possible bride or mother
 			// this is controlled setting kNoSinglehood in calc_ageUnion...
 			pChildrenList := nil;
@@ -2975,16 +2941,13 @@ end;
 
 		totalWomenBridesCreated: longint;
 		r: double;
-{$IFDEF DEBUG}
 ind, res: longint;
 f: TFileType; // used in the main thread
-{$ENDIF}
 	
 	begin
 		tStart:= Now();  // Get date+time
 
-{$IFDEF DEBUG}
-if g_GENPARAM.CHECK_DATASTRUCT.value then begin
+if g_GENPARAM.DEBUG.value then begin
 	if checkDirResult () then begin
 		f := TFileType.Create (gPathToResult + 'ProblemBrides.txt', res, 'PROBLEMBRIDES');
 		if res = 0 then
@@ -2996,7 +2959,6 @@ if g_GENPARAM.CHECK_DATASTRUCT.value then begin
 		f.Destroy;
 	end;
 end;
-{$ENDIF}
 		if gBACKFOR_mode then begin
 			memoWriteLn (['Le Bras'' BACKFOR mode']);
 		end;
@@ -3098,10 +3060,8 @@ end;
 		gFirstYearUnions := gFirstCohortBrides + kMinAgeUnion_women;
 		gLastYearUnions := gLastCohortBrides + kMaxAgeUnion_women;
 
-{$IFDEF DEBUG}
 		SetLength (gAllBirths, 0);
 		SetLength (gAllBirths, 3000);
-{$ENDIF}
 		SetLength (g_RangeBirthsNb, gLastCohortAncestorsChildren - gFirstCohortAncestorsChildren + 1);
 		SetLength (g_RangeBirthsInfo, gLastCohortAncestorsChildren - gFirstCohortAncestorsChildren + 1, kSetLengthBirths);
 		if gCAMSIM_1993 then begin
@@ -3221,7 +3181,6 @@ end;
 
 		LookMemory;
 		
-{$IFDEF DEBUG}
 if gRunFromIDE then begin
 	for age := kMinAgeFert to kMaxAgeFert do begin
 		gAgeChildbearing [age] := 0;
@@ -3239,7 +3198,7 @@ if gRunFromIDE then begin
 			end;
 	end;
 	
-	if g_GENPARAM.CHECK_DATASTRUCT.value then begin
+	if g_GENPARAM.DEBUG.value then begin
 		writeInfoWomenBrides (gFirstCohortWomen, gLastCohortWomen, womenPopNumbers, 'women.txt', 'WRITEINFOWOMEN');
 		if (length(bridesPopNumbers) > 0) then writeInfoWomenBrides (gFirstCohortBrides, gLastCohortBrides, bridesPopNumbers, 'brides.txt', 'WRITEINFOBRIDES');
 		writeInfoGrooms(g_RangeBridesForGrooms_Nb);
@@ -3251,7 +3210,6 @@ if gRunFromIDE then begin
 			writeInfoParents ('gBig_ArrayBrides.txt', gBig_ArrayBrides, gFirstCohortBrides, gLastCohortBrides);
 	end;
 end;
-{$ENDIF}
 
 		SetLength (womenPopNumbers, 0);
 		SetLength (bridesPopNumbers, 0);
@@ -3270,8 +3228,7 @@ end;
 			fileScreenWriteLn (gOutFileKin, ['BACKFOR Women: ', gBACKFOR_women, ', mean number of tries: ', gBACKFOR_nTries / gBACKFOR_women]);
 		end;
 		
-{$IFDEF DEBUG}
-if g_GENPARAM.CHECK_DATASTRUCT.value then begin
+if g_GENPARAM.DEBUG.value then begin
 	writeAgeChildbearingStates;
 	writeInfoBridesYear(g_RangeYearUnionsNotFound, 'NotFound_');
 	writeInfoGrooms(g_RangeBridesForGrooms_NotFound, 'NotFound_');
@@ -3280,7 +3237,6 @@ if g_GENPARAM.CHECK_DATASTRUCT.value then begin
 	checkBrides ('disposeMotherhood', gThisIsNotAnArrayOfBrides);
 	checkChildren ('disposeMotherhood');
 end;
-{$ENDIF}
 		SetLength (g_RangeBirthsNb, 0);
 		SetLength (g_RangeBirthsInfo, 0);
 		for ind := 0 to kMaxNbChildrenCalc do begin
@@ -3454,11 +3410,9 @@ end;
 	var
 		distanceInMonths, offset: longint;
 	begin
-{$IFDEF DEBUG}
 if (pEgo^.yearBirth < 0)
 	or (pRelative^.yearBirth < 0) then
 	writeAndWait ('ERROR ==> Problem dates in calcAgeAtBirthOfEgo');
-{$ENDIF}
 	{We compute age relative to ego in such a way that a person born at a distance of
 	more or less 6 months is of the same age than ego. If the distance is higher than
 	6 months, than that person will be at least 1 year older or younger (if the distance is negative)}
@@ -4115,10 +4069,8 @@ If 'birthOrder' is more than 0, then the individual pRefChild is not added and s
 							var pLastRelative: pRelativeType; var nbTotRelatives: longint);
 	var
 
-{$IFDEF DEBUG}
 first: longint = 0;
 last: longint = 0;
-{$ENDIF}
 		ind: longint = 0;
 		pFather: pRelativeType = nil;
 		pLastChild: pRelativeType = nil;
@@ -4133,11 +4085,9 @@ last: longint = 0;
 			ind := ind + 1;
 			if ind = birthOrder then begin
 			// this one is the reference child. We don't include it again in ego's kinship
-{$IFDEF DEBUG}
 if first = 0 then
 	first := pRefChild^.ageAtBirthOfEgo;
 last := pRefChild^.ageAtBirthOfEgo;
-{$ENDIF}
 			end else begin
 			// other siblings
 				pLastRelative := newRelative(pLastRelative, pEgo, nbTotRelatives, kt_child);
@@ -4154,15 +4104,12 @@ last := pRefChild^.ageAtBirthOfEgo;
 				pLastChild^.cohort := trunc (pLastChild^.yearBirth);
 				pLastChild^.ageAtBirthOfEgo := calcAgeAtBirthOfEgo(pEgo, pLastChild);
 				destiny(randomGenerator, kinTypeChild, pLastChild);
-{$IFDEF DEBUG}
 if first = 0 then
 	first := pLastChild^.ageAtBirthOfEgo;
 last := pLastChild^.ageAtBirthOfEgo;
-{$ENDIF}
 			end;
 			gotoToNextLiveBornChild (pCh);
 		end;
-{$IFDEF DEBUG}
 		if abs(last - first) > 42 then
 			begin
 				writeAndWaitConst(['===> WARNING: ', ProblemSiblings, ' in calcSiblings']);
@@ -4172,7 +4119,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 			end;
 		if pFather = nil then
 			pFather := pFather;
-{$ENDIF}
 		if (ind > 0) and (pRefChild <> nil) and (pRefChild^.typeOfKin = kt_ego) then
 			ageFatherAtUnionChild(pRefChild);
 {$IFDEF VerboseProfiler} timeProfile_end_proc('calcSiblings'); {$ENDIF}
@@ -4239,7 +4185,7 @@ last := pLastChild^.ageAtBirthOfEgo;
 {$IFNDEF ARM}
 						asm int 3 end;
 {$ELSE}
-						assert(true);
+						assert(false);
 {$ENDIF}
 					myHalt (['Bad, bad: no births in g_RangeBirthsInfo...'])
 				end;
@@ -4250,7 +4196,7 @@ last := pLastChild^.ageAtBirthOfEgo;
 {$IFNDEF ARM}
 					asm int 3 end;
 {$ELSE}
-					assert(true);
+					assert(false);
 {$ENDIF}
 				myHalt (['Bad, bad: no births in g_RangeBirthsInfo...'])
 			end;
@@ -4311,9 +4257,7 @@ last := pLastChild^.ageAtBirthOfEgo;
 											womanObj.pChildrenList, pRefChild);
 		// age at childbearing !
 		result := trunc ( pRefChild^.ageMotherAtChildbirth );
-{$IFDEF DEBUG}
 Inc (gAgeChildbearingBACKFOR [result]);
-{$ENDIF}
 	end;
 	
 	function BACKFOR_MotherAgeUnion (randomGenerator: TRandomNumberGenerator; cohortMother, ageChildbearing: longint): longint;
@@ -4696,9 +4640,7 @@ Inc (gAgeChildbearingBACKFOR [result]);
 			end else
 				motherFound := true;
 		until motherFound;
-{$IFDEF DEBUG}
 Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
-{$ENDIF}
 		
 		InterlockedIncrement (gBACKFOR_women);
 
@@ -5015,7 +4957,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 		end;
 		ageUnionWoman := trunc (getAgeUnion (pBride, indUnionWoman));
 		cohortMan := pGroom^.cohort;
-{$IFDEF DEBUG}
 if (ageUnionMan-kMinAgeUnion_men < kNotDefined) or (ageUnionMan-kMinAgeUnion_men >= length(gMen_Women[0])) then begin
 	writeAndWait ('ERROR ==> Bad value for ageUnionMan in gMen_Women: ' + IntToStr (ageUnionMan));
 	writeRelConsole (pGroom);
@@ -5026,7 +4967,6 @@ if (ageUnionWoman-kMinAgeUnion_women < kNotDefined) or (ageUnionWoman-kMinAgeUni
 	writeRelConsole (pBride);
 	exit;
 end;
-{$ENDIF}
 		ageUnionMan := max(kMinAgeUnion_men, ageUnionMan);
 		ageUnionWoman := max(kMinAgeUnion_women, ageUnionWoman);
 		cohortManInd := lookInGroomsRange (cohortMan);
@@ -5325,14 +5265,12 @@ end;
 						pDemReg := getCohort_p (pPartnerWoman^.cohort);
 						cohortWoman := pPartnerWoman^.cohort;
 				
-{$IFDEF DEBUG}
 if gRunFromIDE then begin
 	getWomanFromBigArray (womanInd, gThisIsNotAnArrayOfBrides).CheckOwnChildrenList;
 	getWomanFromBigArray (womanInd, gThisIsNotAnArrayOfBrides).CheckChildrenList(
 			getWomanFromBigArray (womanInd, gThisIsNotAnArrayOfBrides).nbChildren,
 			getWomanFromBigArray (womanInd, gThisIsNotAnArrayOfBrides).pChildrenList);
 end;
-{$ENDIF}
 
 						{The variable 'ageUnionWomenSelected' contains the actual age at union for the women selected,
 						which can be slightly different from the age we computed at first}
@@ -5383,13 +5321,11 @@ end;
                         unionStatesMan.Unions [indUnionMan - 1].ages[le_endUnion, woman] :=  aNewBrideInfo.unionStates.Unions [indUnionWoman - 1].ages[le_endUnion, woman];
 						aNewBrideInfo.nbChildren := aNewBrideInfo.nbChildren + nbChildren;
 
-{$IFDEF DEBUG}
 if gRunFromIDE then begin
 	aNewBrideInfo.CheckOwnUnionStates;
 	aNewBrideInfo.CheckOwnChildrenList;
 	unionStatesMan.checkMe (pMan);
 end;
-{$ENDIF}
 
 						copyWomanPartnershipInfoToManAsRelative (aNewBrideInfo.unionStates, indUnionWoman, pMan);
 						copyWomanPartnershipInfoToWomanAsRelative (aNewBrideInfo.unionStates, pPartnerWoman);
@@ -5694,7 +5630,7 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 {$IFNDEF ARM}
 							asm int 3 end;
 {$ELSE}
-							assert(true);
+							assert(false);
 {$ENDIF}
 						writeAndWait ('ERROR ==> Ego and/or partner should have died after the start of union:' + IntToStr (gIndEgo));
 					end;
@@ -5703,7 +5639,7 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 {$IFNDEF ARM}
 							asm int 3 end;
 {$ELSE}
-							assert(true);
+							assert(false);
 {$ENDIF}
 						writeAndWait ('ERROR ==> End union should occur after start of union:' + IntToStr (gIndEgo));
 					end;
@@ -5718,7 +5654,7 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 {$IFNDEF ARM}
 									asm int 3 end;
 {$ELSE}
-									assert(true);
+									assert(false);
 {$ENDIF}
 							end;
 						end_by_widowhood:
@@ -5729,7 +5665,7 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 {$IFNDEF ARM}
 									asm int 3 end
 {$ELSE}
-						assert(true);
+						assert(false);
 {$ENDIF}
 							end;
 						end_by_separation:
@@ -5738,7 +5674,7 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 {$IFNDEF ARM}
 								asm int 3 end;
 {$ELSE}
-								assert(true);
+								assert(false);
 {$ENDIF}
 								pUnionInfo^.partner^.yearDeath := pUnionInfo^.yearEndUnion;
 								writeAndWait ('ERROR ==> Ego or partner should have died after the end of union:' + IntToStr (gIndEgo));
@@ -6282,11 +6218,9 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 {$IFDEF VerboseProfiler} timeProfile_end_proc('calcKinship'); {$ENDIF}
 
 {$IFDEF VerboseProfiler} timeProfile_start_proc('checkRelatives'); {$ENDIF}
-{$IFDEF DEBUG}
-if gRunFromIDE and g_GENPARAM.CHECK_DATASTRUCT.value then begin
+if gRunFromIDE and g_GENPARAM.DEBUG.value then begin
 	checkRelatives (pEgo, g_GENPARAM.DEBUG.value and not g_GENPARAM.MULTITHREADING.value);
 end;
-{$ENDIF}
 {$IFDEF VerboseProfiler} timeProfile_end_proc('checkRelatives'); {$ENDIF}
 
 		if g_GENPARAM.INHERITANCE.value then begin
@@ -6459,16 +6393,12 @@ end;
 
 		if pEgo^.gender = man then begin
 			sexT_Ego := men;
-{$IFDEF DEBUG}
 Inc (gNumEgoMen);
 gChildrenEgoMen := gChildrenEgoMen + getNumChildren (pEgo);
-{$ENDIF}
 		end else begin
 			sexT_Ego := women;
-{$IFDEF DEBUG}
 Inc (gNumEgoWomen);
 gChildrenEgoWomen := gChildrenEgoWomen + getNumChildren (pEgo);
-{$ENDIF}
 		end;
 
 		ageDeathEgo := trunc (pEgo^.ageDeath);
@@ -6593,10 +6523,8 @@ gChildrenEgoWomen := gChildrenEgoWomen + getNumChildren (pEgo);
 					pRelative := pRelative^.nextRelative;
 				end;
 			end else {pEgo^.ageDeath >= ageEgo}
-{$IFDEF DEBUG}
 if (ageEgo = 0) then
 	writeAndWait ('ageEgo is 0 in addToTableKinship');
-{$ENDIF}
 		end; {ageEgo}
 
         setSex := [sexT_Ego, all];
@@ -7585,7 +7513,7 @@ if (ageEgo = 0) then
 {$IFNDEF ARM}
 				asm int 3 end;
 {$ELSE}
-				assert(true);
+				assert(false);
 {$ENDIF}
 	end;
 	
@@ -7649,10 +7577,8 @@ if (ageEgo = 0) then
 		
 		MULTITHREADING: boolean = false;
         
-{$IFDEF DEBUG}
 arr: array [0..1] of longint;
 indEgoValues: longint;
-{$ENDIF}
 
 	var
         allThreadsTerminated, allThreadsCleanedUp: boolean;
@@ -7678,11 +7604,9 @@ timeProfile_talkative();
 
 {$IFDEF VerboseProfiler} timeProfile_start_proc('simulateKinship'); {$ENDIF}
 
-{$IFDEF DEBUG}
 gCheckRelativesCount := 0;
 arr[0] := UtilesForm.FromFamily();
 arr[1] := UtilesForm.ToFamily();
-{$ENDIF}
 
 		pDemReg := getCohort_p (cohortToSimulate);
 
@@ -7749,10 +7673,8 @@ arr[1] := UtilesForm.ToFamily();
 		end;
 		nbTotRelatives := gFirstRelativeInFile;
 		
-{$IFDEF DEBUG}
 gNumEgoMen := 0; gNumEgoWomen := 0; gChildrenEgoMen := 0; gChildrenEgoWomen := 0;
 gIndEgo := 0;
-{$ENDIF}
 
 		fileFormat := g_GENPARAM.kinIndFmt.value;
 		
@@ -7782,7 +7704,7 @@ if (gIndEgo >= arr[0]) and (gIndEgo <= arr[1]) then
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 for indEgoValues := 0 to length (gViewEgos)-1 do
 	if gIndEgo = gViewEgos[indEgoValues] then
@@ -7791,7 +7713,7 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 
 //memoWriteLn([gIndEgo]);flushIO;
@@ -7904,12 +7826,10 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 		end;
 
 try
-{$IFDEF DEBUG}
-if g_GENPARAM.CHECK_DATASTRUCT.value then begin
+if g_GENPARAM.DEBUG.value then begin
 	checkBrides ('simulateKinship', gThisIsNotAnArrayOfBrides);
 	checkChildren ('simulateKinship');
 end;
-{$ENDIF}
 		if (g_GENPARAM.TALKATIVE.value) then begin
 			stopTime (tStart_interm, '===== checkBrides & checkChildren lasted: ');
 		end;
@@ -7927,7 +7847,7 @@ if gRunFromIDE then
 {$IFNDEF ARM}
 	asm int 3 end;
 {$ELSE}
-	assert(true, E.Message);
+	assert(false, E.Message);
 {$ENDIF}
 end;
 {$IFDEF VerboseProfiler} timeProfile_end_proc('simulateKinship'); {$ENDIF}
@@ -7938,21 +7858,6 @@ end;
 						gMyThreadObjects[indThread].CleanUp;
 						gMyThreadObjects[indThread].Terminate;
 					end;
-// --- CLAUDE 2026-08-26 [2.6] begin --------------------------------------------------
-// was:
-//					allThreadsTerminated := false;
-//					while not allThreadsTerminated do
-//						for indThread := 0 to gNumThreadsUsed - 1 do
-//							allThreadsTerminated := allThreadsTerminated and gMyThreadObjects[indThread].Terminated;
-// This loop could never end. allThreadsTerminated starts false and "false and anything"
-// is false, so the inner loop could not make it true; the flag has to be reset to true
-// inside the outer loop, as the correct version of the same idiom around line 7820 does.
-// Worse, the objects have FreeOnTerminate := true and Terminate was called just above,
-// so .Terminated may be read from an object the RTL has already freed. A fallback that
-// hangs the program at 100 per cent CPU is worse than no fallback, and TSimulEgoTreeCleanUp
-// already does this work on the normal path. The loop is therefore removed rather than
-// corrected: no amount of looping makes a use-after-free safe.
-// --- CLAUDE 2026-08-26 [2.6] end ----------------------------------------------------
 					if (g_GENPARAM.TALKATIVE.value) then begin
 						stopTime (tStart_interm, '===== thread objects cleanup lasted: ');
 					end;

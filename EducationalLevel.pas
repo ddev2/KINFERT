@@ -21,9 +21,7 @@ implementation
 	var
 		edLevel, edLevelIn, edLevelOut, edLevelMen, edLevelWomen, edLevelChild: EduLevels;
 		vSex: Sex;
-{$IFDEF Debug}
 temp: double;
-{$ENDIF}
 	begin
 		{educational level of men and women}
 		with p^ do begin
@@ -126,15 +124,11 @@ temp: double;
 					eduEgoPartnerChildren [edLevelWomen, edLevelMen, eduLow].cumulValue := eduEgoPartnerChildren [edLevelWomen, edLevelMen, eduLow].value;
 					for edLevelOut := eduMedium to eduHigh do
 					begin
-{$IFDEF Debug}
 	temp := eduEgoPartnerChildren [edLevelWomen, edLevelMen, edLevelOut].value;
-{$ENDIF}
 						eduEgoPartnerChildren [edLevelWomen, edLevelMen, edLevelOut].cumulValue :=
 						eduEgoPartnerChildren [edLevelWomen, edLevelMen, edLevelOut].value +
 						eduEgoPartnerChildren [edLevelWomen, edLevelMen, Pred(edLevelOut)].cumulValue;
-{$IFDEF Debug}
 	temp := eduEgoPartnerChildren [edLevelWomen, edLevelMen, edLevelOut].cumulValue;
-{$ENDIF}
 					end;
 				end;
 		end;
@@ -198,14 +192,12 @@ temp: double;
 		p: pStructDemographicRegimeSettings;
 	begin
 		dummy := randomGenerator.alea0;
-{$IFDEF Debug}
 if (pRelative = nil) then begin
 	writeAndWait('===> ERROR: Nil pRelative in edStatusCohort');
 	exit;
 end
 else if (pRelative^.cohort <= 0) then
 	writeAndWait('===> ERROR: cohort value not assigned for relative in edStatusCohort');
-{$ENDIF}
 		
 		p := getCohort_p (pRelative^.cohort);
 		
@@ -249,17 +241,13 @@ else if (pRelative^.cohort <= 0) then
 	begin
 		dummy := randomGenerator.alea0;
 		pPartner := findPartner(pRelative, false, rank);
-{$IFDEF Debug}
 if pPartner = nil then begin
 	writeAndWait ('===> ERROR: partner bad in edStatusPartner');
 end;
-{$ENDIF}
 		eduLevelPartner := eduLevel (pPartner^.status);
-{$IFDEF Debug}
 if pPartner^.status = '' then begin
 	writeAndWait ('===> ERROR: EdStatus bad in edStatusPartner');
 end;
-{$ENDIF}
 		
 		if (dummy < p^.eduEgoPartner [eduLevelPartner, pRelative^.gender, eduLow].cumulValue) then
 			edStatusPartner := 'B'

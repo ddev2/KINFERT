@@ -282,7 +282,7 @@ uses Memory;
 {$IFNDEF ARM}
 				asm int 3 end;
 {$ELSE}
-				assert(true);
+				assert(false);
 {$ENDIF}
 		end else
 			result := UInfo^.partner;
@@ -657,7 +657,7 @@ if gRunFromIDE then
 			end;
 		end;
 
-		if g_GENPARAM.CHECK_DATASTRUCT.value then begin
+		if g_GENPARAM.DEBUG.value then begin
  			writeCrossNupt ('union_women_men.txt', n.union_women_men);
 			writeCrossNupt ('union_men_women.txt', n.union_men_women);
 		end;
@@ -1099,7 +1099,7 @@ except // 1
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true,E.Message)
+			assert(false,E.Message)
 {$ENDIF}
 	end;
 end;
@@ -1450,7 +1450,7 @@ except // 1
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true,E.Message)
+			assert(false,E.Message)
 {$ENDIF}
 	end;
 end;
@@ -1472,7 +1472,7 @@ except // 2
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true,E.Message)
+			assert(false,E.Message)
 {$ENDIF}
 	end;
 end;
@@ -1498,7 +1498,7 @@ except // 3
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true,E.Message)
+			assert(false,E.Message)
 {$ENDIF}
 	end;
 end;

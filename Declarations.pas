@@ -729,7 +729,6 @@ type
 		OUTPUT_EXCLUDE_ABORTION,
 		OUTPUT_FERT_SURVEY,
 		OUTPUT_SHORTFILENAME,
-		CHECK_DATASTRUCT,
 		DEMOCARE_LARGE_FIELDS,
 		DEBUG: BooleanName;
 		NEW_INIT_MOTHERHOOD: BooleanName;
@@ -864,15 +863,9 @@ type
 		optional: boolean; // whether the variable is not used by default (if false, it is not written in the standard cohort file)
 		readInConfigFile: boolean; // whether the value was read in the config file
 		next: GenericName;
-{$IFDEF DEBUG}
 		checkIt: boolean;
-{$ENDIF}
 
-{$IFDEF DEBUG}
 		constructor Create (n: string; c: string; linkedListOfParams: GenericName = nil; check: boolean = false); overload;
-{$ELSE}
-		constructor Create (n: string; c: string; linkedListOfParams: GenericName = nil); overload;
-{$ENDIF}
 		destructor Destroy; override;
 		function defaultValue: string; virtual;
 		function readValue (s: string): word; virtual; overload;
@@ -1203,6 +1196,9 @@ Var
 {$IFDEF LAZARUS_GUI}
 	gCfgFilename: string;
 	gRunFromIDE: boolean;
+	gDebugSession: boolean = false;	{session-level debug preference: FALSE at application
+									 start, then set only by the Utiles checkbox. Survives
+									 the teardown of the parameter objects between runs.}
 	gNumCoresForMultiThreading: longint;
 	gNumLogicalThreadsForMultiThreading: longint;
 	gMaxThreads: longint;
@@ -1337,11 +1333,7 @@ end;
 	end;
 
 
-{$IFDEF DEBUG}
 	constructor GenericName.Create (n: string; c: string; linkedListOfParams: GenericName = nil; check: boolean = false); overload;
-{$ELSE}
-	constructor GenericName.Create (n: string; c: string; linkedListOfParams: GenericName = nil); overload;
-{$ENDIF}
 	begin
 		inherited Create;
 		name := n;
@@ -1349,11 +1341,9 @@ end;
 		changed := false;
 		optional := false;
 		readInConfigFile := false;
-{$IFDEF DEBUG}
 		checkIt := check;
 		if checkIt then
 			checkIt := checkIt;
-{$ENDIF}
 		next := nil;
 		if linkedListOfParams = nil then exit;
 		while linkedListOfParams.next <> nil do
@@ -1363,10 +1353,8 @@ end;
 
 	destructor GenericName.Destroy ();
 	begin
-{$IFDEF DEBUG}
 		if checkIt then
 			checkIt := checkIt;
-{$ENDIF}
 		inherited Destroy;
 	end;
 

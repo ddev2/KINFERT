@@ -13,9 +13,7 @@ uses
 {$ENDIF}
 ;
 
-{$IFDEF DEBUG}
 function checkDebugLongint(a, min, max: longint): boolean;
-{$ENDIF}
 	procedure DumpExceptionCallStack(E: Exception);
 
 const
@@ -143,6 +141,16 @@ var
 	procedure writeArrayOfDoubleOffset (outFile: TFileType; sep: string; const ad: Array of double; offset: longint);
 	procedure writeLnArrayOfDoubleOffset (outFile: TFileType; sep: string; const ad: Array of double; offset: longint);
 	procedure writeOneArrayOfDouble (fileName: string; const ad: Array of double);
+
+	{dumpArray writes one array to <results>/<name>.txt as two tab separated rows, the
+	 indices then the values, so the file opens directly in a spreadsheet. Intended for
+	 inspection while debugging. See the implementation for the notes on firstIndex.}
+	procedure dumpArray (name: string; const a: Array of double;  firstIndex: longint = 0); overload;
+	procedure dumpArray (name: string; const a: Array of longint; firstIndex: longint = 0); overload;
+	procedure dumpArray (name: string; const a: Array of boolean; firstIndex: longint = 0); overload;
+	procedure dumpArray (name: string; const a: Array of char;    firstIndex: longint = 0); overload;
+	procedure dumpArray (name: string; const a: Array of string;  firstIndex: longint = 0); overload;
+
 	procedure writeLnArrayOfLongint (outFile: TFileType; sep: string; const al: Array of longint);
 	procedure writeArrayOfDoubleName (outFile: TFileType; sep: string; const ad: Array of doubleName; removeOptional: boolean = false);
 	procedure writeLnArrayOfDoubleName (outFile: TFileType; sep: string; const ad: Array of doubleName; removeOptional: boolean = false);
@@ -429,12 +437,10 @@ var
 		Halt; // End of program execution
 	end;
 
-{$IFDEF DEBUG}
 function checkDebugLongint(a, min, max: longint): boolean;
 begin
 	result := (a >= min) and (a <= max);
 end;
-{$ENDIF}
 
 	function yearTrunc (year: double; nDec: longint = 5): double;
 	begin
@@ -1327,6 +1333,106 @@ end;
 		end;
 	end;
 	
+	{ --------------------------------------------------------------------------------
+	  dumpArray
+
+	  A debugging convenience. Writes one array to <results>/<name>.txt as two tab
+	  separated rows: the indices on the first, the values on the second. The file
+	  opens directly in a spreadsheet and is rewritten on every call.
+
+	  firstIndex labels the first column. An open array parameter always starts at 0
+	  inside the procedure, whatever the caller's declaration, so for a static array
+	  over a subrange pass its low bound:
+	      dumpArray ('gFecundability', gFecundability, kMinAgeFert);
+	      dumpArray ('gDistrib_fecundability', gDistrib_fecundability);
+
+	  Doubles are written at full precision with a decimal POINT, because Init.pas
+	  sets gFormatSettings.DecimalSeparator to '.'. A spreadsheet configured for a
+	  decimal comma has to be told so on import.
+
+	  Main thread only, like writeState: it opens its own file with aSync false.
+	  Tabs inside string values are replaced by spaces so the columns stay aligned.
+	  -------------------------------------------------------------------------------- }
+	procedure dumpArray_strings (name: string; const s: Array of string; firstIndex: longint);
+	var
+		ind, res: longint;
+		f: TFileType;
+	begin
+		if length (s) = 0 then begin
+			memoWriteLn (['dumpArray: ', name, ' has no elements, nothing written']);
+			exit;
+		end;
+		if not checkDirResult () then exit;
+		f := TFileType.Create (gPathToResult + name + '.txt', res, 'DUMPARRAY');
+		if (res = 0) then begin
+			f.aSync := false;
+			bWrite (f, ['index', tab]);
+			for ind := 0 to length (s) - 1 do
+				bWrite (f, [firstIndex + ind, tab]);
+			cWriteLn (f);
+			bWrite (f, [name, tab]);
+			for ind := 0 to length (s) - 1 do
+				bWrite (f, [s[ind], tab]);
+			cWriteLn (f);
+		end;
+		f.Destroy;
+	end;
+
+	procedure dumpArray (name: string; const a: Array of double; firstIndex: longint = 0);
+	var
+		s: Array of string;
+		ind: longint;
+	begin
+		setLength (s, length (a));
+		for ind := 0 to length (a) - 1 do
+			s[ind] := floatToStrF (a[ind], ffGeneral, 15, 0, gFormatSettings);
+		dumpArray_strings (name, s, firstIndex);
+	end;
+
+	procedure dumpArray (name: string; const a: Array of longint; firstIndex: longint = 0);
+	var
+		s: Array of string;
+		ind: longint;
+	begin
+		setLength (s, length (a));
+		for ind := 0 to length (a) - 1 do
+			s[ind] := intToStr (a[ind]);
+		dumpArray_strings (name, s, firstIndex);
+	end;
+
+	procedure dumpArray (name: string; const a: Array of boolean; firstIndex: longint = 0);
+	var
+		s: Array of string;
+		ind: longint;
+	begin
+		setLength (s, length (a));
+		for ind := 0 to length (a) - 1 do
+			if a[ind] then s[ind] := 'TRUE' else s[ind] := 'FALSE';
+		dumpArray_strings (name, s, firstIndex);
+	end;
+
+	procedure dumpArray (name: string; const a: Array of char; firstIndex: longint = 0);
+	var
+		s: Array of string;
+		ind: longint;
+	begin
+		setLength (s, length (a));
+		for ind := 0 to length (a) - 1 do
+			s[ind] := a[ind];
+		dumpArray_strings (name, s, firstIndex);
+	end;
+
+	procedure dumpArray (name: string; const a: Array of string; firstIndex: longint = 0);
+	var
+		s: Array of string;
+		ind: longint;
+	begin
+		setLength (s, length (a));
+		for ind := 0 to length (a) - 1 do
+			s[ind] := substituteChar (tab, ' ', a[ind]);
+		dumpArray_strings (name, s, firstIndex);
+	end;
+
 	procedure writeArrayOfLongint (outFile: TFileType; sep: string; const al: Array of longint);
 	var
 		ind, len: longint;

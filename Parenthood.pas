@@ -32,13 +32,11 @@ type
 		procedure truncateAtAge (ageUnionTrunc: double);
 		function mySize: longint;
 	
-{$IFDEF DEBUG}
 function hasChild (bornOnYear: longint): boolean;
 function checkOwnUnionStates: boolean;
 function checkUnionStates (ms: TUnionsType): boolean;
 function checkOwnChildrenList: boolean;
 function checkChildrenList (nC: longint; pChild: pInfoChildType): boolean;
-{$ENDIF}
 	end;
 	ArrayOfPersonMemoryBlock = array of TPersonMemoryBlock;
 	
@@ -86,7 +84,6 @@ begin
 end;
 
 
-{$IFDEF DEBUG}
 function TPersonMemoryBlock.hasChild (bornOnYear: longint): boolean;
 var
 	pChild: pInfoChildType;
@@ -151,7 +148,6 @@ begin
 		pChild := pChild^.next;
 	end;
 end;
-{$ENDIF}
 
 	// This object copy info from a bride and, if ageUnionTrunc > 0, prepare her for the current groom
 	Constructor TPersonMemoryBlock.Create(randomGenerator: TRandomNumberGenerator;
@@ -165,12 +161,10 @@ end;
 
 	begin
 		inherited Create();
-{$IFDEF DEBUG}
 if gRunFromIDE then begin
 	checkUnionStates (ms);
 	checkChildrenList (nC, pCh);
 end;
-{$ENDIF}
 		idPerson := personId;
 		cohort := cohortPerson;
 		// the mother has a year of birth and we set a month of birth...
@@ -202,12 +196,10 @@ end;
 
 		if (ageUnionTrunc > 0) then
 			truncateAtAge (ageUnionTrunc);
-{$IFDEF DEBUG}
 if gRunFromIDE then begin
 	checkOwnUnionStates;
 	checkOwnChildrenList;
 end
-{$ENDIF}
 	end;
 
 	Destructor TPersonMemoryBlock.Destroy;

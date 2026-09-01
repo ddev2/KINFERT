@@ -294,9 +294,7 @@ uses
 		ind: longint;
 		idWoman: longint;
 		pDemReg: pStructDemographicRegimeSettings;
-{$IFDEF DEBUG}
 		aYear: longint;
-{$ENDIF}
 		
 		label error;
 	begin
@@ -346,7 +344,6 @@ uses
 		if ( g_GENPARAM.KINSHIP.value ) then begin
 			if ((loopPhase = k_onlyOne) or (loopPhase = k_first)) then
 				initMotherhood (randomGenerator);
-{$IFDEF DEBUG}
 	if gRunFromIDE then begin
 		bWriteLn (gDebugFertFile, ['Births from women potential mothers of egos and other kin']);
 		for aYear := 0 to 2999 do
@@ -354,7 +351,6 @@ uses
 				bWriteLn (gDebugFertFile, [aYear, tab, gAllBirths [aYear]]);
 		//gDebugFertFile.myFlush;
 	end;
-{$ENDIF}
 			simulateKinship (randomGenerator, currCohort, bootstrap_ind, loopPhase);
 		end;
 		

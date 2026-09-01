@@ -450,9 +450,8 @@ var
 			g_GENPARAM.OUTPUT_EXCLUDE_ABORTION.value := TRUE;
 			g_GENPARAM.OUTPUT_FERT_SURVEY.value := FALSE;
 			g_GENPARAM.OUTPUT_SHORTFILENAME.value := TRUE;
-			g_GENPARAM.CHECK_DATASTRUCT.value := FALSE;
 			g_GENPARAM.DEMOCARE_LARGE_FIELDS.value := FALSE;
-			g_GENPARAM.DEBUG.value := FALSE;
+			g_GENPARAM.DEBUG.value := gDebugSession;
 			g_GENPARAM.NEW_INIT_MOTHERHOOD.value := TRUE;
 
 			g_GENPARAM.DOCUMENTATION.value := '';
@@ -588,7 +587,6 @@ var
 			g_GENPARAM.OUTPUT_FERT_SURVEY := BooleanName.Create(FALSE, 'OUTPUT_FERT_SURVEY',
 			'Write as a fertility survey, truncating the information for each woman at a random age: the age range can be adjusted below (default is OFF)', g_GENPARAM.listOfParams);
 			g_GENPARAM.OUTPUT_SHORTFILENAME := BooleanName.Create(TRUE, 'OUTPUT_SHORTFILENAME', 'The name of output file is short and does not contain information on the steps (default is ON)', g_GENPARAM.listOfParams);
-			g_GENPARAM.CHECK_DATASTRUCT := BooleanName.Create(FALSE, 'CHECK_DATASTRUCT', 'Thoroughly check internal data structures, especially for KINSHIP', g_GENPARAM.listOfParams);
 			g_GENPARAM.DEMOCARE_LARGE_FIELDS := BooleanName.Create(FALSE, 'DEMOCARE_LARGE_FIELDS',
 			'DemoCare individual file: write the extended set of columns instead of the short one (default is OFF)',
 			g_GENPARAM.listOfParams);
@@ -747,7 +745,6 @@ var
 
 	begin
 		tStart := Now();
-		g_GENPARAM.CHECK_DATASTRUCT.value := g_GENPARAM.DEBUG.value;
 		for ind := 1 to 100 do
 			gBlanks := gBlanks + ' ';
 		initParams := false;

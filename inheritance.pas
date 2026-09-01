@@ -468,7 +468,7 @@ implementation
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 	end;
 	
@@ -489,7 +489,7 @@ implementation
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 	end;
 	
@@ -536,7 +536,7 @@ implementation
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 	end;
 	
@@ -627,7 +627,7 @@ implementation
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 		end;
 		if heirFound_add (pDeadRelative, pRelative, degree, nSiblings) then begin
@@ -719,7 +719,7 @@ implementation
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 	end;
 	
@@ -805,7 +805,7 @@ implementation
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 			numOfPossibleHeirs := 1;
 		end;
@@ -883,7 +883,7 @@ implementation
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true);
+			assert(false);
 {$ENDIF}
 				end;
 				
@@ -905,7 +905,7 @@ implementation
 {$IFNDEF ARM}
 					asm int 3 end;
 {$ELSE}
-					assert(true);
+					assert(false);
 {$ENDIF}
 			end;
 		end;
@@ -921,7 +921,7 @@ implementation
 {$IFNDEF ARM}
 					asm int 3 end;
 {$ELSE}
-					assert(true);
+					assert(false);
 {$ENDIF}
 			end else begin
 				if 	heirFound_add (pDeadRelative, getAscendant (pDeadRelative, [man, man]), 2) or

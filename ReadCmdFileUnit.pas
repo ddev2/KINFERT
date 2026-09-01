@@ -881,7 +881,6 @@ implementation
 		writeON_OFF (outFile, g_GENPARAM.SEP_TARGET);
 		writeON_OFF (outFile, g_GENPARAM.FORCE_SEP_ITER);
 		writeON_OFF (outFile, g_GENPARAM.INIT_RANDOM_NUMBERS);
-		writeON_OFF (outFile, g_GENPARAM.CHECK_DATASTRUCT);
 		writeON_OFF (outFile, g_GENPARAM.DEBUG);
 		writeON_OFF (outFile, g_GENPARAM.NEW_INIT_MOTHERHOOD);
 		writeLongintValue (outFile, g_GENPARAM.MODEGO);
@@ -1267,8 +1266,6 @@ implementation
 			g_GENPARAM.SEP_TARGET.readValue (aBooleanState)
 		else if ( aCommand = 'FORCE_SEP_ITER' ) then
 			g_GENPARAM.FORCE_SEP_ITER.readValue (aBooleanState)
-		else if ( aCommand = 'CHECK_DATASTRUCT' ) then
-			g_GENPARAM.CHECK_DATASTRUCT.readValue (aBooleanState)
 		else if ( aCommand = 'MODEGO' ) then
 			g_GENPARAM.MODEGO.readValue (aState_NotProcessed)
 		else if ( aCommand = 'OPTIMAL_TREES' ) then
@@ -1307,9 +1304,7 @@ implementation
 			g_GENPARAM.OUTPUT_SHORTFILENAME.readValue (aBooleanState)
 		else if ( aCommand = 'OUTPUT_DIRECTORY' ) then begin
 			g_GENPARAM.OUTPUT_DIRECTORY.readValue (aState_NotProcessed);
-		end else if ( aCommand = 'CHECK_DATASTRUCT' ) then
-			g_GENPARAM.CHECK_DATASTRUCT.readValue (aBooleanState)
-		else if ( aCommand = 'DEBUG' ) then
+		end else if ( aCommand = 'DEBUG' ) then
 			g_GENPARAM.DEBUG.readValue (aBooleanState)
 		else if ( aCommand = 'NEW_INIT_MOTHERHOOD' ) then
 			g_GENPARAM.NEW_INIT_MOTHERHOOD.readValue (aBooleanState)

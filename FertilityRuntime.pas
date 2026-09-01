@@ -383,25 +383,19 @@ implementation
 	var
 		dummy: double = 0;
 		cohort_man: longint;
-{$IFDEF DEBUG}
 		mem_ages, mem_ages2, mem_ages3: TabAgeEvents;
-{$ENDIF}
 
 	begin
 		result := true;
 		
-{$IFDEF DEBUG}
 if gRunFromIDE then
 	move (ageDurationEvents.ages, mem_ages{%H-}, sizeOf(mem_ages));
-{$ENDIF}
 
 		{woman's age at first union}
 		ageDurationEvents.ages[le_union, woman] := max ( kMinAgeUnion, ageDurationEvents.ages[le_union, woman] );
 
-{$IFDEF DEBUG}
 if (ageDurationEvents.ages[le_union, woman] > 75) then
 	writeAndWait ('ERROR ==> ageDurationEvents.ages[le_union, woman] greater than 75 in initPartnershipLife');
-{$ENDIF}
 
 try // 1
 		{Age at union of man (we don't know whether this is a first union, as we do not have the past history of the man, before this union)}
@@ -418,10 +412,8 @@ try // 1
 			ageDurationEvents.ages[le_union, man] := max (kMinAgeUnion, ageDurationEvents.ages[le_union, man] + randomGenerator.alea(0.0, 0.99999999) - 0.5 );
 		end;
 
-{$IFDEF DEBUG}
 if gRunFromIDE then
 	move (ageDurationEvents.ages, mem_ages2{%H-}, sizeOf(mem_ages));
-{$ENDIF}
 
 		{Age at death of the man}
 		{age at death are NOT at midyear}
@@ -447,10 +439,8 @@ if gRunFromIDE then
 			if g_GENPARAM.FIXED_FERTILITY.value and (ageDurationEvents.ages[le_death, woman] < 40) then
 				ageDurationEvents.ages[le_death, woman] := 40;
 			end;
-{$IFDEF DEBUG}
 if gRunFromIDE then
 	move (ageDurationEvents.ages, mem_ages3{%H-}, sizeOf(mem_ages));
-{$ENDIF}
 		end;
 
 		if	(ageDurationEvents.ages[le_union, woman] <> kNotDefined) and (ageDurationEvents.ages[le_death, woman] <> kNotDefined) and
@@ -496,7 +486,7 @@ if gRunFromIDE then
 {$IFNDEF ARM}
 	asm int 3 end;
 {$ELSE}
-	assert(true,E.Message)
+	assert(false,E.Message)
 {$ENDIF}
 	end;
 end;
@@ -675,7 +665,7 @@ if gRunFromIDE then
 {$IFNDEF ARM}
 	asm int 3 end;
 {$ELSE}
-	assert(true);
+	assert(false);
 {$ENDIF}
 					writeAndWaitConst(['===> ERROR: age at death inferior to age at end union for one of the partners']);
 				end;
@@ -897,7 +887,7 @@ if (monthOfEndOfFecundLife < monthEnd) then begin
 {$IFNDEF ARM}
 		asm int 3 end;
 {$ELSE}
-		assert(true);
+		assert(false);
 {$ENDIF}
 	writeAndWaitConst(['===> ERROR: monthOfEndOfFecundLife < monthEnd']);
 end;
@@ -931,7 +921,7 @@ if gRunFromIDE then
 {$IFNDEF ARM}
 	asm int 3 end;
 {$ELSE}
-	assert(true,E.Message)
+	assert(false,E.Message)
 {$ENDIF}
 		end;
 	end;
@@ -941,10 +931,8 @@ try // 2
 			ageDurationEvents.monthStart := currMonth;
 			while (currMonth <= monthEnd) and (not endUnion) do
 			begin
-{$IFDEF DEBUG}
 if (lunarMonthsToAge (currMonth) < kMinAgeFert) or (lunarMonthsToAge (currMonth) > kMaxAgeFert) then
 	writeAndWait ('===> ERROR: currMonth bad value in calcNbChildren');
-{$ENDIF}
 				currAge := trunc ( lunarMonthsToAge (currMonth) );
 				aleaFecundability := randomGenerator.alea0 ();
 try // 2-1
@@ -988,7 +976,7 @@ except // 2-1
 {$IFNDEF ARM}
 				asm int 3 end;
 {$ELSE}
-				assert(true,E.Message)
+				assert(false,E.Message)
 {$ENDIF}
 		end;
 	end;
@@ -1005,7 +993,7 @@ if gRunFromIDE then
 {$IFNDEF ARM}
 	asm int 3 end;
 {$ELSE}
-	assert(true);
+	assert(false);
 {$ENDIF}
 							writeAndWaitConst (['===> ERROR: monthEndPregnancy > monthFecundation + 11']);
 						end;
@@ -1042,7 +1030,7 @@ except // 2-2
 {$IFNDEF ARM}
 				asm int 3 end;
 {$ELSE}
-				assert(true,E.Message)
+				assert(false,E.Message)
 {$ENDIF}
 		end;
 	end;
@@ -1057,7 +1045,7 @@ except // 2
 {$IFNDEF ARM}
 				asm int 3 end;
 {$ELSE}
-				assert(true,E.Message)
+				assert(false,E.Message)
 {$ENDIF}
 		end;
 	end;
@@ -1074,7 +1062,7 @@ except // 3
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true,E.Message)
+			assert(false,E.Message)
 {$ENDIF}
 	end;
 end;
@@ -1091,7 +1079,7 @@ except // 4
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true,E.Message)
+			assert(false,E.Message)
 {$ENDIF}
 	end;
 end;
@@ -1114,7 +1102,7 @@ except // 5
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true,E.Message)
+			assert(false,E.Message)
 {$ENDIF}
 	end;
 end;
@@ -1137,7 +1125,7 @@ except // 6
 {$IFNDEF ARM}
 			asm int 3 end;
 {$ELSE}
-			assert(true,E.Message)
+			assert(false,E.Message)
 {$ENDIF}
 	end;
 end;
@@ -1267,7 +1255,7 @@ end;
 {$IFNDEF ARM}
 				asm int 3 end;
 {$ELSE}
-				assert(true,E.Message)
+				assert(false,E.Message)
 {$ENDIF}
 		end;
 	end;
@@ -2336,9 +2324,7 @@ type
 		duration: longint;
 		partnershipStatus: PartnershipStatusesType;
 		unionGenState: UnionGenStatesType;
-{$IFDEF DEBUG}
 f: TFileType;
-{$ENDIF}
 		filenameWithPath: string;
 
 	begin {init_fecGen}
@@ -2510,14 +2496,12 @@ end;
 			pData^.WomenPop [ageWomen, any] := pData^.WomenPop [ageWomen, any] + numFem;
 		end;
 
-{$IFDEF DEBUG}
 if g_GENPARAM.DEBUG.value and not g_GENPARAM.MULTITHREADING.value then begin
 	if ( openFileOut(g_FileName.value + '_statusTable.txt', 'STATUSTABLE', f, kAsyncFalse) ) then begin
 		writePartnershipStatusTable (f, pData^.WomenPop, true);
 		f.Destroy;
 	end;
 end;
-{$ENDIF}
 		
 		{the 'modern' way to compute propSeparation}
 		pData^.propFinalSeparation := separationFinalProp(objUnionTable);
@@ -2723,9 +2707,7 @@ onExit:
 var
 		{utility}
 		ind, ind1: longint;
-{$IFDEF DEBUG}
 temp : double;
-{$ENDIF}
 		
 	a, b, c: double;
 	CTFR_result: double;

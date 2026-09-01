@@ -1,5 +1,7 @@
 {$UNDEF VerboseProfiler}
-{$define Debug}
+// {$define Debug} removed 29 Aug 2026: it was defined in every build, so the ~70
+// {$IFDEF DEBUG} blocks were always compiled. They are now unconditional; the runtime
+// switch g_GENPARAM.DEBUG gates the diagnostics that should be optional.
 {$UNDEF DebugMemory}
 //{$define NewStablePop_Motherhood}
 {$UNDEF addOldUnionType}
