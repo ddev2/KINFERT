@@ -675,7 +675,7 @@ if gRunFromIDE then
 							pDemReg: pStructDemographicRegimeSettings;
 							const AccDurationContr: array of double;
 							propContraception: double;
-							monthEnd: longint;
+				 			monthEnd: longint;
 							var wt_currMonth: longint): longint;
 			var
 				month: longint;
@@ -761,8 +761,8 @@ if gRunFromIDE then
 
 					{amenorrea post-partum}
 					dummy := randomGenerator.alea0;
-					month := 10;
-					while dummy < pDemReg^.temporary_sterility[month - 10] do
+					month := kLivingBirth_durationPregnancyInMonths;
+					while dummy < pDemReg^.temporary_sterility[month - kLivingBirth_durationPregnancyInMonths] do
 						Inc ( month );
 					
 					{Case of the possible early death of the newborn, before weaning,
@@ -816,8 +816,9 @@ if gRunFromIDE then
 					
 					addChild (currAge, min (nbChildren, kMaxNbChildrenCalc), nbBirthsInDelivery, ageChildren);
 
-					LivingBirth := min (month, maxMonthDeathChild + 1);
-					
+					{maxMonthDeathChild is counted from birth, month from conception}
+					LivingBirth := min (month, kLivingBirth_durationPregnancyInMonths + maxMonthDeathChild + 1);	
+									
 				end; {LivingBirth}
 				
 			begin {pregnancy}
@@ -905,7 +906,12 @@ end;
 try // 1
 			{Birth control after union. Only first union}
 			if currUnion = 1 then begin
-				monthWaitingTime := waiting_time_contraception (pDemReg, pDemReg^.AccDurationContrAfterUnion, pDemReg^.propContraceptionAfterUnion_var, monthEnd, currMonth);
+				monthWaitingTime := waiting_time_contraception (
+					pDemReg,
+					pDemReg^.AccDurationContrAfterUnion,
+					pDemReg^.propContraceptionAfterUnion_var,
+					monthEnd,
+					currMonth);
 				waiting_time_firstUnion := (monthWaitingTime > 0);
 			end;
 			
@@ -2490,7 +2496,7 @@ end;
 		end;
 
 		{women who never get in a union}
-		numFem := pDemReg^.lp[nWomenPar].value - pData^.WomenPop[10, any];
+		numFem := pDemReg^.lp[nWomenPar].value - pData^.WomenPop[kMinAgeUnion, any];
 		for ageWomen := kMinAgeFert to kMaxAgeFert do begin
 			pData^.WomenPop [ageWomen, neverInUnion] := pData^.WomenPop [ageWomen, neverInUnion] + numFem;
 			pData^.WomenPop [ageWomen, any] := pData^.WomenPop [ageWomen, any] + numFem;
