@@ -677,19 +677,18 @@ if gRunFromIDE then
 							pDemReg: pStructDemographicRegimeSettings;
 							const AccDurationContr: array of double;
 							propContraception: double;
-				 			monthEnd: longint;
-							var wt_currMonth: longint): longint;
+				 			monthEnd: longint): longint;
 			var
 				monthsOfContraception: longint;	{months of contraceptive waiting drawn in this call}
 				aleaContraception: double;
 			begin
 				waiting_time_contraception := 0;
 				aleaContraception := randomGenerator.alea0;
-				if ( AccDurationContr [0] < 1.0 ) and ( aleaContraception < propContraception) and (wt_currMonth <= monthEnd) then
+				if ( AccDurationContr [0] < 1.0 ) and ( aleaContraception < propContraception) and (currMonth <= monthEnd) then
 				begin
 					aleaContraception := randomGenerator.alea0;
 					monthsOfContraception := 0;
-					while	(wt_currMonth <= monthEnd) and
+					while	(currMonth <= monthEnd) and
 							(aleaContraception > AccDurationContr [monthsOfContraception]) and
 							(not endUnion) and
 							( effectivenessContraceptionStopping(pDemReg, nbChildren) >= randomGenerator.alea0 ) do
@@ -699,11 +698,11 @@ if gRunFromIDE then
 								pCurrChild, pDemReg^.separationInfo, pDemReg^.dp, unionStates)
 						then begin
 							paramSeparation;
-							ageDurationEvents.monthStop := min (wt_currMonth, ageDurationEvents.monthStop);
+							ageDurationEvents.monthStop := min (currMonth, ageDurationEvents.monthStop);
 							ageDurationEvents.monthStopIsStopping := false;
 						end else begin
 							Inc ( monthsOfContraception );
-							Inc ( wt_currMonth );
+							Inc ( currMonth );
 						end;
 					end;
 					waiting_time_contraception := monthsOfContraception;
@@ -712,8 +711,7 @@ if gRunFromIDE then
 			
 			function pregnancy (	pDemReg: pStructDemographicRegimeSettings;
 									var pCurrChild: pInfoChildType;
-									monthEnd: longint;
-									var wt_currMonth: longint): longint;
+									monthEnd: longint): longint;
 			var
 				dummy: double;
 				currAge: FecundAges;
@@ -727,14 +725,14 @@ if gRunFromIDE then
 					begin
 						livingAtBirth := false;
 						birthOrder := 0;
-						ageMotherAtChildbirth := lunarMonthsToAge (wt_currMonth + nonSusceptiblePeriod);
+						ageMotherAtChildbirth := lunarMonthsToAge (currMonth + nonSusceptiblePeriod);
 						ageFatherAtChildbirth := calcAgeFatherAtChildbirth (ageMotherAtChildbirth, currUnion, unionStates);
 						{DEBUG: CURIOUS NEGATIVE?? CHECK}
 						ageDeath := lunarMonthsToAge (nonSusceptiblePeriod - kLivingBirth_durationPregnancyInMonths);
 						
 						{date ---}
-						monthEndPregnancy := wt_currMonth + nonSusceptiblePeriod;
-						durationUnion := wt_currMonth - monthStart + nonSusceptiblePeriod;
+						monthEndPregnancy := currMonth + nonSusceptiblePeriod;
+						durationUnion := currMonth - monthStart + nonSusceptiblePeriod;
 						motherUnionNumber := unionStates.nbUnions;
 						monthStartInterval := calcStartInterval (pCurrChild, monthStart);
 
@@ -829,7 +827,7 @@ if gRunFromIDE then
 				Inc ( nbPregnanciesInCurrentUnion );
 				{We look to see if we have a spontaneous abortion / intrauterine death or a stillborn or live birth}
 				dummy := randomGenerator.alea0;
-				currAge := trunc ( lunarMonthsToAge (wt_currMonth) ); {Age at conception} {DEBUG check whether currMonth start from birth}
+				currAge := trunc ( lunarMonthsToAge (currMonth) ); {Age at conception} {DEBUG check whether currMonth start from birth}
 				
 				if (dummy < gIntrauterine_mortality_risk[currAge] + gStillbirth_mortality_risk[currAge]) then
 				begin
@@ -855,7 +853,7 @@ if gRunFromIDE then
 											pDemReg, 
 											pDemReg^.AccDurationWaitingTime [min(nbChildren, kMaxIndBirthIntervals)],
 											effectivenessContraceptionSpacing(pDemReg, nbChildren),
-											monthEnd, wt_currMonth);
+											monthEnd);
 				end;
 				
 				if g_GENPARAM.fixedParameters [reshuffledFecundability].state.value then begin
@@ -912,14 +910,13 @@ try // 1
 					pDemReg,
 					pDemReg^.AccDurationContrAfterUnion,
 					pDemReg^.propContraceptionAfterUnion_var,
-					monthEnd,
-					currMonth);
+					monthEnd);
 				waiting_time_firstUnion := (monthWaitingTime > 0);
 			end;
 			
 			{Birth control any union, before first birth (only if the previous waiting time is zero)}
 			if not waiting_time_firstUnion and (nbChildren = 0) then begin
-				monthWaitingTime := waiting_time_contraception (pDemReg, pDemReg^.AccDurationWaitingTime [0], effectivenessContraceptionSpacing(pDemReg, 0), monthEnd, currMonth);
+				monthWaitingTime := waiting_time_contraception (pDemReg, pDemReg^.AccDurationWaitingTime [0], effectivenessContraceptionSpacing(pDemReg, 0), monthEnd);
 			end;
 except // 1
 	on E: Exception do begin
@@ -959,13 +956,13 @@ try // 2-1
 
 					if not fecundLife.stopping then
 					begin
-						monthIncrement := pregnancy ( pDemReg, pCurrChild, monthEnd, currMonth );
+						monthIncrement := pregnancy ( pDemReg, pCurrChild, monthEnd );
 					end else
 					begin
 						{stopping contraception effectiveness}						
 						if effectivenessContraceptionStopping(pDemReg, nbChildren) < randomGenerator.alea0 then
 						begin
-							monthIncrement := pregnancy ( pDemReg, pCurrChild, monthEnd, currMonth );
+							monthIncrement := pregnancy ( pDemReg, pCurrChild, monthEnd );
 						end
 						else
 							// no fecundation
