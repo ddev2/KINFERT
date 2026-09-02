@@ -620,8 +620,10 @@ which will prevent some things, like the use of the time profiler as well as wri
 			aleaFecundability: double;
 			pPreviousChild: pInfoChildType;
 			currAge: FecundAges;
+			{monthStart, monthEnd and currMonth count lunar months since the woman's birth,
+			 so lunarMonthsToAge turns any of them into an age}
 			monthStart, monthEnd, currMonth: longint;
-			month: longint;
+			monthsElapsed: longint;	{months already applied out of the current monthIncrement}
 			monthIncrement: longint = 0;
 			nbPregnanciesInCurrentUnion: longint;
 			
@@ -678,7 +680,7 @@ if gRunFromIDE then
 				 			monthEnd: longint;
 							var wt_currMonth: longint): longint;
 			var
-				month: longint;
+				monthsOfContraception: longint;	{months of contraceptive waiting drawn in this call}
 				aleaContraception: double;
 			begin
 				waiting_time_contraception := 0;
@@ -686,9 +688,9 @@ if gRunFromIDE then
 				if ( AccDurationContr [0] < 1.0 ) and ( aleaContraception < propContraception) and (wt_currMonth <= monthEnd) then
 				begin
 					aleaContraception := randomGenerator.alea0;
-					month := 0;
+					monthsOfContraception := 0;
 					while	(wt_currMonth <= monthEnd) and
-							(aleaContraception > AccDurationContr [month]) and
+							(aleaContraception > AccDurationContr [monthsOfContraception]) and
 							(not endUnion) and
 							( effectivenessContraceptionStopping(pDemReg, nbChildren) >= randomGenerator.alea0 ) do
 					begin
@@ -700,11 +702,11 @@ if gRunFromIDE then
 							ageDurationEvents.monthStop := min (wt_currMonth, ageDurationEvents.monthStop);
 							ageDurationEvents.monthStopIsStopping := false;
 						end else begin
-							Inc ( month );
+							Inc ( monthsOfContraception );
 							Inc ( wt_currMonth );
 						end;
 					end;
-					waiting_time_contraception := month;
+					waiting_time_contraception := monthsOfContraception;
 				end;
 			end;
 			
@@ -748,7 +750,7 @@ if gRunFromIDE then
 					monthDeathChild: array [1..kMaxMultipleBirths] of longint; {To account for multiple births}
 					currAge: FecundAges;
 					ageDeathChild: double;
-					month: longint;
+					monthsNonSusceptible: longint;	{period from conception during which the woman is not susceptible: gestation plus amenorrhea}
 					maxMonthDeathChild: longint;
 					nbBirthsInDelivery, indBirthInDelivery: longint;
 					sexNewBorn: Sex;
@@ -761,9 +763,9 @@ if gRunFromIDE then
 
 					{amenorrea post-partum}
 					dummy := randomGenerator.alea0;
-					month := kLivingBirth_durationPregnancyInMonths;
-					while dummy < pDemReg^.temporary_sterility[month - kLivingBirth_durationPregnancyInMonths] do
-						Inc ( month );
+					monthsNonSusceptible := kLivingBirth_durationPregnancyInMonths;
+					while dummy < pDemReg^.temporary_sterility[monthsNonSusceptible - kLivingBirth_durationPregnancyInMonths] do
+						Inc ( monthsNonSusceptible );
 					
 					{Case of the possible early death of the newborn, before weaning,
 					which may shorten the temporary sterility period}
@@ -816,8 +818,8 @@ if gRunFromIDE then
 					
 					addChild (currAge, min (nbChildren, kMaxNbChildrenCalc), nbBirthsInDelivery, ageChildren);
 
-					{maxMonthDeathChild is counted from birth, month from conception}
-					LivingBirth := min (month, kLivingBirth_durationPregnancyInMonths + maxMonthDeathChild + 1);	
+					{maxMonthDeathChild counts from birth, monthsNonSusceptible from conception}
+					LivingBirth := min (monthsNonSusceptible, kLivingBirth_durationPregnancyInMonths + maxMonthDeathChild + 1);	
 									
 				end; {LivingBirth}
 				
@@ -1013,10 +1015,10 @@ if gRunFromIDE then
 				{of the woman at the time of conception}
 
 				{separation after fecundation}
-				month := 0;
-				while (month < monthIncrement) and (currMonth <= monthEnd) do
+				monthsElapsed := 0;
+				while (monthsElapsed < monthIncrement) and (currMonth <= monthEnd) do
 				begin
-					Inc ( month );
+					Inc ( monthsElapsed );
 					if pDemReg^.separationInfo.separationPossible and
 						endBySeparation (randomGenerator, monthStart, currMonth, nbPregnanciesInCurrentUnion, pCurrChild, pDemReg^.separationInfo, pDemReg^.dp, unionStates)
 						then
@@ -1024,7 +1026,7 @@ if gRunFromIDE then
 						paramSeparation;
 						ageDurationEvents.monthStop := min (currMonth, ageDurationEvents.monthStop);
 						ageDurationEvents.monthStopIsStopping := false;
-						month := monthIncrement;
+						monthsElapsed := monthIncrement;
 					end else
 						Inc ( currMonth );
 				end;
