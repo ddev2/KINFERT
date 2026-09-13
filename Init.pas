@@ -35,6 +35,8 @@ uses
 	procedure disposeKinship (var pEgo: pRelativeType);
 
 implementation
+uses
+	FertilityRuntime;
 var
 	memoryAllocated: boolean = FALSE;
 		
@@ -50,12 +52,18 @@ var
 	begin
 		SetLength (gFecundability, kMaxAgeFert+1);
 		SetLength (gDefinitive_sterility, kMaxAgeFert+1);
+		SetLength (gDefinitive_sterility_PW, kMaxAgeFert+1);
+		SetLength (gDefinitive_sterility_Leridon, kMaxAgeFert+1);
+		SetLength (gDefinitive_sterility_Kinfert, kMaxAgeFert+1);
 	end;
 
 	procedure releaseMemory_fec;
 	begin
 		SetLength (gFecundability, 0);
 		SetLength (gDefinitive_sterility, 0);
+		SetLength (gDefinitive_sterility_PW, 0);
+		SetLength (gDefinitive_sterility_Leridon, 0);
+		SetLength (gDefinitive_sterility_Kinfert, 0);
 	end;
 
 	procedure initMemory;
@@ -67,6 +75,10 @@ var
 
 		gIntrauterine_mortality_risk := SetLengthDoubleZero (kMaxAgeFert+1);
 		gStillbirth_mortality_risk := SetLengthDoubleZero (kMaxAgeFert+1);
+		gIntrauterine_mortality_risk_Leridon := SetLengthDoubleZero (kMaxAgeFert+1);
+		gIntrauterine_mortality_risk_Magnus := SetLengthDoubleZero (kMaxAgeFert+1);
+		gStillbirth_mortality_risk_Barrett := SetLengthDoubleZero (kMaxAgeFert+1);
+		gStillbirth_mortality_risk_US2023 := SetLengthDoubleZero (kMaxAgeFert+1);
 		gDistrib_intrauterine_mortality_risk := SetLengthDoubleZero (9);
 		
 
@@ -75,8 +87,13 @@ var
 	end;
 
 	procedure clearResults ( var nSimul: longint );
+	{Called by the "Reset run count" button, and nowhere else. It forgets the results kept from
+	 earlier runs: the output charts draw one curve per simulation made since the program started,
+	 so without this they accumulate from run to run.}
 	begin
 		nSimul := 0;
+		resetFertilityCounts;
+		resetFecundabilityCheck;
 
 		g_nRuns_aggrKinship := 0;
 		

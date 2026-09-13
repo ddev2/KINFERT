@@ -1,418 +1,502 @@
-# KinFert: open work before release
+# KinFert: what still needs you
 
-> **SUPERSEDED, 31 August 2026.** The working list is now `docs/KinFert-Status.md`, whose line numbers were re-checked against the tree after the Tier A review markers were removed. The line numbers below are stale. This file is kept for the explanations in section 1.
+**13 September 2026.** Everything outstanding, in the order I would do it. The list of defects
+in sections 3 and 3b was re-read against the source on 13 September; the rest carries the dates
+of its own reading. The companion document
+is `docs/KinFert-FIXED.md`, which is the record of what is already done and needs nothing. These
+two are the only working documents: what was in `docs/archive` has been folded into one or the
+other, and the manual is a separate deliverable at `docs/KinFert-Manual.md`.
 
+**Line numbers.** Those in section 6 were read on 6 September. The rest were re-derived on
+2 September, and the marked regions added since have moved many of them, by tens of lines in
+`FertilityRuntime.pas` and `LazGraph.pas`. Run `tools/check-line-numbers.py` after any edit and it
+prints the current numbers. **The routine name is the stable reference, the line number is not**:
+every entry names the routine for that reason.
 
-Last updated 26 August 2026, fifth round, after Tier A was applied. Two audit documents hold the evidence: `docs/KinFert-PreRelease-Audit.md` for the individual-file output path, and `docs/KinFert-PreRelease-Audit-2.md` for the demographic engine. This file is the working list and carries the line numbers you asked for.
+**Review markers.** Each region Claude changes in a source file is wrapped in two line comments:
 
-**Line numbers are current** as of this update, after the BATCH removal, which moved roughly 100 lines in `Kinship.pas`. They will move again with the next edit; procedure names are the stable reference.
+```pascal
+// >>> Claude 2026-09-06 start
+// <<< Claude 2026-09-06 end
+```
 
-**The tree now compiles.** FPC 3.2.2 and the Lazarus 3.0 LCL in the session container build every unit except `LazMain`, `LazUtiles` and `LazGraph`, which reach TAChart and were replaced by stubs for the check. The `.lfm` resource binding can only be checked by Lazarus itself, so V1 is not closed.
-
-**Git.** The working tree is committed. `290b924` is the state before Tier A, `3ab5e7f` and `13e7a70` are the two Tier A batches. `git diff 290b924..HEAD` shows everything. Every edit also carries a `// --- CLAUDE 2026-08-26 [ID]` block in the source with the replaced code commented out, indexed in `docs/CHANGES-2026-08-26.md`.
-
-**What changed in the fourth round.** The units that had never been read are now read: `DemographicRegime.pas`, `StablePop.pas`, `Fertility.pas`, `FertilityRuntime.pas`, `Nuptiality.pas`, `Parenthood.pas`, `Mortality.pas`, `EducationalLevel.pas`, `inheritance.pas`, `Memory.pas`, `mothersInfoList.pas` and the `initMotherhood` phase of `Kinship.pas`. That pass produced 41 findings, N1 to N41, and it found more that affects published results than the first pass did. They are in section 2E below, and section 8 gives the order I would work in.
-
-**What changed in this round.** Tier A of those findings is applied: N1, N3, N5, N12, N15, N16, N21, N23, N27, N33, N40, plus 2.6, 3.e, 4.9, two arithmetic guards and the deletion of `mothersInfoList.pas`. Tier B, the changes that alter published results or that need a decision, is untouched and listed below. Tier C, threading and object lifetime, is untouched.
+Read the marked regions, keep or undo what is inside them, and when a set is accepted remove the
+markers with `python3 tools/strip-claude-marks.py`, optionally naming one date. The `--list`
+option shows what is marked without changing anything. The markers are line comments, so they
+cannot open or close a Pascal comment block and do not change what the compiler sees.
 
 ---
 
-## 1. Explanations you asked for
+## 1. Before anything else
 
-### N1. What was wrong in the fertility parameter sweeps, and what to check
+**Review the marked regions and commit.** `Fertility.pas` carries the fixed-parameter conflict
+fix, the check of the fecundability heterogeneity model, the name of the sterility model in force
+for the chart title, and the correction of the exact age at onset of sterility. `Verification.pas`
+is new. `FertilityRuntime.pas`, `Nuptiality.pas` and `Kinship.pas` carry the 81 sites converted to
+it, and `FertilityRuntime.pas` the family A counters and their report; `Kinship.pas` also carries
+the thread lifetime fix in `multi_initMotherhood`. `Defines.pas`, `Declarations.pas`,
+`SpecialRuns.pas`, `LazGraph.pas`, `LazMain.pas` and `Utilities.pas` carry the rest. Committed
+already, in three commits: N2, the renaming of the three month counters, and the removal of the
+`wt_currMonth` parameter.
 
-A "sweep" here is a run in which one of the `NSTEP_*` counts is greater than 1, so `FERTILITY_loops` steps a parameter from its Low value to its High value and simulates at each step. `SpecialRuns.pas` nests seven such loops, one per parameter.
+**Build in Lazarus.** Nothing below is worth starting until this is done. The 23 units that do not
+reach the LCL compile in a container, but not the `.lfm` binding, and not `LazMain`, `LazUtiles`
+or `LazGraph`, which reach TAChart. `LazGraph.pas` and `LazMain.pas` are the two that changed.
 
-**Scope.** N1 bites only when at least one `NSTEP_*` exceeds 1. Both defects sit inside `if g_GENPARAM.RUNTIME[nSteps...].value > 1 then`, and the block that writes stepped values back into the demographic regime is guarded by `varyingUnionOrFertility`, which is set only inside those same tests. A run with every step count at 1 never enters any of it, so ordinary single-parameterisation results were never affected.
-
-**First error: the index was one step behind.** Each loop head computed its stepped value from the `RP.ind*` field, which is assigned further down the same block:
-
-```pascal
-for indAgeUnion := 1 to g_GENPARAM.RUNTIME[nStepsUnion_mean].value do
-begin
-    ...
-        mean := (pDemReg^.dp[meanAgeUnionWomenLow].value) +
-            ( RP.indAgeUnion - 1) * (High - Low) / ( nSteps - 1 );   { read here }
-    ...
-    RP.indAgeUnion := indAgeUnion;                                   { assigned here }
-```
-
-On pass 2 the calculation used index 1, on pass 3 index 2, and on pass 1 whatever the record held from before the loop began. With three steps from 20 to 26 the intended means were 20, 23 and 26; what ran was a stale value, then 20, then 23. The top of the range was never simulated. The same pattern was at the celibacy, standard deviation, separation and contraception-after-union loops. Only the amenorrhea loop assigned before it read.
-
-**Second error: the base drifted, and two sweeps collapsed to zero.** The innermost block restores the originals and then overwrites them:
-
-```pascal
-if (varyingUnionOrFertility) then begin
-    DemographicRegimeSettings_copyState (pDemReg_mem, pDemReg);   { restore }
-    with pDemReg^ do begin
-        dp[freqSeparation].value := RP.valFertSeparation;          { then overwrite }
-```
-
-The restore is in the right spirit, and `pDemReg_mem` exists for exactly this purpose, but it sits in the innermost loop. The outer loop heads read `pDemReg` **after** those writes and **before** the next restore, so each head took as its base the value the previous step had written rather than the original.
-
-For the two multiplicative parameters this is fatal, because the step 1 multiplier is zero:
-
-```pascal
-freqDiv := pDemReg^.dp[freqSeparation].value * (ind - 1.0) / (nSteps - 1.0);
-```
-
-Step 1 gives `base * 0 = 0`, and 0 is written into `dp[freqSeparation]`. Step 2 reads that 0 as its base, so `0 * 1/(n-1) = 0`, and so on. **`NSTEP_SEPARATION` and `NSTEP_CONTRACEPTION_AFTER_UNION` therefore simulated the same parameterisation, with the parameter at zero, at every step after the first.** Any comparison across those steps was a comparison of identical runs.
-
-The amenorrhea sweep is additive rather than multiplicative, so instead of collapsing it accumulated: with three steps the intended values were alpha, alpha + 1.2, alpha + 2.4, and what ran was alpha, alpha + 1.2, alpha + 3.6. The mean age at union and the celibacy proportion drifted in the same way.
-
-**The fix**, marked `[N1]` in `SpecialRuns.pas` with the old lines commented out above each site. Every base now reads from `pDemReg_mem`, the untouched copy taken before the loops, instead of from `pDemReg`. Every index now uses the loop counter directly; the `RP.ind*` fields are still assigned as before, because the rest of the program reads them. And the age at union standard deviation is captured once into a new local `std_initial` before the loops, because `DemographicRegimeSettings_copyState` copies `dp[]` and `lp[]` but not `pCurrUnionInfo`, so that one value could not be recovered from `pDemReg_mem`.
-
-**What to check when you build.** V14 below is the decisive test: run a two-step separation sweep and confirm that the `SEP` column differs between the two steps and that the second is not zero. It is worth doing early, because it is also the cheapest way to find out which past stepped runs need repeating. Two further checks are worth adding at the same time, V14b and V14c below: that a stepped mean age at union now reaches its High value at the last step, and that a three-step amenorrhea sweep gives evenly spaced values rather than accumulating.
-
-### D4. Why keys are not only a bootstrapping matter
-
-A key is a run identifier written as the first column of the individual files, with a companion `X_KEYS.txt` file decoding it. `openFileKeys` in `Utilities.pas:755` computes
-
-```pascal
-RP.wkey := needsKeys and (stepsKeys or RP.wKeyBootstrap);
-```
-
-`RP.wKeyBootstrap` is the bootstrapping half. `stepsKeys` is the other half, and it is true whenever **any** of the seven parameter-step counts exceeds one: `nStepsUnion_mean`, `nStepsUnion_prop`, `nStepsUnion_Dev`, `nStepsAmeno`, `nStepsContrFert`, `nStepsSeparation`, `nStepsContrUseAfterUnion`. So a parameter sweep needs keys even with no bootstrapping at all, which is why removing bootstrapping must not remove `RP.wkey`, `openFileKeys`, the KEYS file or the key column.
-
-Two related facts. Steps and cohort sequences are mutually exclusive: `openFileKeys` detects `DemRegimeCollection_VariousCohorts and stepsKeys` and forcibly resets all seven step counts to 1, with a message. And `writeKeys` has exactly one call site, `SpecialRuns.pas:146`, inside `FERTILITY_loops`, which runs only when FERTILITY is on. You said keys make sense for fertility and not for kinship, and the code agrees: in a kinship-only stepped run `RP.key` is never incremented, so the key column would be the constant 0 on every row. Whether to suppress the column in that case is still open.
-
-**New, and important**: the same loop nest in `SpecialRuns.pas` that produces those keys is broken. See N1. The keys are correct; the parameter values they label are not.
-
-### D5b. What the reader loses, and why D5a follows from it
-
-`readDemocareFile` rebuilds a tree in two steps. First it walks the main file: a row whose `ego` column is TRUE becomes an ego, and **every other row is created as `kt_nonBio`** at `Kinship.pas:1918`. Then it walks the link file and uses only that to rebuild structure: an `M` row calls `addLastPartner` and types the second party `kt_partner`; a `D` row calls `addChildToParent` and sets the mother.
-
-So the kin taxonomy is not restored. A person who was written as `kt_child` or `kt_grandChild` comes back as `kt_nonBio`, or as `kt_partner` if a link row happens to name them. The extended DemoCare layout already writes the true kin type in the `relative` column, and the reader ignores it. That is D5b: read that column when the extended layout is present, and the types come back. **Fixed in round 3**, using `GetEnumValue (TypeInfo(KinTypes), ...)` guarded by the header length and the column count, so a short-layout file still reads as before.
-
-D5a only matters once D5b is done, and you are right that it is not about different trees. It is inside one tree. Ego's child C has a partner P; both are written. The loop writes a marriage row for every partner of every written relative, so it writes `(C, P, 'M')` when it processes C and `(P, C, 'M')` when it processes P. On read-back the first row types P as C's partner, correctly, and the second row types **C** as P's partner, overwriting C. Before D5b that cost nothing because C was `kt_nonBio` anyway. After D5b it would undo the type just restored. **Fixed in round 3** by re-typing only when the target is still `kt_nonBio`. Worth checking at the same time: `addLastPartner` also runs in both directions, so the union list may gain the same partner twice. That check is V4 below.
-
-### 2.6. The "just in case" cleanup loop
-
-`Kinship.pas:7925`:
-
-```pascal
-allThreadsTerminated := false;
-while not allThreadsTerminated do
-    for indThread := 0 to gNumThreadsUsed - 1 do
-        allThreadsTerminated := allThreadsTerminated and gMyThreadObjects[indThread].Terminated;
-```
-
-`allThreadsTerminated` starts `false`, and `false and anything` is `false`, so the inner loop can never make it true and the outer loop never ends. The flag has to be reset to `true` **inside** the outer loop, before the inner one, not once before it. Compare the correct version of the same idiom at `Kinship.pas:7805-7809`, which does reset it each time round.
-
-Second problem: the objects have `FreeOnTerminate := true` and `Terminate` was called just above, so `.Terminated` may be read from an object the RTL has already freed.
-
-It is unreachable today because `allThreadsCleanedUp` is set on the normal path. The risk is precisely that it is a fallback: the day the normal path does not run, the program hangs at 100% CPU instead of cleaning up.
-
-**FIXED 26 August, batch 2: the loop is deleted.** Two reasons. It cannot do the job it was written for, since it cannot exit; and even a corrected version would be reading fields of objects the RTL is entitled to have freed, which is a use-after-free that no amount of looping makes safe. `TSimulEgoTreeCleanUp` already performs the cleanup on the normal path, and a fallback that hangs the program is worse than no fallback, because a missing cleanup leaks at exit while a hang loses the run. If you want to keep a diagnostic, replace it with a bounded wait that gives up: a loop with a `Sleep(1)` and a counter, logging a warning after, say, five seconds, and then continuing.
-
-### 4.9. Why the inheritance warning can fire 21 times, and what to do
-
-`inheritance.pas:96` sits inside
-
-```pascal
-for aKin in gMinKinSetforEgoInheritance do
-    if not (aKin in gKinToSimulate) then begin
-        ... writeAndWait('Warning: ' + str_kinship[akin] + ' not in the set of kin to simulate ...');
-    end;
-```
-
-with no `exit`, so it warns once **per missing kin type**. `gMinKinSetforEgoInheritance` (`Declarations.pas:110`) has 25 members, everything up to second cousins twice removed. With the DemoCare kin set of four types, 21 of the 25 are missing, hence 21 messages. With `gStdKinSet` (12 types) it is 13 messages. And `checkInheritanceStatus` is called from `run_all`, so that is per cohort and, until bootstrapping goes, per replicate. Each call also latches `gDebugError`, so the run finishes showing an error state.
-
-**FIXED 26 August, batch 1.** The recommendation was to leave `gMinKinSetforEgoInheritance` alone. That set is not a display convenience, it is the demographic statement of which kin an inheritance calculation needs in order to be correct. Spanish succession can reach collaterals to the fourth degree, so a set that stops earlier would make the module quietly produce wrong shares instead of warning that it cannot produce right ones. Shrinking it to silence a message would convert a loud, correct complaint into a silent, incorrect result.
-
-Fix the message instead. Collect the missing types into one set, and emit a single line: `Inheritance: N of the 25 kin types it needs are not simulated (list). Shares will be incomplete.` One message per run rather than 21 per cohort per replicate. Two further points worth deciding at the same time:
-
-- Whether this should latch `gDebugError` at all. It is a configuration mismatch, not a program fault, and latching it makes every DemoCare run end in an error state.
-- Whether inheritance should simply be skipped, with one message, when the kin set cannot support it. That is arguably the honest behaviour: the alternative is to write share columns that are known to be wrong.
-
-### 3.e. What FILENAME is for
-
-`g_FileName.value` is the root of every output name of the run. Examples: the configuration echo `X_CONFIG.TXT` and `X_ALLCOHORTS.TXT` (`ReadCmdFileUnit.pas:1636`), the genealogy files `X_EgoGenealogy.csv` / `X_indKin.txt` / `X_indKin_link.txt`, the keys file `X_KEYS.txt`, `X_INDIVIDUAL_FERTILITY_INFO.CSV` (`FertilityRuntime.pas:1722`), `X_UNION_TABLE.TXT` (`:1994`), `X_statusTable.txt` (`:2511`), `X_target.txt` (`DemographicRegime.pas:1682`) and `DUMP_COHORTS_X.txt` (`:1731`). In practice it is the study name, and it is also what distinguishes one run's outputs from another's in the same results folder.
-
-The bug is that its `changed` flag is only ever set from the Config dialog. `g_FileName` is created at `Init.pas:380` with no default in its parameter list, so under the default `WRITE_ONLY_CHANGES` the writer guard at `ReadCmdFileUnit.pas:709` skips it unless something marked it changed. A run that never opened the Config dialog therefore writes a configuration file with **no `FILENAME` line at all**. Re-running that configuration file gives every output the fallback root, `KINFERT_*`, so the second run's files do not overwrite the first run's and do not carry its name. You get two sets of outputs under two different names from what you believe is the same study, and the connection between them is lost.
-
-Two ways to fix it. Either set `changed` when the value differs from the fallback, or, simpler and safer, always write `FILENAME` regardless of `WRITE_ONLY_CHANGES`, on the grounds that a configuration file without a study name is not reproducible.
-
-### 3.2. What aCommand is
-
-A configuration line is `NAME=VALUE`. `extractCommand` (`ReadCmdFileUnit.pas:1191`) splits it and returns the name in its `out c` parameter and the value in `out s`. It is called twice:
-
-```pascal
-extractCommand (aLine, aCommand, aState, aBooleanState);                                    // 1205
-extractCommand (gLineReadString_NotProcessed, aCommand, aState_NotProcessed, aBooleanState, false);  // 1207
-```
-
-The first call works on the cleaned, upper-cased line, so `aCommand` correctly receives `KINSHIP`. The second call exists only to recover the **value** in its original case, into `aState_NotProcessed`, which matters for paths and for kin-type names. But it passed `aCommand` again as the `out c` parameter, this time fed the raw line, so `aCommand` was overwritten with the un-upcased, un-trimmed name. A hand-written `kinship=on` then matched no branch, `UNKNOWN COMMAND` was printed and the whole file abandoned, even though the file the program itself writes promises at `ReadCmdFileUnit.pas:841` that case does not matter. **Fixed in round 3** with a throwaway `aCommand_raw`.
-
-### On the remaining "bootstrap" identifiers
-
-You asked whether the roughly 80 remaining occurrences of the word are harmful. They are not harmful today, and they are not urgent. They fall into three groups.
-
-1. **Live and doing work.** `gBootstrap_nRuns`, the replicate loop in `ReadCmdFileUnit.pas:1599`, `RP.indBootstrap`, `RP.wKeyBootstrap`, and the `bootstrap_ind` parameter threaded through `run_all` / `simulateKinship` / `individualKin_*`. With `gBootstrap_nRuns = 1`, which is the default, the loop runs once, `indBootstrap` stays 1 and every branch that tests it takes the single-replicate path. Nothing is wrong, it is simply a loop of length one.
-2. **Load-bearing for something else.** `RP.wkey` and the KEYS machinery, as in D4. This must survive B1.
-3. **Genuinely inert.** `OUTPUT_BOOTSTRAP_MULTIPLE_INDIV_FILES` and its GUI binding, and the `sharedBootstrapFile` / `openMode` path I added in round 1 to fix the append (item B3).
-
-The one real cost of leaving them is N41: `gMen_Women` and the five `gState*` arrays are freed once per session but `initMotherhood` runs once per replicate, so with `gBootstrap_nRuns > 1` the replicates share stale arrays. That is a bug only for someone who turns bootstrapping on. If B1 lands, N41 goes with it and no separate fix is needed. So: leave the identifiers alone, do B1 as one deliberate change, and treat N41 as B1's acceptance test rather than as a separate item.
+**Check the debug checkbox works.** Main window, "Debug" button, tick "Activate debug", then run
+*without* saving the configuration first. It should still be on when the run starts. Before this
+week it was wiped twice per run.
 
 ---
 
-## 2. Open bugs, with line numbers
+## 2. Verify what has been fixed
 
-### 2A. Results correctness, output path
+Six rounds of fixes have never been run against a simulation. This is the largest block of work
+and the most valuable.
 
-| ID | What | Where |
+| | what to check | what it tests |
 |---|---|---|
-| 1.3 / B4 | GEDCOM is selectable and writes a header and no rows. To be implemented later; until then either remove it from the combo or make the format substitution reach the caller | substitution `Kinship.pas:7463`; empty writer `writeKinGEDCOM` |
-| D5b | ~~The reader types every non-ego row `kt_nonBio` and ignores the `relative` column~~ | **Fixed round 3.** `Kinship.pas:1918`. Verify with V4 |
-| D5a | ~~Marriage rows are written in both directions; matters once D5b is done~~ | **Fixed round 3.** Writer `Kinship.pas:3667`; reader `Kinship.pas:1946-1955`. The duplicate `addLastPartner` remains to be checked, V4 |
+| **V16b** | Léridon Table I: conception ending in a live birth within 12 months should be **75.4 per cent at age 30, 66.0 at 35, 44.3 at 40**; within 4 years 90.7, 83.9, 63.7. Median age at onset of sterility 44.7 years. The run now prints a check of the fecundability heterogeneity model to the memo: read the largest gap between the simulated and the theoretical distribution against the Kolmogorov-Smirnov band, and the mean of the theoretical grid against the parameters requested | the whole fecundability chain. **If too fecund**, the comment at the call site in `Fertility.pas` says what to change |
+| **V14** | A two-step separation sweep: the `SEP` column must differ between steps and the second must not be zero | the sweep fix. Before, both were zero |
+| **V14d** | Every `NSTEP_*` at 1, compared against the same run before the fix: must be **identical** | that ordinary runs were never affected, which is what lets you keep results you have already published |
+| **V14b/c** | A three-step sweep of mean age at union must reach its High value; a three-step amenorrhea sweep must be evenly spaced | the other two halves of the sweep fix |
+| **V15** | The distribution of age at end of union must not pile up at the oldest ages | `endUnion` |
+| **V18** | `checkSumShareHeirs` must sum to 1 with two, three and four surviving grandparents | the ascendant share loop |
+| **V20** | A cohort file with an explicit `NWOMEN` column, and one containing a blank line | the cohort file fixes |
+| **V19** | A hand-written configuration file with lowercase names and trailing spaces must be accepted, and the file the program writes must carry a `FILENAME` line | the configuration round trip |
+| **V4** | Write a DemoCare file and read it back, both layouts: kin types must survive, nobody twice in a union list | the DemoCare reader |
+| **V9** | A multi-cohort run: every cohort present, family and individual numbers continuous and never repeated | the multi-cohort fix |
+| **V10/V11** | A multithreaded run: no two genealogies identical; the same number of families with multithreading on and off | the seed race and the atomic counters |
+| **V23** | Several cohorts with `MULTITHREADING` and `MULTITHREADING_INIT` on: no two cohorts with the same seed | N42, once fixed |
+| **V17** | The mean birth interval after an infant death against the interval after a surviving child: the difference should be of the order of the shortening of breastfeeding, not of nine months | the N2 fix |
+| **V21** | A cohort in which no woman is simulated must not raise a division by zero in `writeInfoParents` | the guarded divisions |
+| **V22** | A run with a life expectancy outside the tabulated range, and one with an education status that is not B, M or A | the two silent-corruption fixes, and N14, which still does not clamp |
+| **V8** | The same configuration run twice with multithreading off, compared byte for byte. Check also that the Config dialog leaves "Same Random Sequence" enabled when only `MULTITHREADING_SIMKIN` is off | reproducibility |
+| **V2/V3/V5/V6/V7/V12/V13** | Column counts against headers; `partnershipStatus` showing `firstUnion` and `secondUnions`; no negative `tickOut`; grandparents-only selection; the `kt_total` row; `MULTITHREADING_SIMKIN` surviving a save; the "Use batches" checkbox gone | rounds 1 to 3 |
 
-### 2B. Crashes, hangs and leaks
 
-| ID | What | Where |
+### What is not yet in the verification table
+
+81 sites were converted: 66 in `Kinship.pas`, which is every live one there, 13 in
+`FertilityRuntime.pas` and 2 in `Nuptiality.pas`. About 31 invariant sites are still written the
+old way, as a `writeAndWait` followed by the debugger trap spelled out longhand. They are silent
+in a batch run, they do not appear in the table, and a run that trips one of them still reports
+that every check passed.
+
+| unit | sites | what they watch |
 |---|---|---|
-| 2.1 | ~~`nEgosPerSecond := 1000 * nEgosSimulatedInTimeSlot / msElapsed` with `msElapsed` in whole milliseconds, so 0 whenever less than a millisecond has passed~~ | **Fixed round 3** with a `msElapsed > 0` guard. `Kinship.pas:7547-7548`, in `individualKin_mid` |
-| 2.3 | The go-flag is published before the busy-flag is cleared and before the tree count, with no event, lock or barrier | `TSimulEgoTree.Simulate`, `Kinship.pas:6711-6716`; the consumer is `TSimulEgoTree.Execute`, `Kinship.pas:6722` onward |
-| 2.5 | The link file failing to open leaves the main file open, and the caller's bare `exit` skips `writeTables`, `DestroyArrayChildren` and all thread cleanup, leaving the workers spinning | open failure `Kinship.pas:7483` and `7493`; the bare `exit` at `Kinship.pas:7746-7747` |
-| 2.4 | Every wait is a hot spin with no yield | worker `Kinship.pas:6707`; dispatcher `Kinship.pas:7802`; main thread `Kinship.pas:7805-7809`; file class `Utilities.pas:276` |
-| 2.6 | ~~The fallback cleanup loop that can never exit, on freed objects~~ | **FIXED 26 Aug, batch 2: deleted.** See the explanation above |
+| `Nuptiality.pas` | 6 | the union getters and setters, exactly the family in N28: a bad index is reported and then the phantom union is written anyway |
+| `Fertility.pas` | 7 | the children list, the fixed-parameter names, the standard deviation of the heterogeneity, the age at sterility |
+| `EducationalLevel.pas` | 5 | a nil relative, an unassigned cohort, a bad partner, a bad status |
+| `inheritance.pas` | 4 | a decedent or an heir not found in the set, the count of heirs of degree 4, the unreachable arm of `checkHeirs` |
+| `Parenthood.pas` | 4 | the four consistency tests of `checkChildrenList` |
+| `Kinship.pas` | 5 | the five in the small helpers near the top of the unit, left when the 66 were done |
 
-### 2C. Settings file round trip
+What should stay as it is, and why: the 13 sites inside `on E: Exception do` handlers, which report a
+fault that has already happened rather than test a property; the 11 that report a bad cohort file, a
+file that cannot be opened, or a life expectancy outside the tabulated range, which are messages to
+the user about an input; and the handful marked WARNING, which describe a case the model handles and
+the user may want to know about. `Declarations.pas` cannot be converted at all, since `Verification`
+uses it.
 
-| ID | Parameter | Where | Your note |
-|---|---|---|---|
-| 3.b | `USE_ARRAY_CHILDREN` never written or read; also constructed `TRUE` but defaulted `FALSE` | used at `Kinship.pas:7704` and `7938`; constructed `Init.pas:518`, defaulted `Init.pas:417` | You think it is deprecated. Decide and either remove it or make it saveable |
-| 3.c | `OUTPUT_KINTYPES_STD`, `OUTPUT_KINTYPES_DEMOCARE` not saved | writer `ReadCmdFileUnit.pas:953` | **By design.** Closed |
-| 3.d | `DUMP`, `STABLE_POPULATION` writer commented out, reader live | `ReadCmdFileUnit.pas:848` and `875`; readers at `1211` and `1255` | `DUMP`/`DUMPALL` are runtime choices, so not saving them is deliberate: the dead reader branches should go, or the comment should say why. `STABLE_POPULATION` you believe deprecated, since stability follows from having a single demographic regime |
-| 3.e | ~~`FILENAME` dropped under the default `WRITE_ONLY_CHANGES`~~ | `ReadCmdFileUnit.pas:890` | **FIXED 26 Aug, batch 2.** `FILENAME` is now always written |
-| 3.f | `MAX_THREADS` not saved because its default is the core count | `Init.pas:367` | **Intended.** Closed |
-| 3.1 | `DUMPALL` writes a detailed file with no tables in it | `ReadCmdFileUnit.pas:1016-1021` and `1026` | Open |
-| 3.2 | ~~`aCommand` overwritten from the raw line~~ | `ReadCmdFileUnit.pas:1207` | **Fixed round 3** with `aCommand_raw` |
-| 3.3 | Duplicate `CHECK_DATASTRUCT` branch, the second unreachable | `ReadCmdFileUnit.pas:1265` and `ReadCmdFileUnit.pas:1305` | Open |
-| 3.4 | `fn_yDeathFloat` has no checkbox: the name is listed at `lazkinoutputfields.pas:84` and the field is in the default set at `Init.pas:469`, but `lazkinoutputfields.lfm` has 21 checkboxes for 22 enum members | `lazkinoutputfields.lfm` | Open. The column cannot be switched off from the GUI |
-| 3.5 | A rejected configuration file still prints the finished banner and returns success | `ReadCmdFileUnit.pas:1674` | Open |
-| 6.4 | `ArrayOfDoubleName.setDefault` is never called anywhere read so far, yet `setChanged` indexes `default`, which the constructor leaves nil | `setChanged` at `Declarations.pas:1581`, `setDefault` at `Declarations.pas:1632` | Still open after reading `DemographicRegime.pas`: no `setDefault` call was found there either. Related to N11 |
-| N12 | A `NWOMEN` column in the cohort file is always discarded, because the guard tests `readInConfigFile` which `processValuesLine` never sets | `DemographicRegime.pas:1569` | New. Per-cohort sample sizes are silently replaced by `NEGO` **FIXED 26 Aug, batch 2.** |
-| N19 | The education parameter dump names the wrong table for each mode: the mode-to-table mapping is shifted by one | writer `DemographicRegime.pas:733-746`, header `1754-1767` | **NOT applied, and it is a decision for you.** The header writer and the value writer agree with each other, so the file is self-describing and reads back correctly; what is wrong is that the mode in force dumps a different table from the one it uses. Correcting it changes the column set of the cohort file for all three modes |
+**The dead ego breakpoints.** `gIndEgo` is set to 0 in `simulateKinship` and updated only inside a
+block guarded by `{$IFDEF DEBUG - NOT THREAD AWARE}`. Free Pascal reads that as `{$IFDEF DEBUG}`
+and ignores the rest of the line, and the `Debug` symbol was removed on 29 August, so the block is
+dead. Six checks used to report `[gIndEgo]` as their context and therefore named ego 0 every time;
+they now report `pEgo^.indNumber` or `pRel^.indNumber`, which are in scope at each site and are not
+globals, so they are also safe under multithreading. What remains to decide is the block itself: it
+holds the two breakpoints that stopped the run at a chosen ego, from `gViewEgos` and the Debug
+dialog, and they have not worked since 29 August. Restore them under a live symbol, or remove them
+and the dialog field with them.
 
-### 2D. Output hygiene and dead code
+**The exception handlers deserve one routine rather than a check each.** Thirteen of them repeat
+`writeAndWaitConst(['===> ERROR: ', E.Message]); breakOnFailure;`, which writes to the memo, stops
+the debugger, and leaves nothing in the verification table, so a run that swallowed an exception
+in a worker still reports that every check passed. One `reportException (E, 'where')` in
+`Verification.pas`, counting them and setting `gDebugError`, would put them in the table without
+turning them into checks of the model.
 
-| ID | What | Where |
+**Forty traps have no check beside them**, counted on 6 September: 10 in `inheritance.pas`, 10 in
+`FertilityRuntime.pas`, 9 in `Kinship.pas`, 7 in `Fertility.pas`, 4 in `Nuptiality.pas`. Thirteen
+of those are the exception handlers above and two are the dead ego breakpoints; the rest are
+invariants that stop the debugger and record nothing.
+
+The debugger traps are no longer part of this: all 43 of them, in `Fertility.pas`,
+`FertilityRuntime.pas`, `Kinship.pas`, `Nuptiality.pas` and `inheritance.pas`, are now
+`breakOnFailure`, so converting a site is one line to change and not six.
+
+### A second implementation, as a way of checking the first
+
+`calcNbChildren` and the routines nested inside it share `currMonth`, `nbChildren`, `endUnion`,
+`monthStart` and `pCurrChild` by scope rather than by argument, and every bug found in it this
+year, N2, N5, N6, N6b and the vacuous checks, comes from that: a routine moves a variable that
+another routine also moves, and nothing in the text says which one owns it. A second
+implementation, written from the demographic description rather than transcribed from the code,
+and run beside the first on the same woman, would settle whether the interval machinery does what
+the model says. It is worth doing, on four conditions.
+
+**The two must see the same random numbers.** Otherwise only distributions can be compared, over
+many thousands of women, which finds a bias but not the woman it happens to. `TRandomNumberGenerator`
+keeps its state in instance fields, so the cheapest arrangement is to copy the state before the
+first call and restore it before the second, and compare the two women exactly.
+
+**The comparison must be on the whole outcome.** The number of children is the weakest possible
+test. Compare the month of every conception and every birth, the sex of each child, the month the
+union ends and why, the month of stopping, and the non-susceptible period of each interval.
+
+**The second must be a rewrite, not a copy.** If it is written by reading the old one line by line
+it will reproduce its bugs, and the agreement will mean nothing. It should take its state in one
+record passed explicitly, with no nested routine touching a variable it does not own.
+
+**A difference does not say which one is wrong.** Each one is an investigation, and the answer
+comes from the model, not from either program. That is the cost, and it is also the point.
+
+Where it should live: its own unit, so that it cannot share a scope with the original, called from
+the verification framework under a switch, on a sample of women rather than on all of them, with
+the first differences reported in the verification table. Built in that order: one union with no
+separation, then separation, then several unions, then stopping.
+
+### How each of these can be decided
+
+Three mechanisms now exist, and every item above falls to one of them. What is left over
+is what genuinely needs your eye.
+
+**Inside the run**, `Verification.pas`. A check has an identifier, is called from the
+simulation, and appears in one table at the end of the run, in the memo and in
+`<results>/verification.txt`. Three forms: `checkFalse` and `checkTrue` for a state that
+cannot occur, `checkValue` for a quantity against a target with a tolerance,
+`checkDistribution` for a simulated histogram against the probabilities it was drawn
+from. Invariants always run, since a check that runs only in a debug session is a check
+that never runs; only the breakpoint is conditional, and only on the first failure of
+each check. The table is in a fixed order, so two runs can be compared with a diff, and
+a check that was never reached is listed as such, which is how you find a check that
+silently stopped being called.
+
+**Between two runs**, `tools/compareruns.lpr`, a Free Pascal console program built with
+`fpc -O2 compareruns.lpr`. Compares two results folders cell by cell, with an optional
+tolerance, and reports the first differences per file. `-headers` checks that every data
+row has as many columns as its header. Its exit code is 0 when the two folders agree, so
+it can drive a script, and it uses the run-time library alone.
+
+**Against published values**. Targets stated as constants next to the check that uses
+them, compared with `checkValue`. This is the part that says the model is right rather
+than merely self-consistent.
+
+**Family A, done so far.** Five of the distributions the model draws from are now counted
+during the run and read against their input at the end of it, by `reportFertilityChecks` in
+`FertilityRuntime.pas`: the age at onset of sterility against whichever of the three models is
+in force, the amenorrhea after a live birth against the Lesthaeghe and Page schedule, the month
+a pregnancy is lost against Barrett, the spacing contraception of each birth interval against its
+own waiting time distribution, and the proportion female at birth against the parameter. Four of
+them also fill an observed curve that the graph window draws beside its input, on the charts for
+the amenorrhea schedule, permanent sterility, the fecundability heterogeneity and the
+intrauterine mortality distribution.
+
+Two notes on what those comparisons mean. The spacing check counts the length each spell would
+have had if nothing interrupted it, because the spells actually lived are cut short by the end
+of the union and by stopping, and a censored distribution cannot be read against its input.
+Parity 0 is left out of it, since the two calls made before the first birth read two different
+inputs. Two more were added on 6 September, the intrauterine mortality risk and the stillbirth risk by the
+mother's age at conception, each read against the schedule it is drawn from and each drawn beside
+it. What remains in family A: the age at first union and the woman's life table, both needing a
+counter where the draw is made.
+
+**How several settings are handled.** A sweep, or a run of several cohorts, simulates more than one
+setting, and four of these quantities are defined by the demographic regime and differ between
+settings: the amenorrhea schedule, the distribution of the month a pregnancy is lost, the waiting
+time of the spacing, and the proportion female at birth. Their counters are emptied at the start of
+each setting, so the curve and the check describe the last one alone rather than a mixture of
+inputs, and the legend says so. The others read tables that do not change between settings, so they
+are counted over the whole run, which is more precise, and the legend says that instead. One
+residue: the women created by `initMotherhood` are drawn once, under the first cohort, so in a
+multi-cohort kinship run the last cohort's curves rest on its own genealogies alone.
+
+**What family A has already found.** The check on the age at onset of sterility failed on its
+first run, by about 0.17 at age 44, and the cause was in the interpolation of the exact age, which
+read the fraction on the year above the one the cumulative risk crosses. Both that and N8 are now
+fixed and are described in the companion document. This is the argument for the rest of family A:
+the fault had been in the model for as long as the interpolation had, and no output table showed
+it.
+
+| item | mechanism | what to do |
 |---|---|---|
-| 4.2 | Link file: `M` rows in both directions, `D` rows only for `kt_child` and `kt_grandChild` that are not by-union. For the DemoCare kin set the descent links are complete | `Kinship.pas:3667` and `3674`. D5a and D5b now fixed |
-| 4.6 | `heirs` is emitted twice as a header name when the debug block is on, and the user-facing `heirs`, `decedents`, `share inheritances` columns are written from the second-algorithm variables | header `Kinship.pas:7394`, `7395`, `7397`, and the duplicate at `7402`; row values `Kinship.pas:3859-3863` |
-| 4.7 | Empty-value sentinels disagree: `str_causeEnd := ''` at `3722` and `3740`, `idSpouses := '0'` at `3737`, `str_AgeUnion := '-1'` at `3738`, `str_AgeEndUnion := '-1'` at `3739`, `str_share := '-1'` at `3766`, and empty strings for the second-algorithm heir columns | `Kinship.pas:3722-3766` |
-| 4.8 | The ego children check is redundant: `CalcChildren` already reports the same condition one line earlier | check `Kinship.pas:3574`; the earlier report is inside `CalcChildren` |
-| 4.9 | ~~The inheritance warning fires once per missing kin type~~ | **FIXED 26 Aug, batch 1.** One message now lists the missing types |
-| 4.11 | `tStart_interm` read but assigned only inside `if TALKATIVE` | `Kinship.pas:7938` |
-| 5.2 | Add the final `else` when GEDCOM lands, or the result is uninitialised | `writeKin` at `Kinship.pas:3873`, `includeKinInNetwork` at `Kinship.pas:3895` |
-| 5.6 | Comment the deliberately commented-out `Destroy`, which would be a double free if uncommented | `Kinship.pas:7684` |
-| N39 | ~~`mothersInfoList.pas` is dead code that cannot compile~~ | **DELETED 26 Aug, batch 2.** Recoverable from git history. `testThread.pas` is a second candidate: it declares `unit testThreads` while the file is named `testThread.pas`, and nothing references it. Left in place for you to decide |
-| N25 | `inher_Spain` and `inher_Other` are declared, parameterised, saved, read and bound to a control, and referenced nowhere. Both algorithms run unconditionally. `lookForDecedents_Spain` at `inheritance.pas:2098` has an empty body | Either wire the rule set up or remove the parameter |
+| **V16b** | published values | Wire the proportions conceiving within 12 and 48 months at ages 30, 35 and 40, and the median age at onset of sterility, into `checkValue` against Léridon's 75.4, 66.0, 44.3 and 90.7, 83.9, 63.7 and 44.7. The quantities exist in the time-to-conception tables; they need to be read at the end of a run |
+| **V14, V14b, V14c** | between two runs | Run the sweep, then compare the per-step output files: the swept column must differ between steps and must reach its High value |
+| **V14d** | between two runs | Keep a results folder from before the sweep fix, run again with every `NSTEP_*` at 1, and `compareruns` must report no difference |
+| **V15** | inside the run | A distribution check on age at end of union, or simply the existing table read once |
+| **V18** | inside the run | `checkSumShareHeirs` in `Kinship.pas` becomes a `checkValue` against 1 with a tolerance of 0.01, instead of the line that assigns the variable to itself |
+| **V19, V20, V4** | between two runs | Write the file, read it back, write it again, and compare the two written copies. A round trip that loses nothing produces two identical files |
+| **V9** | between two runs | The individual file of a multi-cohort run, checked for continuity of the identifiers, which is a column test rather than a comparison: add it to `compareruns` |
+| **V10, V11, V23** | between two runs | Two runs with multithreading on: the genealogies must differ, the counts must not. Compare the seeds written in the header |
+| **V2, V3, V5, V6, V7, V12, V13** | between two runs | `compareruns -headers` decides the column counts; the rest are one look at a named column, which the comparison of a run before and after the fix also settles |
+| **V17** | inside the run | A `checkValue` on the two mean intervals, or one reading of the interval table by whether the previous child survived |
+| **V21, V22** | inside the run | Run each bad input once; the guard either holds or the run stops. V22 also needs N14 fixed, since an out-of-range life expectancy is still not clamped |
+| **V8** | between two runs | `compareruns` with no tolerance on two runs of one configuration |
+| **V16** | done | The realised moments of the fecundability multiplier are now printed by the check inside the run, and the simulated distribution is drawn beside the theoretical one. Nothing to dump from the individual file any more |
 
-### 2E. The demographic engine, second pass
-
-Full evidence in `docs/KinFert-PreRelease-Audit-2.md`. **Verified** means I re-read the source myself rather than relying on the reviewer.
-
-#### Highest priority: results are wrong today
-
-| ID | What | Where |
-|---|---|---|
-| N1 | **Parameter sweeps do not sweep. Verified.** Two defects in one loop nest. The stepped value is computed from `RP.indAgeUnion` nine lines before that variable is assigned, so every step uses the previous iteration's index. And the multiplicative steps read their base from the parameter the previous step already overwrote, because the restore from `pDemReg_mem` happens in the innermost loop. Separation step 1 computes `base × 0 = 0` and writes 0 back; step 2 reads 0. **`NSTEP_SEPARATION` and `NSTEP_CONTRACEPTION_AFTER_UNION` collapse to zero after the first step.** Amenorrhea accumulates instead | `SpecialRuns.pas:53-176`; the read/assign pairs at 61/70, 78/82, 90/94, 112/116, 128/132 **FIXED 26 Aug, batch 1.** |
-| N3 | **`endUnion` is never assigned TRUE. Verified.** Declared, initialised FALSE twice, tested in three loops, assigned nowhere. The loops meant to stop at dissolution never stop, and line 646 overwrites the age at end of union unconditionally, so it records the **last** separation drawn rather than the first. One loop runs from the end of fecund life to the death of the man, 40 years of monthly draws. Feeds the individual file, `finalPartnershipStatus`, and the child-pruning loop | `FertilityRuntime.pas:639, 646, 701, 910, 941, 1099, 1118` **FIXED 26 Aug, batch 1.** |
-| N4 | **Fecundability heterogeneity is a 12 per cent coefficient of variation, not a standard deviation of 0.12. Verified.** `gStdDev_fecundability := 0.12;` overwrites the `stdDev` argument, and the normal is centred on 0 and scaled by `mean × 0.12`. Reproduced numerically: mean 1.0217, sd 0.1226, CV 12.0 per cent. Léridon's N(0.23, 0.12) has CV 52.2 per cent. The parameter description claims Léridon and `NORMAL_HETEROGENEITY_FECUNDABILITY` defaults TRUE, so this is shipped behaviour. **A modelling decision as much as a fix**: heterogeneity is what generates the right tail of the waiting time, the apparent subfecund fraction, and the decline of apparent fecundability with duration | `Fertility.pas:340-371`, the overwrite at `349` |
-| N5 | `monthIncrement` keeps a stale value on the stopping path: no `else monthIncrement := 1`. With the default `EFF_STOPPING_CONTRACEP = 1.0` the inner test never fires, so after a birth every later stopping month reuses about 20, writing conception fields into the previously born child's record and advancing `currMonth` 20 months at a time | `FertilityRuntime.pas:963-978, 994` **FIXED 26 Aug, batch 1.** |
-| N2 | Infant death shortens the birth interval by a whole gestation: `min (month, maxMonthDeathChild + 1)` compares a quantity counted from conception with one counted from birth. Should be `min(month, kLivingBirth_durationPregnancyInMonths + maxMonthDeathChild + 1)`. A child dying at one month lets the mother return to susceptibility six months before that child is born. Also `ageDeathChild = 0.0` returns -1 and leaves three fields unassigned | `FertilityRuntime.pas:773-828`, the combination at `815` |
-| N6 | The contraceptive spacing wait is applied twice: `wt_currMonth` is a `var` alias for `currMonth`, `waiting_time_contraception` increments it in place **and** returns the wait, and the caller advances again. Line 859 also joins two side-effecting calls with `+`, whose evaluation order Pascal does not define | `FertilityRuntime.pas:859-864, 1019-1031` |
-| N21 | **The ascendant heir share loop drops the last heir. Verified.** `for indHeir := 1 to (nHeirs-1)` over a zero-based `arrHeirs[indHeir-1]`. Four surviving grandparents give shares summing to 0.75; three give 0.5. Largest single source of the `checkSumShareHeirs` deviation you instrumented | `inheritance.pas:1565-1572` **FIXED 26 Aug, batch 1.** |
-| N23 | In the niece and nephew block the father is tested twice and the mother never; `pDeadRelative^.mother` does not appear. The second call is a guaranteed no-op because `heirFound_add` exits early. A person whose mother is alive has their estate distributed to grandparents and aunts | `inheritance.pas:919` **FIXED 26 Aug, batch 1.** |
-| N22 | A nearer ascendant does not exclude a remoter one: the paternal and maternal branches recurse independently, so a surviving grandmother can share with great-grandparents. Contradicts the file's own header comment and Spanish CC art. 921. `AscendantHeirs_2` hardcodes `degree := 3` | `inheritance.pas:1491-1515` |
-| N24 | `commonAncestor` is computed and discarded at four of five call sites, and the code collects the children of both of ego's parents unconditionally. A maternal half-sibling with no blood relation to the dead niece is given an equal share | `inheritance.pas:945-948, 963-972, 1005-1010, 1085-1092` |
-| N26 | `checkHeirs` reports agreement in exactly the case where the algorithms disagree: when algorithm 1 concludes `th_none` and algorithm 2 found heirs, the case arms are empty and the result stays "good". The final `else` is unreachable. The list comparison is also order-sensitive | `inheritance.pas:2141-2149` |
-| N8 | Women in the most fecund tail are made sterile at `kMinAgeFert`: the `else` conflates "the loop never advanced" with "the loop ran to the maximum". With the fallback Pittinger and Wood schedule that is 2.8 per cent of women, zero exposure and zero children. A floor of permanent childlessness drawn from the most fecund women, which the PPR calibration then absorbs | `Fertility.pas:1288-1296` |
-| N7 | The PPR target adjustment sets progression to near-certainty where the simulation reached nobody: `b` forced to 1e-5, ratio about 1e4, clamped to 0.99999, and that factor propagated to parities 16 to 50. No convergence test across the four passes, no fallback to the best iterate, `adjustedValues` set true unconditionally. Contrast `findCorrectPropSeparation`, which does keep the best value | `FertilityRuntime.pas:2758-2813` |
-| N9 | **The intrinsic growth rate omits the proportion female at birth. Verified (structure).** `StablePop.pas:44` solves the Lotka equation with `m(x)` from `pGenFert`, which is all births per woman; the only other consumer, `FertilityRuntime.pas:2857`, multiplies by 0.488. At replacement the solver returns about +0.026 rather than 0, and `r` weights the stable age distribution of mothers | `StablePop.pas:44` |
-| N10 | The net reproduction rate hard-codes 0.488 and ignores `PROP_WOMEN_AT_BIRTH`, while `Mortality.pas:397` correctly reads the parameter. Two different sex ratios in force in one run | `FertilityRuntime.pas:2857` |
-| N13 | The infant-mortality age correction is inverted: the Coale and Demeny branches are the wrong way round, `a` exceeds 1 for `q0 >= 0.183`, and the rescaling touches only the lower endpoint, so the mean moves from 0.536 to 0.576 while `a` sweeps 0.34 to 1.34. A floor at one month also means no infant can die in the neonatal period | `Mortality.pas:300-305` |
-| N16 | **`eduLevel` returns garbage for any status that is not B, M or A. Verified.** `EduLevels` is an integer subrange so nothing initialises the result, `writeAndWaitConst` does not halt, and both callers use the value as an index into a table of **objects**, so a garbage index yields a garbage class reference. Triggered by the empty string, which an unassigned relative still holds while `giveEdStatus` walks the list | `EducationalLevel.pas:169-179` **FIXED 26 Aug, batch 1.** |
-| N27 | **`getPartner` returns an uninitialised pointer on its guard path. Verified.** `result` is assigned only inside `{$IFDEF addOldUnionType}`, which is not defined anywhere in the tree. `writeAndWaitConst` does not halt, so the caller dereferences the return register. The guard also uses the literal 20 while `kMaxNbUnion` is 30 | `Nuptiality.pas:264-276` **FIXED 26 Aug, batch 1, except the literal 20 versus kMaxNbUnion, noted in the source.** |
-| N28 | The union setters fabricate a phantom union when the index is out of range: `getUnionInfoByIndex` returns nil, and the setters read that as "append", incrementing the union count and writing to the wrong union. `Kinship.pas:477` passes `getIndUnion`, which returns `kNotDefined` exactly when the reciprocal link is missing, that is in the case the consistency check exists to detect | `Nuptiality.pas:174-190` and five siblings |
-| N17 | The partner correlation matrix is indexed with the wrong sex: the second index is `pRelative^.gender`, the person being assigned, where it should be the partner's. The correlation stays positive so it passes a smoke test | `EducationalLevel.pas:263-265` |
-| N11 | Every cohort after the first loses its parameter list: `GenericName.copyMeTo` does `toObj.next := nil`, and `DemographicRegimeSettings_copyState` copies `yearOfBirth` first, which **is** the head of the list. `changed` is never recomputed for those cohorts, so a GUI edit to cohort 2 is lost with no prompt | `Declarations.pas:1390` |
-| N33 | `truncateAtAge` reads a `for` loop variable after normal completion, which FPC leaves undefined. One plausible value writes four fields past the end of `Unions` and leaves `nbUnions` one too high; if the first union starts after the truncation age the index becomes 0 and it writes before the array | `Parenthood.pas:232-262` **FIXED 26 Aug, batch 1, together with the Unions[-1] case.** |
-| N40 | Two more counters incremented non-atomically from worker threads: `gBACKFOR_nTries` and `gBACKFOR_women`, from the CAMSIM-1993 and real-BACKFOR mother searches. Same class as the three fixed in round 1. `gBACKFOR_nTries` needs `InterlockedExchangeAdd` | `Kinship.pas:4576, 4589, 4676, 4691` **FIXED 26 Aug, batch 2.** |
-
-#### Lower priority within the second pass
-
-| ID | What | Where |
-|---|---|---|
-| N14 | An e0 outside the tabulated range is warned about but not clamped, and `writeAndWait` does not halt. At e0 = 15 the interpolated `lx` is non-monotone with a minimum of -3.3e-7; at e0 = 10, -0.0091. The 20 to 112 bounds exist only in the GUI, so a configuration file or a cohort interpolation reaches the routine unchecked | `Mortality.pas:333-345` |
-| N15 | `ind_max` is read after a `for` loop that can finish without `break`. The life table is passed **by value**, so the out-of-range read lands in adjacent stack memory: silent corruption, not a crash | `Mortality.pas:336-338` **FIXED 26 Aug, batch 1.** |
-| N18 | "Intra-family" education correlates four kin types out of twenty-seven and does not correlate siblings: `kt_sibling` goes to the unconditional cohort draw, as does everything outside ego, partner, child and grandchild | `EducationalLevel.pas:281-288` |
-| N20 | The stochastic education mode ignores all six `EDU_*` parameters and hardcodes 1/3 and 2/3. With N19 the user reasonably believes the dumped values were used | `EducationalLevel.pas:181-192` |
-| N29 | `scaleFactor` can be zero or negative in `initStandardNuptiality`: division by zero, or negative densities that are then renormalised | `Nuptiality.pas:611-616` |
-| N30 | `std_Campbell_Wood_1988` takes the square root of a negative number for any mean below 15.32, which is inside the accepted range | `Nuptiality.pas:1230-1237` |
-| N31 | `ageWomenEndUnion` never tests `kNotDefined` and can return a negative age labelled `widow` | `Nuptiality.pas:1524-1545` |
-| N32 | `endBySeparation` assigns its two decision variables inside a `try` whose handler falls through, so a swallowed exception leaves the separation decision to two uninitialised doubles | `Nuptiality.pas:1062-1114` |
-| N34 | `distNbChildren` is incremented with a plain `Inc` from every worker into one shared per-cohort record, and in a stable population every year clamps to `data[0]`, so all threads collide on the same counters | `initMotherhood` in `Kinship.pas` |
-| N35 | `addGroomsInfo` uses `exit` where it needs `continue`, so a woman whose first union falls outside the groom cohort range loses all her unions including in-range later ones | `initMotherhood` |
-| N36 | The thread `Destroy` runs immediately after the finish flag with no `WaitFor` and no `inherited Destroy`, so the RTL is still touching the instance after it is freed | `initMotherhood` |
-| N37 | `TPersonMemoryManager.Create()` with no argument allocates a 100 × 100 × 10000 array of references, about 800 MB, and two are created unconditionally | `initMotherhood` |
-| N38 | The scheduling loop's `nActiveThreads` is not a count of running threads, so `.start` is called repeatedly on threads already running | `initMotherhood` |
-| N41 | Bootstrap replicates reuse stale arrays: `gMen_Women` and the five `gState*` arrays are freed once per session in `disposeMotherhood_DemReg` while `initMotherhood` runs once per replicate, and `SetLength` to the same dimensions does not zero. Contrast `gAllBirths` thirteen lines earlier. **Disappears with B1** | `initMotherhood` |
-
-#### Unguarded arithmetic and bounds, second pass
-
-None of these is a results bug on its own; each is a crash or a silent corruption waiting for an unusual input.
-
-- `FertilityRuntime.pas:2862, 2871-2876`: division by zero when a cohort produces no births, then a `while` with no lower bound that walks below `kMinAgeFert`.
-- `FertilityRuntime.pas:2552, 2568`: two unguarded divisions in the separation Newton step; the denominator is zero whenever two consecutive iterations give the same simulated proportion, which is ordinary for a coarse ratio of counts.
-- `FertilityRuntime.pas:2651`: an extra `Inc` leaves `history[·,1]` uninitialised when the user supplies a warm start.
-- `FertilityRuntime.pas:2626`: `freqSeparation_result` read from an uninitialised record and then printed as the `SEP_RESULT` column.
-- `DemographicRegime.pas:1508-1525`: parity and interval indices taken from the cohort file header with no bounds check.
-- ~~`DemographicRegime.pas:1625-1628`: one blank line in the cohort file rejects the whole file, while the first pass over the same file explicitly tolerates blanks.~~ **FIXED 26 Aug, batch 2** (`:1644`).
-- `Fertility.pas:198-230`: the Erlang waiting-time distribution takes `power(0, k-1)` at `i = 0`, is never normalised, and sets `k` independently of `lambda`, so `Nuptiality.pas:856` requests a mean that is delivered 3.33 times too large.
-- `Kinship.pas` `initMotherhood`: five index computations without bounds (`addChildrenBACKFORInfo` indexing an age at union on a fertility-age axis; `addBridesInfo` and `addGroomsInfo` with no high clamp; `addUnionsInfo` off by one; `lookingForABrideByAgeAndCohort` walking off both ends with no empty-range escape; `getAgeUnionSelected` reaching `Unions[-1]`).
-- ~~`Parenthood.pas:487-488`: division by zero in `writeInfoParents` for any empty cohort.~~ **FIXED 26 Aug, batch 2** (`:485, 526, 542`).
+The first three checks to wire, in order: the Léridon targets, since they are the ones
+that say whether the fertility model is right; `checkSumShareHeirs`, which is one line;
+and a baseline folder kept from a single-threaded run with a fixed seed, which turns
+every later change into a comparison rather than a judgement.
 
 ---
 
-## 3. Questions for you
+## 3. Results still wrong, in the order I would fix them
 
-These the reviewers could not settle, and they are matters of intent rather than of code.
+Re-read against the source on 13 September. These change simulated numbers. The right-hand
+column says roughly how much, which is what decides the order.
 
-| ID | Question |
+### Education, the largest of them
+
+| | where | what, and how much |
+|---|---|---|
+| **N20** | `EducationalLevel.pas:176`, `edStatusStocha` | With `EDU_STATUS` on the stochastic mode every person is drawn from a written-in 1/3, 1/3, 1/3 and the six `EDU_*` parameters are never read. **The whole education distribution**: ask for 60/30/10 and the run gives 33/33/33. Zero in the cohort mode, which reads `p^.eduEgo` correctly |
+| **N18** | `EducationalLevel.pas:299` | The intra-family mode correlates four kin types out of twenty-seven and siblings are not among them. **Most of the simulated kin get no family correlation at all.** Blocked on Q5 |
+| **N17** | `EducationalLevel.pas:263` | `p^.eduEgoPartner [eduLevelPartner, pRelative^.gender, ...]`: the first index is the partner's level and the second the sex of the person being assigned. **Only the sex asymmetry of assortment is lost**, since the matrix is strongly diagonal both ways: zero if it is symmetric, as large as the asymmetry otherwise. Settle the intended reading first, since the alternative is that the first index is the wrong one |
+| **N19** | `DemographicRegime.pas:746` writer, `1812` header | The mode-to-table mapping is off by one, so the cohort file records a different education table from the one the run used. **Zero for the run that writes it, total for the next run that reads it.** Correcting it changes the cohort file format for all three modes |
+
+### Fertility and nuptiality
+
+| | where | what, and how much |
+|---|---|---|
+| **N32** | `Nuptiality.pas:1152` | After a range error on `monthly_risk_separation [durationUnion]` the handler writes a message and execution continues past the `try`, where two uninitialised doubles decide the separation. **Zero in a run where it never fires, arbitrary for the unions affected in one where it does.** It did not fire in the run of 11 September, which reported one problem only. The cause is the unbounded index, so it is also in 3b |
+| **N4c** | `FertilityRuntime.pas:1135` | With `RESHUFFLED_FECUNDABILITY` on, the redraw after each birth rebuilds the age schedule from `gFecundability` and discards the Léridon taper. Off by default. With it on, fecundability in the 12.5 years before the woman's own age at sterility is too high by the whole taper: **at three years before sterility the correct factor is about 0.24 and the run uses 1.0**. It also turns between-woman heterogeneity into within-woman noise, which is a different model rather than a bug. **Decide which** |
+| **N10** | `FertilityRuntime.pas:3187` | The net reproduction rate uses the constant 0.488 instead of `PROP_WOMEN_AT_BIRTH`. **Reporting only, the simulated population is unaffected. Zero at the default and in proportion to the ratio otherwise**: at 0.51 the reported rate is 4.5 per cent low. One line |
+
+### Inheritance, all blocked on Q3 and Q4
+
+| | where | what, and how much |
+|---|---|---|
+| **N22** | `inheritance.pas:1455` | A nearer ascendant does not exclude a remoter one: the paternal and maternal branches recurse independently. **Surviving grandparents share with great-grandparents, so every share in such an estate is diluted.** Contradicts the file's own header comment |
+| **N24** | `inheritance.pas:895` | `commonAncestor` is computed and discarded at four of five call sites. **A maternal half-sibling with no blood link to the deceased takes an equal share** |
+| **N25** | `inheritance.pas:2076` | `lookForDecedents_Spain` has an empty body and the `inher_Spain` / `inher_Other` choice is never consulted. **The country rule set has no effect**: both algorithms run unconditionally |
+| **N26** | `inheritance.pas:2133` | `checkHeirs` reports agreement in exactly the case where the algorithms disagree, and its final `else` is unreachable. **No result changes, but the check that would catch N22 and N24 is inverted, so it hides them.** The list comparison is also order-sensitive |
+
+### Threading, where it changes results
+
+| | where | what, and how much |
+|---|---|---|
+| **N42, N43** | `DemographicRegime.pas:93, 1122` | The worker seeds itself inside `Execute`, which the warning in `RandomNumbers.pas` forbids, and the pool loop cannot exit on the flag it sets. **With `MULTITHREADING_INIT` and several cohorts, two cohorts can receive the same seed and therefore identical fertility schedules**, which makes them duplicates of each other. The constructor already seeds on the main thread, so the offending line can simply go. See also G11, which is the other half |
+
+### Cohorts
+
+| | where | what |
+|---|---|---|
+| **N11** | `Declarations.pas:1386` | Every cohort after the first loses its parameter list: `copyMeTo` sets `next := nil`, and the state copy starts with the field that *is* the head of the list. A GUI edit to cohort 2 is lost with no prompt |
+
+---
+
+## 3b. Missing guardrails against out-of-range values
+
+These leave results untouched while every input and index stays inside its range. They decide
+what happens when one does not, and today that is a range error, a wrong cell, or a hang. The
+first row is the one I would take first: it holds the only entries in either section that can
+corrupt memory silently with range checks off.
+
+| | where | what is unguarded |
+|---|---|---|
+| **Index bounds, five of them** | `Kinship.pas`, verified 13 September | `addChildrenBACKFORInfo` at 2886 puts an age at union on a fertility-age axis (`- kMinAgeFert`); `addBridesInfo` at 2754 and 2757 and `addUnionsInfo` at 2788 compute indices with no test at either end; `addGroomsInfo` at 2687 has `max (0, ...)` and no high clamp; `getAgeUnionSelected` can reach `Unions [-1]`. **Blocked on Q6**, whose answer decides whether the fix is a clamp or a rejection, and it is the same answer for all five. The sixth, `lookingForABrideByAgeAndCohort`, is now bounded |
+| **N29** | `Nuptiality.pas:651` | `scaleFactor := (mean - ageMin) / 11.37` with nothing keeping the mean above `ageMin`. The dialog allows a mean age at union of 10 while `kMinMeanAgeUnion` is 15, so the reachable range is wider than the model allows, and below it the schedule has densities of the wrong sign. Clamp here and give `MEAN_AGE_UNION` the same minimum in `LazConfig` |
+| **N32**, the other half | `Nuptiality.pas:1152` | `durationUnion` is not bounded to the table it indexes. Bounding it is the correction; making the handler leave the function is the safety net |
+| **Cohort file header** | `DemographicRegime.pas:1535` | Table indices taken from the cohort file header with no bounds check |
+| **G2** | `LazConfig.pas:457` | `STEP_COHORT` is bound with no minimum and the dialog accepts 0, which makes `currCohort := currCohort + 0` an infinite loop at `ReadCmdFileUnit.pas:1599`. `FIRST_COHORT` and `LAST_COHORT` are unchecked the same way |
+| **G3** | `LazOutput.pas:374` | `MAX_THREADS` accepts up to 999999, `ReadCmdFileUnit.pas:1571` copies it into `gMaxThreads` with no clamp, and that many threads are then created |
+| **G15** | `LazUtiles.pas:121` | `StrToInt` on the raw text of three edit boxes inside `FormCloseQuery`, after `CanClose` is already true and one of the three globals has been updated |
+| **N45** | `StringOfLib.pas:114` | The trailing-zero strip assumes a decimal point remains. The dialog clamps `FLOATING_POINT_DIGITS` to 1..10 but `LongintName.readValue` does not, so a configuration file can reach 0, where 100 is written as "1" and 0.23 raises a range error |
+| **N37** | `Kinship.pas:3651` | `TPersonMemoryManager.Create()` with no argument takes the default size, about 800 MB, and two are created before anything is known about how many people the run needs. The count is available: pass it |
+| **N49** | `FertilityRuntime.pas:749` | Not wrong today. `addChild` declares its table `out` and accumulates into it, which works only because FPC does not clear a plain array. It becomes a silent loss of every count the day the type changes. Should be `var` |
+
+---
+
+## 3c. A mechanism that was planned and never built
+
+`Kinship.pas:400` declares
+
+```pascal
+gBig_ArrayGrooms: TPersonMemoryManager; // possible grooms // global used in MAIN THREAD only
+```
+
+and that identifier appears nowhere else in the program: never created, never filled, never
+read. What exists is two pools, both of women, `gBig_ArrayWomen` for the possible mothers and
+`gBig_ArrayBrides` for the possible brides, the second only under `NEW_INIT_MOTHERHOOD` with a
+stable population. The groom index is not a third pool but a re-indexing of the second:
+`g_RangeBridesForGrooms_Info [cohort, ageAtUnion]` holds bride indices, keyed by the cohort and
+age at union that each bride's union *implies* for her partner.
+
+A groom therefore has no simulated life. In the kinship tree a man enters as the partner of a
+woman, `copyManPartnershipInfoToManAsRelative` gives him the one union he was created for, and
+`calcStateMan` builds his history forward from it. Nothing before that union exists: no earlier
+unions, no earlier children, and his age at first union is the one the match implied rather than
+one drawn from the male celibacy schedule. The men's histories are left truncated.
+
+This is a design decision rather than a defect to fix: building the pool means deciding whose
+reproductive history is the master when two simulated people form a union, and today it is the
+woman's throughout. One consequence for the diagnostics: on the bride side a shortage of
+candidates is real and measurable, since the candidates are simulated women, while on the groom
+side there is no pool to be short of, so the question reduces to whether the bride index holds a
+cell for the cohort and age at union asked for.
+
+---
+
+## 4. Threading and object lifetime
+
+Each needs a design decision and its own test. A wrong fix here is worse than the bug.
+
+| | where | what |
+|---|---|---|
+| **N42** | `DemographicRegime.pas:97` | The seed race that was fixed in `Kinship.pas` survives here: the worker calls `initRandomized` from inside its own `Execute`, which the warning comment in `RandomNumbers.pas` forbids. Two cohorts can get identical fertility schedules. **The constructor already seeds on the main thread, so this line can simply be deleted.** Gated by `MULTITHREADING` and `MULTITHREADING_INIT` |
+| **N43** | `DemographicRegime.pas:1094` | `allThreadsDead := false` sits inside the inner loop, so half the exit test is dead |
+| **N44** | `DemographicRegime.pas:87` | `TDemRegInitThread.Destroy` has no `inherited Destroy` |
+| **2.3** | `Kinship.pas:6642`, consumer at `6659` | The go-flag is published before the state the worker reads, with no event, lock or barrier. Apple Silicon is weakly ordered, so this is not theoretical on your machine |
+| **2.4** | `Kinship.pas:2878, 7619, 7739`; `Utilities.pas:288` | Every wait is a hot spin with no yield |
+| **2.5** | `Kinship.pas:7421, 7431`, caller at `7684` | The link file failing to open leaves the main file open, and the caller's bare `exit` skips `writeTables`, `DestroyArrayChildren` and all thread cleanup, leaving workers spinning |
+| **N34** | `Parenthood.pas:77` | `distNbChildren` is incremented with a plain `Inc` from every worker into one shared record |
+| **N36** | `Kinship.pas:2879` | `.Destroy` immediately after a spin, with no `WaitFor` and no `inherited` |
+| **N38** | `Kinship.pas:2876` | `nActiveThreads` is not a count of running threads, so `.start` is called on threads already running |
+| **N41** | `Kinship.pas:3175` | Bootstrap replicates reuse stale arrays. **Disappears if bootstrapping is removed**, and is that change's acceptance test |
+
+---
+
+## 5. Smaller things
+
+Entries that moved out of this section on 13 September: `N28` and `N30` and `N31` are fixed;
+`N29`, `N37`, `N45` and `N49` are now in 3b with the other guardrails; `Erlang` is fixed; the
+`getPartner` guard now reads `kMaxNbUnion` rather than the literal 20.
+
+
+| | where | what |
+|---|---|---|
+| **N32** | `Nuptiality.pas:1152` | The exception handler falls through and the separation is then decided by two uninitialised doubles. Full entry in section 3; the unbounded index behind it is in 3b |
+| **N46** | `Nuptiality.pas:1024` | Four arguments to a three-argument procedure, inside `{$IFDEF DEBUG_SEPARATION}`. Harmless until someone turns that define on, which is exactly when they would |
+| **Bride selection** | `Kinship.pas:5343` | `caseSelect` is assigned the constant 2 immediately above the `case` that reads it. The third algorithm is the right one and the other two are kept for comparison, which is deliberate. Worth a comment at that line saying so, since the two branches read as live code and their checks are reported as never run |
+| **Arithmetic** | `FertilityRuntime.pas:2853, 2635, 2614`; `DemographicRegime.pas:1535` | Division by zero on an empty cohort; an extra `Inc` leaving a history slot unset on a warm start; a result read from an uninitialised record and printed; table indices taken from the cohort file header with no bounds check |
+| **Index bounds** | `Kinship.pas`, `initMotherhood` | Five index computations with no bounds test: `addChildrenBACKFORInfo` indexes an age at union on a fertility-age axis; `addBridesInfo` and `addGroomsInfo` have no high clamp, the `max (0, ...)` guarding only the low end; `addUnionsInfo` is off by one; `lookingForABrideByAgeAndCohort` walks off both ends with no escape for an empty range; and `getAgeUnionSelected` can reach `Unions[-1]`. **Blocked on Q6**, since the answer decides whether the fix is a clamp or a rejection |
+| **4.3** | `Kinship.pas:3879` | `writeKinship` counts every relative that passes `includeKinInNetwork`, whether or not `writeKin` wrote a row, so the reported individual count can exceed the rows in the file |
+| **4.11** | `Kinship.pas:7870` | `stopTime` reads `tStart_interm` outside the `TALKATIVE` guard that surrounds both of its assignments |
+| **5.2** | `Kinship.pas:3861` | `includeKinInNetwork` has no initialisation and no final `else` |
+| **4.6** | `Kinship.pas:7334`, duplicate at `7342` | `heirs` emitted twice as a header, and the user-facing columns written from the second algorithm's variables |
+| **4.7** | `Kinship.pas:3703` | Empty-value sentinels disagree: `''`, `'0'` and `'-1'` in the same row |
+| **4.8** | `Kinship.pas:3539` | The ego children check is redundant; `CalcChildren` already reports it |
+| **4.2** | `Kinship.pas:3633` | Link file: `M` rows in both directions |
+| **5.6** | `Kinship.pas:7624` | Comment the deliberately commented-out `Destroy`, which would be a double free |
+| **1.3** | `Kinship.pas:3834`, header at `7358` | GEDCOM is selectable and writes a header and no rows. Remove it from the combo until implemented |
+| **3.b** | `Init.pas:516` | `USE_ARRAY_CHILDREN` is never written or read, and is constructed TRUE but defaulted FALSE |
+| **3.d** | `ReadCmdFileUnit.pas:848, 876` | `DUMP` and `STABLE_POPULATION` have commented-out writers and live readers |
+| **3.1** | `ReadCmdFileUnit.pas:1014` | `DUMPALL` writes a detailed file with no tables in it |
+| **3.4** | `lazkinoutputfields.pas:84` | `fn_yDeathFloat` has no checkbox: 21 boxes for 22 enum members |
+| **3.5** | `ReadCmdFileUnit.pas:1672`, discarded results at `1329` and `Simulxcode.pas:42` | The finished banner prints on the error path, and two of four call sites ignore whether the run succeeded |
+| **6.4** | `Declarations.pas:1577` | `setChanged` requires a prior `setDefault`; add the comment saying so |
+| **Dead code** | `Utilities.pas:1323`; `testThread.pas`; `mothersInfoList.pas` | `writeOneArrayOfDouble` has no callers; `testThread.pas` declares a unit name that does not match its file; **`mothersInfoList.pas` was reported deleted on 26 August but is still present and tracked** |
+
+---
+
+## 6. The GUI and the utility units, now read
+
+Read on 6 September, in four passes: `LazMain`, `LazUtiles`, `LazLowlevel`, `Simulxcode`, `docform`;
+`LazConfig`, `LazOutput`, `ComponentHelper`; `LazGraph` and the five small dialogs;
+`NumCPULib`, `Profiler`, `TimeProfile`. Every item below was verified against the source, and in
+three cases against the compiler. Nothing here has been changed yet.
+
+### Results, hangs and crashes
+
+| | where | what |
+|---|---|---|
+| **G1** | `LazMain.pas:706` | `MemoWriteLnExec` does `s := myLine + s` and never empties `myLine`, which only `ClearLog` and the constructor do. After any call of `memoWrite` without a line feed, and `Kinship.pas:6022` makes one on an ordinary path, every later line carries the same prefix, so the test `if (s = kEndThreadMessage)` can never match, `memoWriting` is never set false, and the worker thread spins for ever in `while (KinFertForm.memoWriting) do ;` at `LazMain.pas:856`. The run never finishes, one core stays at 100 per cent, `SaveLog` never runs and every button is dead, since each one begins `if gSimulationRunning then exit`. One line: `myLine := ''` after 706 |
+| **G2** | `LazConfig.pas:457` | `STEP_COHORT` is bound with no minimum, so `TEditChange` sets `checkValue := false` and the dialog accepts 0. With KINSHIP on, `ReadCmdFileUnit.pas:1599` is `while currCohort <= last do ... currCohort := currCohort + 0`, an infinite loop, and the second loop at `1637` repeats one cohort for ever, rewriting its output. `FIRST_COHORT` and `LAST_COHORT` are unchecked in the same way |
+| **G3** | `LazOutput.pas:374` | `MAX_THREADS` accepts up to 999999, `ReadCmdFileUnit.pas:1571` copies it into `gMaxThreads` with no clamp, and `Kinship.pas:7746-7758` then creates that many threads. The maximum should be of the order of `gNumLogicalThreadsForMultiThreading`, which the line below already prints as the recommended number |
+| **G4** | `LazGraph.pas:196` | `SaveToFile` casts `ASeriesList.Items[0]` to `TChartSeries` with no test and reads `ListSource`. On "Outputs: Kinship" the first series is the `TConstantLine` added at `1137`, a sibling class with no such member, so "Save to file" there reads a wrong offset. The same routine has no guard for an empty list, so pressing the button before any run raises "List index (0) out of bounds" after creating a zero-byte file |
+| **G5** | `LazGraph.pas:810` | "Waiting time after second birth" draws `AccDurationWaitingTime[1]`, which is the first birth interval, with the first interval's mean and proportion in the legend. It should be `[2]`, in all three places. The second interval cannot be inspected at all today |
+| **G6** | `ComponentHelper.pas:388` | `aCompChange` is only assigned inside the class tests, so a component that matches none of them, a `TButton`, a `TLabel`, a `TShape`, leaves it holding a stack value, which is then written into `lastComponentChange.next` and becomes part of the chain that `ShowValue` walks. One rename away from a crash: `LazConfig.pas:537` already passes a name that resolves to nothing today. `aCompChange := nil` at entry and an exit before line 442 |
+| **G7** | `ComponentHelper.pas:986, 1055` | `TCohortComboBoxChange.myGetValue` and `TFixedFertComboBoxChange.myGetValue` end with `ConfigForm.updateValues`, which frees the whole `TComponentChange` chain, including the object whose method is running. Control then returns into `TComponentChange.ReadValue` at `630`, a virtual call on freed memory. It survives only because the heap manager does not scrub the object. Set the existing `needToUpdate` flag instead |
+| **G8** | `LazMain.pas:824, 832, 838, 860` | `SaveLog` is called from the worker thread and reaches `Log.Lines.SaveToFile` while the main thread is adding lines to the same `TStringList` from queued calls. With `SAVE_LOG` on this is a race on the memo. Queue it like every other GUI touch in the unit |
+| **G9** | `LazMain.pas:801-862` | `TKinFertMainThread.Execute` has no `try ... except`. An exception inside a run reaches `TThread`, which still calls `OnTerminate`, so `endSimulation` reports "finished" with a green indicator while the output files were never closed and lost their tails. This is the same complaint as 3.5, from the other end |
+| **G10** | `NumCPULib.pas:624` | `GetCPUCountUsingSysCtlByName` never initialises `Result` and ignores the return code of `fpsysctlbyname`, and it is the only implementation behind `GetPhysicalCPUCount` on macOS. On failure it returns whatever was on the stack, which `Init.pas:731` assigns to a longint under range checks |
+| **G11** | `DemographicRegime.pas:1101` | The pool starts a thread on `myThreadState = thread_suspended`, but the worker only clears that state once the system has scheduled it, so a thread started in an earlier pass can be counted a second time. `nActiveThreads` then never returns to zero and the loop spins. The main thread should set the state before `start`, not the worker at `96`. This is the other half of N43 |
+| **G12** | `LazConfig.pas:466, 537, 580` | `NWOMEN`, `CREATE_COHORT_FILE` and `STABLE_POPULATION` are bound to components that do not exist, `FindComponent` returns nil and `CreateComponentChange` exits with no message. `NWOMEN` is the substantive loss: it is a real parameter, read and written in the configuration file, and it drives the denominators in `FertilityRuntime.pas`, with no way to set it from the dialog |
+| **G13** | `LazOutput.pas:186, 193, 206, 219` | Four lines read `OutputForm.ChangesMadeToDefaultValues` inside `TOutputForm`, which is the field being assigned: `x := x or x`. The heirs, decedents, kin selection and optional field dialogs each keep their own flag, and those are what should be read, as `LazConfig.pas:237` correctly does. A change made only in one of the four sub-dialogs leaves the "Edited values" indicator wrong |
+| **G14** | `ComponentHelper.pas:1058` | `TFixedFertComboBoxChange.myCheckChanged` forces `myVal.changed := FALSE` with a comment copied from the cohort combo, where the object really is a dummy. Here it is `FIXED_FERTILITY_VALUE`, a live parameter, so changing it never marks the configuration as edited |
+| **G15** | `LazUtiles.pas:121` | `FormCloseQuery` calls `StrToInt` on the raw text of three edit boxes. An empty or non-numeric box raises `EConvertError` out of the close handler, after `CanClose` has been set true and after one of the three globals has been updated. `TryStrToInt`, or validation in the OK handler |
+| **G16** | `LazUtiles.pas:191` | `convToStr` returns `'0'` for an empty array, so opening the Debug dialog and pressing OK adds ego 0 to the view list that the user never asked for; and clearing the box cannot empty the list, because the length test short-circuits first |
+
+### Leaks, hygiene, and one thing that reads as a bug and is not
+
+| | where | what |
+|---|---|---|
+| **G17** | `LazGraph.pas`, every `Draw` | No `TDrawParameters` is ever freed: the destructor at `242` has no caller anywhere in the unit. One object per curve per redraw, and the union tables draw thirty curves at a time. A `try ... finally par.Free` around the body of `Draw` covers the two overloads as well |
+| **G18** | `LazGraph.pas:535, 559` | A `TListChartSource` is created on every redraw that supplies axis labels, owned by the chart, and only the reference in `Marks.Source` is replaced. They accumulate until the program ends. Create them once, or free the previous one |
+| **G19** | `ComponentHelper.pas:461` | `TComponentChange.Destroy` frees `next` and `disableAction` but not `uncheckList`, which is rebuilt on every `FormActivate` and every `updateValues` |
+| **G20** | `Kinship.pas:7939` | `cleanUpThread` is created, terminated and waited for, and never freed. `FreeOnTerminate` is false for that class, so one thread object leaks per cohort per replicate |
+| **G21** | `ComponentHelper.pas:293` | `strToDouble` sets `DefaultFormatSettings.DecimalSeparator := '.'` and restores it after the conversion. `StrToFloat` raises on a mistyped field, the restore is skipped, and the separator stays changed for the rest of the session. A `try ... finally` |
+| **G22** | `LazLowlevel.pas:88` | `FormActivate` rebuilds the component list and calls `showValues` on every activation, which writes the stored value back into every edit box. A number typed and not yet committed, that is with no control having lost the focus, is silently replaced when the user switches away from the application and back |
+| **G23** | `Profiler.pas:132, 154` | A dangling `else` makes the `setLevel` argument inoperative and can reset the depth to zero, and `timeProfile_end_proc` indexes the array with the `-1` that `posInsideProfile` returns on a miss. Both are inert today, since `VerboseProfiler` is undefined everywhere. `TimeProfile.pas` is worse: nothing includes it, and the two names it calls do not exist in `Profiler.pas`, so it could not compile if it were used. Delete it, and decide whether `Profiler.pas` and its forty call sites ship |
+| **G24** | `LazOutput.pas:172` | `if res <> cmd_outputtomainfile then next;` looks like a loop continuation and is not: `next` resolves to `TCustomForm.Next`, an inherited method that moves the input focus, so the statement compiles, moves the focus once per enumerand, and falls through to the body. The ALL and NONE button does work. The statement should simply go |
+
+Two claims from the same pass did not survive checking, and are recorded so that they are not
+raised again. `FormCreate` does **not** run before the constructor body: the LCL fires it from
+`AfterConstruction`, which I verified by running a small program against the same LCL, so
+`myBufferStr` exists and the output directory read from the `.cfg` is not overwritten. And
+`LazOutput.pas` does compile, for the reason given in G24.
+
+Nothing in the tree is now wholly unread except the `.lfm` resources themselves, which only
+Lazarus can check, and the parts of `NumCPULib.pas` that serve platforms KinFert does not target.
+
+---
+
+## 7. One deliberate change
+
+**Remove bootstrapping.** You confirmed this. It touches `gBootstrap_nRuns`, the replicate loop
+at `ReadCmdFileUnit.pas:1608`, `RP.indBootstrap`, and the `bootstrap_ind` parameter threaded
+through `run_all`, `simulateKinship` and `individualKin_*`. N41 is its acceptance test.
+
+**Keep `RP.wkey`.** `openFileKeys` at `Utilities.pas:762` turns keys on whenever any of the seven
+step counts exceeds one, so a parameter sweep needs keys with no bootstrapping at all.
+
+---
+
+## 8. Questions only you can answer
+
+| | question | blocks |
+|---|---|---|
+| **Q2** | Is `LivingBirth` counted from conception, so the correction adds the gestation to the death term rather than subtracting it from `month`? | N2 |
+| **Q3** | How far should inheritance follow Spanish succession: does a nearer ascendant exclude a remoter one; are posthumous children heirs; what happens when no heir is found; is usufruct modelled; is per-capita competition at degree 4 deliberate? | N22, N24, N26 |
+| **Q4** | Should `inher_Spain` / `inher_Other` select between rule sets, or is the parameter a leftover to remove? | N25 |
+| **Q5** | Should education correlate between siblings? At present it does not | N18 |
+| **Q6** | Can the repartnering model emit a union age above 74? | several index bounds, and the five in `initMotherhood` |
+| **D3** | Should the key column be suppressed in a kinship-only stepped run? `writeKeys` has one call site, inside `FERTILITY_loops`, so with FERTILITY off `RP.key` is never incremented and the column is the constant 0 on every row | cosmetic, but it reaches the file format |
+| **Q7** | Do `union_women_men` rows always reach 1.0? | an unguarded sampling loop |
+| **N19** | Correcting the education dump changes the cohort file format. Before or after the release? | N19 |
+
+Q1, the fecundability parameterisation, is closed: Léridon specifies a Gaussian, `N(0.23; 0.12)`.
+
+---
+
+## 9. Documentation and publication
+
+**Documentation.** The manual is a first draft at `docs/KinFert-Manual.md`, and it is the third
+document: neither this one nor the companion replaces it.
+
+| | what |
 |---|---|
-| Q1 | N4: is the intended parameterisation N(0.23, 0.12) as the description string says, that is a coefficient of variation of 52 per cent, or the 12 per cent the code produces? The fix is trivial either way; what it changes is the published fertility |
-| Q2 | N2: confirm that `LivingBirth` is meant to be counted from conception, so the correction is to add the gestation to the death term rather than to subtract it from `month` |
-| Q3 | N22 to N26: how far the inheritance module is meant to follow Spanish succession. Specifically: does a nearer ascendant exclude a remoter one; are posthumous children heirs; what happens when no heir is found; is usufruct modelled; and is grand-nieces competing per capita with grand-aunts at degree 4 deliberate |
-| Q4 | N25: should `inher_Spain` / `inher_Other` select between rule sets, or is the parameter a leftover to remove |
-| Q5 | N18: is education meant to correlate between siblings? At present it does not |
-| Q6 | Whether the repartnering model can emit a union age above 74, which decides whether several index bounds are reachable |
-| Q7 | Whether `union_women_men` rows always reach 1.0, which bounds an unguarded sampling loop |
+| **M1** | Answer the ten questions in Appendix F: the conception model, the repartnering hazard, the mapping from life expectancy to survival, the B, M and A education levels, the default backward variant, the country inheritance rules, the exact file grammars, the drop-down values, and a worked regression example |
+| **M2** | Bring the manual up to the work of this year: kin sets per output format, the DemoCare field dialog, `DEMOCARE_LARGE_FIELDS`, the `dead` and `secondUnions` values of `partnershipStatus`, relatives dead before the reference age now excluded from the DemoCare file, the `kt_total` row, and the removal of the BATCH option |
+| **M3** | Document the DemoCare format and its link file |
+| **M4** | Release notes: `DEMOCARE_LARGE_FIELDS` replaces the `DUMPALL` binding; an old DemoCare configuration carries a wide `OUTPUT_KINTYPES` that is now honoured; the DemoCare file no longer contains relatives dead before the reference age; BATCH is gone; `MULTITHREADING_SIMKIN` is now saved |
+| **M5** | Fold the cleared findings, which are listed in the companion document, into developer notes, so that the reasoning survives the documents |
+| **M6** | The model description, not only the code, changes with the fecundability parameterisation and with the effect of infant death on the birth interval. The manual must say what the code now does: a constant multiplier per woman, so the coefficient of variation is the same at every age by construction, and the realised rather than the nominal moments of that distribution |
+| **M7** | Document the parameter sweep semantics: which parameters step, that steps and cohort sequences are mutually exclusive, that selecting both silently resets all seven step counts with a message, and what the KEYS file decodes |
 
----
+**Publication.** The repository is already public at `github.com/ddev2/KINFERT`.
 
-## 4. Changes you have announced
-
-| ID | What | State |
-|---|---|---|
-| B1 | Remove bootstrapping | Confirmed. Touches `gBootstrap_nRuns`, `OUTPUT_BOOTSTRAP_MULTIPLE_INDIV_FILES`, `RP.indBootstrap`, the loop in `ReadCmdFileUnit.pas:1599`, and the `bootstrap_ind` parameter threaded through `run_all` / `simulateKinship` / `individualKin_*`. Also resolves N41 |
-| B2 | Keep `RP.wkey` for fertility | Confirmed. See D4 |
-| B3 | Retire the bootstrap-only append fix when B1 lands | `sharedBootstrapFile` and `openMode` in `individualKin_openFile`, and possibly the `mode` parameter added to `openFileOut` |
-| B4 | GEDCOM later | The one real bug in that area is fixed: `header_GEDCOM` wrote to `gOutFileIndivKin_link`, a file only opened for DemoCare. If the GEDCOM writer ever needs a second file it must be opened in `individualKin_openFile` first |
-
----
-
-## 5. Code review coverage
-
-| ID | Unit | State |
-|---|---|---|
-| R1 | `RandomNumbers.pas` | **Read**, 6.1a fixed |
-| R2 | `Fertility.pas`, `FertilityRuntime.pas` | **Read.** N2 to N8, and six arithmetic items |
-| R3 | `DemographicRegime.pas`, `StablePop.pas` | **Read.** N9, N11, N12, N19, and two arithmetic items. Does not resolve 6.4 |
-| R4 | `Nuptiality.pas`, `Parenthood.pas` | **Read.** N27 to N33 |
-| R5 | `Mortality.pas`, `EducationalLevel.pas`, `inheritance.pas` | **Read.** N13 to N18, N21 to N26 |
-| R6 | `Memory.pas` | **Closed.** `DebugMemory` is never defined, so the standard memory manager is used and the unlocked `ptrList` is unreachable |
-| R7 | `initMotherhood` threading | **Read.** N34 to N38, N41 |
-| R8 | `StringOfLib.pas` | **Closed** |
-| R9 | `SpecialRuns.pas` | **Read.** N1 |
-| R10 | `mothersInfoList.pas` | **Read.** Dead and uncompilable, N39. Delete |
-| R11 | The Laz\* GUI units beyond `LazOutput`, `LazConfig`, `lazkinoutputfields` | Not read. Low risk for results, but they are what a new user sees first |
-
----
-
-## 6. Documentation
-
-| ID | What |
+| | what |
 |---|---|
-| M1 | The ten questions in Appendix F of `docs/KinFert-Manual.md` |
-| M2 | Update the manual for this session: per-format kin sets, the DemoCare field dialog, `DEMOCARE_LARGE_FIELDS`, the new `partnershipStatus` values including `dead` and `secondUnions`, relatives dead before the reference age now excluded, the `kt_total` row, and the removal of the BATCH option |
-| M3 | Document the DemoCare format and its link file, now that D5a and D5b are fixed |
-| M4 | Release notes: `DEMOCARE_LARGE_FIELDS` replaces the `DUMPALL` binding; old DemoCare configurations carry a wide `OUTPUT_KINTYPES` that is now honoured; the DemoCare file no longer contains relatives dead before the reference age; the BATCH option is gone; `MULTITHREADING_SIMKIN` is now saved |
-| M5 | Fold the audits' cleared findings into the developer notes |
-| M6 | **New.** Whatever is decided on N4 and N2 changes the model description, not only the code. The manual's account of fecundability heterogeneity and of the effect of infant death on the birth interval must match what the code does after the fix |
+| **P3** | `KinFert ConfigDir.cfg.example` and `KinFert OutputDir.cfg.example`. The real files are gitignored, so a fresh clone has nothing to start from |
+| **P4** | Pin the versions. `kinfert.lpi` carries `Version Value="12"`; state the Lazarus version it was saved with and the FPC version it is known to build under. FPC 3.2.2 is verified for the engine |
+| **P5** | Decide how the binaries are built and released. `KinFert`, `KinFert.exe` and `KinFert.app` are in the folder and gitignored, which is right; they belong in a Release built from a tagged commit |
+| **P6** | A minimal regression test with a known output: one small configuration file, one expected output folder, and a note on how to compare. V14d is the natural candidate, and `compareruns` is the comparison |
+| **P7** | Decide whether `CLAUDE.md`, `AGENTS.md` and these documents ship with the source |
+| **P10** | Decide whether `testThread.pas` ships. It declares `unit testThreads` while the file is named `testThread.pas`, and nothing references it |
+| **Line endings** | A `.gitattributes` with `*.pas text eol=lf`. `Fertility.pas` was converted from CR-only on 31 August, but `LazConfig.pas` is still CRLF, and mixed endings across two platforms produce whole-file diffs that hide the real change. One loose end from that conversion: it was made in the same working tree state as the fecundability fixes, so `git diff` shows the whole file and the content changes are invisible inside it |
 
----
-
-## 7. Publication on GitHub
-
-`P1` README. `P2` LICENSE. `P3` `*.cfg.example` templates. `P4` pin the Lazarus and FPC versions. `P5` decide the binaries and how they are built. `P6` a minimal regression test with a known output. `P7` decide whether `CLAUDE.md` and the audits ship with the source. `P8` decide what to say about results produced with the versions that carried N1, N3 and N4.
-
----
-
-## 8. What is left, in the order I would work in
-
-Tier A is done. What follows is Tier B, the changes that alter published results or that need a decision from you, then Tier C, threading and object lifetime, then everything else.
-
-1. **V1, build in Lazarus.** The container build covers the engine but not `LazGraph` and not the `.lfm` binding. Nothing else should be trusted until the project builds on your machine.
-2. **Answer Q1 and Q2**, then apply **N4** (fecundability heterogeneity) and **N2** and **N6** (the two time-origin errors in the birth interval). These are the largest remaining effects on fertility.
-3. **N8**, the sterility floor, which is one line and ready: the else arm should keep whichever boundary the loop reached instead of assigning `kMinAgeFert` to both cases. It interacts with **N7**, the PPR adjustment, so decide them together.
-4. **N9** and **N10**, the growth rate and the net reproduction rate, both about the proportion female at birth.
-5. **N13** and **N14** in mortality: the inverted infant-mortality correction, and whether an out-of-range e0 should be clamped.
-6. **Answer Q3 and Q4**, then **N22**, **N24**, **N25**, **N26** in inheritance.
-7. **N17**, **N18**, **N19**, **N20** in education, which are four separate decisions rather than one fix.
-8. **N11**, the cohort parameter lists, and **6.4**, which is the same `copyMeTo` question.
-9. **Tier C**: 2.3 the missing barrier, 2.4 the hot spins, 2.5 the error path, **N36**, **N37**, **N38**. Each needs a design decision and a test; a wrong fix here is worse than the bug.
-10. **B1**, bootstrapping, as one deliberate change. **N41** is its acceptance test.
-11. The open items of sections 2C and 2D, and the rest of the arithmetic list.
-12. Documentation, then publication.
-
----
-
-## 9. Verification
-
-| ID | What |
-|---|---|
-| V1 | **Compile.** Nothing in this session has been built |
-| V2 | One ego-genealogy run and one DemoCare run: check the column count against the header, with and without the extended DemoCare set |
-| V3 | `partnershipStatus` shows `firstUnion` and `secondUnions`, not only `separated` and `widow`; `nChildren` is non-zero for relatives who have children |
-| V4 | **Write a DemoCare file and read it back with `readDemocareFile`**, both layouts. It should no longer be refused as "Not a Democare Kinship file"; kin types should come back as written (**D5b**); no person should appear twice in another's union list (**D5a**, the duplicate `addLastPartner`) |
-| V5 | No row in the DemoCare file has a negative `tickOut`, and no link row names an id absent from the main file |
-| V6 | Only grandparents selected: the fathers and grandfathers appear |
-| V7 | The `kt_total` row appears and equals the sum of the rows above it |
-| V8 | With multithreading off, the same configuration twice, compared byte for byte. The Config dialog leaves "Same Random Sequence" enabled when only `MULTITHREADING_SIMKIN` is off (**D6, to be checked**) |
-| V9 | **A multi-cohort run**: every cohort present in the file, family and individual numbers continuous and never repeated, and the closing message reporting the totals for the whole file (**W2, to be checked**) |
-| V10 | **A multithreaded run**: no two genealogies identical, which was possible while the threads could draw the same seed (**6.1a, to be checked**) |
-| V11 | A run with multithreading on and off produces the same number of families |
-| V12 | `MULTITHREADING_SIMKIN` survives a save and a reload (**3.a, to be checked**) |
-| V13 | The Outputs dialog no longer shows the "Use batches" checkbox and nothing references it (**W1, to be checked**) |
-| V14 | **For N1, the decisive test.** A two-step separation sweep: the `SEP` column of the two steps must differ, and the second must not be zero. Before the fix both were zero |
-| V14b | **For N1.** A three-step sweep of the mean age at union from Low to High: the three simulated means must be Low, the midpoint, and High. Before the fix the last step never ran and the first used a stale index |
-| V14c | **For N1.** A three-step amenorrhea sweep: the three values of `amenorrhea_alpha` must be evenly spaced from the original value. Before the fix the third was alpha + 3.6 rather than alpha + 2.4 |
-| V14d | **For N1.** A run with every `NSTEP_*` at 1, compared against the same run before the fix. It must be identical: N1 lives entirely inside the `> 1` branches, and this confirms that ordinary runs were never affected |
-| V15 | **New, for N3.** The distribution of age at end of union must not pile up at the oldest ages, and it must be consistent with the age at the first separation drawn |
-| V16 | **New, for N4.** The realised distribution of the fecundability multiplier: its coefficient of variation must match whichever parameterisation you choose in Q1 |
-| V17 | **New, for N2.** Mean birth interval following an infant death compared with the interval following a surviving child. The difference should be of the order of the shortening of breastfeeding, not of nine months |
-| V18 | **New, for N21.** `checkSumShareHeirs` must report shares summing to 1 for a decedent with two, three and four surviving grandparents |
-| V19 | **New, for a configuration file.** Hand-write a file with lowercase names and trailing spaces; it must be accepted (**3.2**), and the file the program writes must carry a `FILENAME` line (**3.e**, once fixed) |
-| V20 | **New, for N12.** A cohort file with an explicit `NWOMEN` column: each cohort must use its own value, not `NEGO` |
-
----
-
-## Appendix: fixed in this working tree
-
-Not compiled, not committed.
-
-**Round 1 (24 August).** 0.1 `mySetValue` restored; 1.2 key written after the kin filter; 1.4 `partnershipStatus` comparison and missing `else`; 1.5 `readDemocareFile` enum, sentinel, offset, sex column, nil dereference, handle leak; 1.6 DemoCare `nChildren` for every relative; 1.7 bootstrap append; 1.8 the link file no longer overwrites `fname`; 1.10 DemoCare key separator; 1.11 grandparent chains keep the male ancestor; 1.12 great-grand-niece guard; 1.13 `kt_total` in 11 of 12 loops; 1.14 `setInfoParents` and guarded divisions; 1.15 `InterlockedIncrement` on three counters; 1.16 the ego-budget off-by-one; 1.9 partial.
-
-**Round 2 (25 August).** D1 `dead` status; D2 `secondUnions` and the last-union logic; D6 `runDrawsFromSeveralThreads`; D7 relatives dead before the reference age dropped and link rows never naming them, `checkLinks` removed; 3.a `MULTITHREADING_SIMKIN` saved and read; 4.3 counts only what was written; 4.10 the four dialogs free their `BooleanName` objects.
-
-**Round 4 (26 August).** Tier A of the second-pass audit, in two commits, `3ab5e7f` and `13e7a70`. Every site is marked `// --- CLAUDE 2026-08-26 [ID]` with the replaced code commented out; `docs/CHANGES-2026-08-26.md` indexes them with line numbers.
-
-- **Batch 1**: N1 the parameter sweeps; N3 `endUnion`; N5 the missing `else` on `monthIncrement`; N15 `ind_max`; N16 `eduLevel`; N21 the ascendant share loop; N23 the mother; N27 `getPartner`; N33 the loop counter in `truncateAtAge` and the `Unions[-1]` case; 4.9 one inheritance message instead of 21.
-- **Batch 2**: N12 `readInConfigFile`; N40 the two BACKFOR counters; 2.6 the fallback cleanup loop deleted; 3.e `FILENAME` always written; A1 blank lines in the cohort file; A2 the empty-cohort divisions; N39 `mothersInfoList.pas` deleted.
-- **Applied and reverted**: N8, the sterility floor, because it changes fertility results and therefore belongs with your decisions.
-- **Considered and not applied**: N19, because correcting it changes the cohort file format.
-
-**Round 3 (25 August).**
-
-- **W1, BATCH removed.** The three nested batch procedures deleted from `simulateKinship`, the `BATCH` local and its assignment, the six `if BATCH then` branches, `nBatches`, `indBatch`, `nThreadsInBatch` and the batch-only locals; the checkbox and its binding in `LazOutput.pas` and the object in `LazOutput.lfm`; the writer and reader in `ReadCmdFileUnit.pas`; the default and constructor in `Init.pas`; the record field in `Declarations.pas`. This also removes audit 2.2 entirely and three of the four 2.1 division sites.
-- **W2, multi-cohort output.** `individualKin_end` takes a `closeIt` parameter and closes and zips only on `k_onlyOne` or `k_last`, so the file stays open across cohorts. Family and individual numbers now continue across the cohorts that share one file, through `gFirstFamilyInFile`, `gFirstRelativeInFile` and `gIndividualsInFile`, reset only when a new file is opened. `indEgo` stays the per-cohort counter, because the main loop tests it against `nEgoPar`; the file-wide family number is `gFirstFamilyInFile + indEgo`. The closing message reports the totals for the whole file.
-- **6.1a, the seed race.** `initRandomized` used the RTL `random()`, which is not thread-safe, and every worker called it from its own thread, so two threads could receive the same seed and generate identical genealogies. Seeding now happens in the three thread constructors, on the main thread, through the new `initWithSeed` and `nextThreadSeed` in `RandomNumbers.pas`. The three re-seeds inside the thread bodies are gone, so a thread also keeps one continuous stream instead of restarting it on every batch.
-- **B4.** `header_GEDCOM` no longer writes to the DemoCare-only link file, and uses a comma like every other header.
-- **3.2.** A throwaway `aCommand_raw` in `function command`, so the second `extractCommand` call no longer overwrites the command name with the raw text.
-- **2.1.** A `msElapsed > 0` guard before the egos-per-second division in `individualKin_mid`.
-- **D5b.** `readDemocareFile` reads the `relative` column through `GetEnumValue (TypeInfo(KinTypes), ...)` when the extended layout is present, so kin types survive the round trip.
-- **D5a.** The reverse marriage row re-types the second party only when it is still `kt_nonBio`, so it cannot undo what D5b restored.
-
-**Before the audit.** Per-format kin sets with the swap in `TKinFmtComboBoxChange.myGetValue`; the hardcoded DemoCare kin set removed; `DEMOCARE_LARGE_FIELDS` replacing the `DUMPALL` binding; the `LazDemoCareFields` dialog; the per-format dispatch of the optional-fields button.
+**And the one that deserves real thought (P8):** what to say about results produced with earlier
+versions. The sweeps, `endUnion`, the fecundability heterogeneity and now the age at onset of
+sterility all changed simulated numbers, and the repository is public.

@@ -77,9 +77,9 @@ begin
 	Inc (distNbChildren [allStates50, nbChildren]);
 	if nbUnion > 0 then begin
 		if (ageDeathWoman >= 50) then
-			Inc (distNbChildren [alive50EverInUnion, nbChildren]);
+			InterLockedIncrement (distNbChildren [alive50EverInUnion, nbChildren]);
 		if (ageEndFirstUnion >= 50) then
-			Inc (distNbChildren [aliveWithFirstPartner50, nbChildren]);
+			InterLockedIncrement (distNbChildren [aliveWithFirstPartner50, nbChildren]);
 	end;
 end;
 

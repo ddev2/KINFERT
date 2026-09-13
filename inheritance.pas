@@ -464,12 +464,7 @@ implementation
 			Inc (ind);
 		end;
 		// we should not get there
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false);
-{$ENDIF}
+		breakOnFailure;
 	end;
 	
 	procedure updateSibling (pDeadRelative, pHeir: pRelativeType; nLivingSiblings: longint);
@@ -485,12 +480,7 @@ implementation
 			Inc (ind);
 		end;
 		// we should not get there
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false);
-{$ENDIF}
+		breakOnFailure;
 	end;
 	
 	procedure updateAllChildren (pDeadRelative, pParent: pRelativeType; nLivingSiblingsTree: longint);
@@ -532,12 +522,7 @@ implementation
 			Inc (ind);
 		end;
 		// we should not get there
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false);
-{$ENDIF}
+		breakOnFailure;
 	end;
 	
 	function kinToAvoid (const kinToAvoidArray: arrayOfRelatives; aKin: pRelativeType): boolean;
@@ -623,12 +608,7 @@ implementation
 		result := false;
 		localDegree := degree;
 		if inheritanceAlreadyFound (pDeadRelative, pRelative) then begin
- 		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false);
-{$ENDIF}
+ 		breakOnFailure;
 		end;
 		if heirFound_add (pDeadRelative, pRelative, degree, nSiblings) then begin
 {			if gRunFromIDE then asm int 3 end;
@@ -715,12 +695,7 @@ implementation
 			Inc (ind);
 		end;
 		// we should not get there
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false);
-{$ENDIF}
+		breakOnFailure;
 	end;
 	
 	function computeShareInheritanceTree (pDeadRelative, pRelative: pRelativeType; var degree: longint): double;
@@ -801,12 +776,7 @@ implementation
 				//pDeadRelative^.egoAsHeir := eh_indirectHeir;
 			end else
 				// problem. We should not get here...
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false);
-{$ENDIF}
+		breakOnFailure;
 			numOfPossibleHeirs := 1;
 		end;
 		
@@ -879,12 +849,7 @@ implementation
 				findHeir_descendancy (pDeadRelative, pDeadRelative, [], 3, degree, numOfPossibleHeirs);
 				if numOfPossibleHeirs >= 1 then begin
 					// problem. We should not get here...
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false);
-{$ENDIF}
+		breakOnFailure;
 				end;
 				
 				nSiblings := 0;
@@ -901,12 +866,7 @@ implementation
 				// at least one of the parents is alive, so ego cannot be heir
 				//pDeadRelative^.egoAsHeir := eh_doNotApply;
 				// problem. We should not get here...
-				if gRunFromIDE then
-{$IFNDEF ARM}
-					asm int 3 end;
-{$ELSE}
-					assert(false);
-{$ENDIF}
+				breakOnFailure;
 			end;
 		end;
 		
@@ -917,23 +877,14 @@ implementation
 			numOfPossibleHeirs := 0;
 			if heirFound_add (pDeadRelative, pDeadRelative^.father, 1) or heirFound_add (pDeadRelative, pDeadRelative^.mother, 1) then begin
 				// bad as either the father or the mother are alive...
-				if gRunFromIDE then
-{$IFNDEF ARM}
-					asm int 3 end;
-{$ELSE}
-					assert(false);
-{$ENDIF}
+				breakOnFailure;
 			end else begin
 				if 	heirFound_add (pDeadRelative, getAscendant (pDeadRelative, [man, man]), 2) or
 					heirFound_add (pDeadRelative, getAscendant (pDeadRelative, [man, woman]), 2) or
 					heirFound_add (pDeadRelative, getAscendant (pDeadRelative, [woman, man]), 2) or
 					heirFound_add (pDeadRelative, getAscendant (pDeadRelative, [woman, woman]), 2) then begin
 						// bad as at least one of the grand parents are alive...
-					 if gRunFromIDE then
-					 {$IFNDEF ARM}
-							asm int 3 end
-					 {$ENDIF}
-					 		;
+					 breakOnFailure;
 				end else begin
 					// aunts and uncles
 					numOfPossibleHeirs := 0;
@@ -941,10 +892,24 @@ implementation
 					nSiblings := 0;
 					setLength (SIBLINGS, 0);
 					// children of all the common ancestors, including ego
+// BUG  **N24**  commonAncestor is computed and then discarded
+// pAncestor is assigned and never read, here and at three other call sites in this file.
+// getSiblings is then called on the parent whatever the answer was, so it returns every
+// sibling of that parent, including the half-siblings who descend from the OTHER parent of
+// that generation and therefore share no blood with the dead niece or nephew. They enter
+// the heir list on the same footing as the full siblings and take an equal share.
+// Proposed fix: keep the result and use it. Either pass pAncestor to getSiblings so that it
+// returns only the children of that ancestor, or filter SIBLINGS afterwards on descent from
+// pAncestor. If a nil pAncestor means there is no blood relation, that branch should add
+// nobody at all. The other call sites to check are in the aunt or uncle, the cousin and the
+// great-grand-niece blocks, all in this file.
+// **Blocked on Q3**, since the degree at which the Spanish rules stop competing per capita
+// decides how far this list should reach.
 					pAncestor := commonAncestor ([pEgo^.father], [getAscendant (pDeadRelative, [man, man]), getAscendant (pDeadRelative, [woman, man])]);
 					getSiblings (pEgo^.father, nSiblings, SIBLINGS);
 					pAncestor := commonAncestor ([pEgo^.mother], [getAscendant (pDeadRelative, [man, woman]), getAscendant (pDeadRelative, [woman,woman])]);
 					getSiblings (pEgo^.mother, nSiblings, SIBLINGS);
+// END BUG  **N24**
 					findHeir_siblings (pDeadRelative, nSiblings, SIBLINGS, 6, degree, numOfPossibleHeirs);
  					setLength (SIBLINGS, 0);
 				end;
@@ -1487,6 +1452,19 @@ type
 			exit;
 		fatherHeir := possible_heirFound (pDecedent, pFather);
 		motherHeir := possible_heirFound (pDecedent, pMother);
+// BUG  **N22**  a nearer ascendant does not exclude a remoter one
+// The two branches are explored independently: when the father of this ascendant is not an
+// heir, the father's own ascendants are explored, and the same for the mother, with no
+// account of what the other branch found. So a surviving grandparent on one side and a
+// great-grandparent on the other end up in arrHeirs together and share the estate.
+// The header of this file states the opposite rule, that the nearest degree excludes the
+// rest, and Spanish succession also excludes by degree, not by branch.
+// Proposed fix: explore degree by degree rather than branch by branch. Collect every
+// ascendant at currDegree across both branches first; if any of them is an heir, stop and
+// keep only that degree; otherwise descend one degree and repeat. That also removes the
+// need for the two recursive calls below to know anything about each other.
+// **Blocked on Q3**: whether the nearest degree excludes the remoter ones is the first of
+// the five questions about Spanish succession, and this is the routine the answer changes.
  		if not fatherHeir and not motherHeir then begin
 			// both parents at this level died before the decedent or are excluded, so we explore the parents' ascendants tree
         	if (length(lineage) > 0) then
@@ -1496,6 +1474,7 @@ type
 			exploreAscendantHeirsTree_2 (pDecedent, pFather, degree, currDegree, arrAscendantsType, arrHeirs, nHeirs, currLineage);
 			currLineage[length(currLineage) - 1] := woman;
  			exploreAscendantHeirsTree_2 (pDecedent, pMother, degree, currDegree, arrAscendantsType, arrHeirs, nHeirs, currLineage);
+// END BUG  **N22**
 		end else if fatherHeir or motherHeir then begin
 			if fatherHeir then begin
 				Inc (nHeirs);
@@ -2094,9 +2073,23 @@ type
 		if gRelDebug <> nil then gRelDebug := nil;
 	end;
 	
+// BUG  **N25**  the country rule set is never consulted, and this entry point is empty
+// Two faults that belong together.
+// (a) This procedure has an empty body, yet Kinship calls it after lookForHeirs_Spain as
+//     the second half of the second algorithm. Whatever it was meant to do, the decedents
+//     of the second algorithm are produced by checkTreeForHeirs_2 alone.
+// (b) COUNTRY_INHERITANCE_RULES is a real parameter: it is created in Init with the default
+//     inher_Spain, saved and read by ReadCmdFileUnit, and bound to a combo box in
+//     LazOutput. Nothing reads its value. Both algorithms run unconditionally on every run,
+//     so the choice offered to the user has no effect at all.
+// Proposed fix: decide first what the parameter is for (**Q4**). If it selects between rule
+// sets, then this procedure is where the country branch belongs, and the caller in Kinship
+// should run one algorithm or the other rather than both. If it is a leftover, remove the
+// parameter, its combo box, its reader and its writer, and delete this stub with them.
 	procedure lookForDecedents_Spain (pEgo: pRelativeType);
 	begin
 	end;
+// END BUG
 
 	function heirsInKinSet (heirs: arrayHeirInfo; nHeirs: longint; ks: KinSetType): boolean;
 	var
@@ -2137,6 +2130,25 @@ type
 	begin
 		result := 1;
 		with pRelative^ do begin
+// BUG  **N26**  checkHeirs reports agreement in the case where the two algorithms disagree,
+//                and its last branch cannot be reached
+// Three faults in the case structure below.
+// (a) result is initialised to 1, that is agreement, and the first branch only sets it to 0
+//     when the kin types of the second algorithm fall outside the set the first named. The
+//     case where the first algorithm found NO heirs and the second found some, which is
+//     exactly a disagreement, is reported as agreement whenever the types happen to match
+//     the branch label.
+// (b) the comparison of the two lists is order sensitive: it walks both by index and calls
+//     them different at the first position where they differ. Two algorithms that found the
+//     same heirs in a different order are reported as disagreeing.
+// (c) the final else is unreachable: the three tests before it, nHeirs = 0 and nHeirs_2 > 0,
+//     then nHeirs <> nHeirs_2, then nHeirs = nHeirs_2, cover every case, so the message it
+//     writes can never appear.
+// Proposed fix: compare the two heir sets as sets, by identity of the relatives rather than
+// by position, and treat "one algorithm found heirs and the other did not" as a
+// disagreement in every case. Then decide what the routine should return: today it returns
+// an integer used as a boolean. **Blocked on Q3**, since what the two algorithms are
+// supposed to agree about is what the succession rules say.
 			if (nHeirs = 0) and (nHeirs_2 > 0) then begin
 				// there are heirs, but the first algorithm possibly only returns a generic information, like 'childrenTree'
 				// typeOfHeirs = (th_doNotApply, th_none, th_childrenTree, th_ascendantsTree,
@@ -2182,6 +2194,7 @@ type
 				result := 0;
 				writeAndWait ('ERROR ==> checkHeirs case not caught, with number of heirs' + intToStr (nHeirs) + ' and ' + intToStr (nHeirs_2));
 			end;
+// END BUG  **N26**
 		end;
 	end;
 	

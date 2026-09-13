@@ -7,7 +7,7 @@ uses
 	{$IFDEF UNIX}
 	cthreads,
 	{$ENDIF}
-	Declarations, Fertility, RandomNumbers, Utilities, Math, SysUtils
+	Declarations, Fertility, RandomNumbers, Utilities, Verification, Math, SysUtils
         {$IFDEF VerboseProfiler}, Profiler{$ENDIF};
 
 	function newUnionInfo (pRelative: pRelativeType): pUnionInfoType;
@@ -171,6 +171,65 @@ uses Memory;
 			result := UInfo^.yearUnion;
 	end;
 
+// >>> Claude 2026-09-11 start
+	function unionRecordForSetter (pRelative: pRelativeType; indUnion: longint; whichSetter: string): pUnionInfoType;
+	{**N28 fixed here.** The record a setter should write into, or nil when the index names no
+	 union and no union may be created for it.
+
+	 getUnionInfoByIndex returns nil both for an index that is simply the next one, which is how
+	 a person's first and later unions have always been created, and for an index that means
+	 nothing at all. The six setters used to treat the two alike and append in either case, so a
+	 caller passing kNotDefined added a phantom union and put its value there. The caller that
+	 did so is checkEndUnions in Kinship, which takes its index from getIndUnion, and getIndUnion
+	 returns kNotDefined exactly when the reciprocal link between two partners is missing: the
+	 case the consistency check exists to find. A broken link therefore became an extra union,
+	 and the count of unions of that person was wrong from that point on.
+
+	 The cases are now separated. An index one past the last record is an append, which is how
+	 the callers that build a person's unions have always worked; an index that names a record
+	 the list holds but the nUnions field denies is written into, with the disagreement between
+	 the field and the list reported; anything else, kNotDefined included, is reported and
+	 refused, and the setter writes nothing. Appending is allowed at the end only, so that the
+	 list can hold no gap and the union at index 3 is always the third union.}
+	var
+		nRecords, ind: longint;
+	begin
+		result := getUnionInfoByIndex (pRelative, indUnion);
+		if (result <> nil) then exit;
+
+		nRecords := getNumUnionInfo (pRelative);
+		if (indUnion >= 1) and (indUnion <= kMaxNbUnion) and (indUnion = nRecords + 1) then begin
+			{the next union of this person, which is the way every union is created}
+			result := newUnionInfo (pRelative);
+			exit;
+		end;
+
+		if (indUnion >= 1) and (indUnion <= nRecords) then begin
+			{The record is there but nUnions says it is not, so getUnionInfoByIndex refused it.
+			 The field and the list disagree, which is worth reporting, but the record the
+			 caller named exists and writing into it is better than creating another one.}
+			if reportFailure (chk_nup_unionIndexInSetter,
+					[whichSetter, ': union ', indUnion, ' of relative ', pRelative^.indNumber,
+					 ' exists as a record but nUnions is ', pRelative^.nUnions,
+					 '. Written into the existing record']) then
+				breakOnFailure;
+			result := pRelative^.UList;
+			for ind := 2 to indUnion do
+				result := result^.next;
+			exit;
+		end;
+
+		{Nothing this index can mean: kNotDefined, zero, negative, or past the end of the list
+		 by more than one. Report and write nothing.}
+		if reportFailure (chk_nup_unionIndexInSetter,
+				[whichSetter, ': union ', indUnion, ' of relative ', pRelative^.indNumber,
+				 ', who has ', nRecords, ' union records and nUnions = ', pRelative^.nUnions,
+				 '. Nothing written']) then
+			breakOnFailure;
+		result := nil;
+	end;
+// <<< Claude 2026-09-11 end
+
 	procedure setAgeUnion (pRelative: pRelativeType; indUnion: longint; age: double);
 	var
 		UInfo: pUnionInfoType = nil;
@@ -178,10 +237,10 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		pRelative^.ageUnion [indUnion] := age;
 {$ENDIF}
-		UInfo := getUnionInfoByIndex (pRelative, indUnion);
-		if (UInfo = nil) then begin
-			UInfo := newUnionInfo (pRelative);
-		end;
+// >>> Claude 2026-09-11 start
+		UInfo := unionRecordForSetter (pRelative, indUnion, 'setAgeUnion');
+		if (UInfo = nil) then exit;
+// <<< Claude 2026-09-11 end
 		UInfo^.ageUnion := age;
 {$IFDEF addOldUnionType}
 		if pRelative^.ageUnion [indUnion] <> getUnionInfoByIndex (pRelative, indUnion)^.ageUnion then
@@ -193,10 +252,10 @@ uses Memory;
 	var
 		UInfo: pUnionInfoType = nil;
 	begin
-		UInfo := getUnionInfoByIndex (pRelative, indUnion);
-		if (UInfo = nil) then begin
-			UInfo := newUnionInfo (pRelative);
-		end;
+// >>> Claude 2026-09-11 start
+		UInfo := unionRecordForSetter (pRelative, indUnion, 'setYearUnion');
+		if (UInfo = nil) then exit;
+// <<< Claude 2026-09-11 end
 		UInfo^.yearUnion := year;
 	end;
 	
@@ -239,10 +298,10 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		pRelative^.ageEndUnion [indUnion] := age;
 {$ENDIF}
-		UInfo := getUnionInfoByIndex (pRelative, indUnion);
-		if (UInfo = nil) then begin
-			UInfo := newUnionInfo (pRelative);
-		end;
+// >>> Claude 2026-09-11 start
+		UInfo := unionRecordForSetter (pRelative, indUnion, 'setAgeEndUnion');
+		if (UInfo = nil) then exit;
+// <<< Claude 2026-09-11 end
 		UInfo^.ageEndUnion := age;
 {$IFDEF addOldUnionType}
 		if pRelative^.ageEndUnion [indUnion] <> getUnionInfoByIndex (pRelative, indUnion)^.ageEndUnion then
@@ -254,10 +313,10 @@ uses Memory;
 	var
 		UInfo: pUnionInfoType = nil;
 	begin
-		UInfo := getUnionInfoByIndex (pRelative, indUnion);
-		if (UInfo = nil) then begin
-			UInfo := newUnionInfo (pRelative);
-		end;
+// >>> Claude 2026-09-11 start
+		UInfo := unionRecordForSetter (pRelative, indUnion, 'setYearEndUnion');
+		if (UInfo = nil) then exit;
+// <<< Claude 2026-09-11 end
 		UInfo^.yearEndUnion := year;
 	end;
 	
@@ -269,22 +328,20 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		result := pRelative^.partners [indUnion];
 {$ENDIF}
-		if (indUnion < 0) or (indUnion > 20) or (pRelative^.nUnions = 0) then
-		begin
-			writeAndWaitConst(['===> ERROR: getPartner: incorrect nUnion (', indUnion, '), relative number: ', pRelative^.indNumber]);
+		if checkFalse (chk_nup_unionIndexOfPartner,
+				(indUnion < 0) or (indUnion > kMaxNbUnion) or (pRelative^.nUnions = 0),
+				['union ', indUnion, ', relative ', pRelative^.indNumber, ', unions ', pRelative^.nUnions]) then begin
+			breakOnFailure;
 			exit;
 		end;
 		UInfo := getUnionInfoByIndex (pRelative, indUnion);
-		if (UInfo = nil) then begin
-			// problem
-			result := nil;
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false);
-{$ENDIF}
-		end else
+		{the union exists, since its index has just been tested, so its record must be there}
+		if checkFalse (chk_nup_unionRecordOfPartner, UInfo = nil,
+				['union ', indUnion, ', relative ', pRelative^.indNumber]) then
+			breakOnFailure;
+		if (UInfo = nil) then
+			result := nil
+		else
 			result := UInfo^.partner;
 {$IFDEF addOldUnionType}
 		if pRelative^.partners [indUnion] <> getUnionInfoByIndex (pRelative, indUnion)^.partner then
@@ -313,10 +370,10 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		pRelative^.partners [indUnion] := pPartner;
 {$ENDIF}
-		UInfo := getUnionInfoByIndex (pRelative, indUnion);
-		if (UInfo = nil) then begin
-			UInfo := newUnionInfo (pRelative);
-		end;
+// >>> Claude 2026-09-11 start
+		UInfo := unionRecordForSetter (pRelative, indUnion, 'setPartner');
+		if (UInfo = nil) then exit;
+// <<< Claude 2026-09-11 end
 		UInfo^.partner := pPartner;
 {$IFDEF addOldUnionType}
 		if pRelative^.partners [indUnion] <> getUnionInfoByIndex (pRelative, indUnion)^.partner then
@@ -356,10 +413,10 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		pRelative^.endOfPartnership [indUnion] := cause;
 {$ENDIF}
-		UInfo := getUnionInfoByIndex (pRelative, indUnion);
-		if (UInfo = nil) then begin
-			UInfo := newUnionInfo (pRelative);
-		end;
+// >>> Claude 2026-09-11 start
+		UInfo := unionRecordForSetter (pRelative, indUnion, 'setCauseEndUnion');
+		if (UInfo = nil) then exit;
+// <<< Claude 2026-09-11 end
 		UInfo^.endOfPartnership := cause;
 	end;
 	
@@ -591,9 +648,19 @@ uses Memory;
 			mean := min (kMaxAgeUnion_men - 1, ageWomen + meanDiffSex);
 			mean := max (mean, kMinAgeUnion_men + 1);
 			ageMin := max (kMinAgeUnion_men, ageWomen - 5);
+// BUG  **N29**  the scale factor of the standard nuptiality schedule can be zero or negative
+// scaleFactor is (mean - ageMin) / 11.37 and nothing keeps mean above ageMin. When the mean age
+// at union is at or below the minimum age of the schedule, the factor is zero or negative:
+// calcNuptScaleFactor then divides by it, or builds a schedule with negative densities that the
+// normalisation turns into probabilities of the wrong sign.
+// The dialog lets the mean go down to 10 while kMinMeanAgeUnion is 15, so the range that
+// reaches this line is wider than the model allows.
+// Proposed fix: clamp the mean to kMinMeanAgeUnion here and report the clamp, and give
+// MEAN_AGE_UNION that same minimum in LazConfig so the two agree.
 			scaleFactor := (mean - ageMin) / 11.37;
 			calcNuptScaleFactor (ageMin, scaleFactor, n.union_women_men[ageWomen, normal]);
 			mean_calc := calcSmamFromAgeProb (kMaxAgeUnion_women, n.union_women_men[ageWomen, normal]);
+// END BUG
 			if (abs (mean - mean_calc) > 0.01) then begin
 					scaleFactor := ((mean + (mean - mean_calc) * (1+ ageWomen / (2 * kMaxAgeUnion_women))) - ageMin) / 11.37;
 					calcNuptScaleFactor (ageMin, scaleFactor, n.union_women_men[ageWomen, normal]);
@@ -1082,6 +1149,19 @@ try // 1
 			end;
 		end;
 
+// BUG  **N32**  the exception handler falls through, and the separation is then decided by two
+//                undefined values
+// The two lines below are inside the try that ends a few lines further down. Its handler writes
+// the message and stops the debugger, and then execution CONTINUES after the end of the try
+// block, where aleaSeparation and separationRisk are read and compared to decide whether the
+// union ends. If the exception happened before or during these two assignments, both hold
+// whatever was on the stack.
+// The most likely fault is the index on the second line: monthly_risk_separation is dimensioned
+// for a duration in months and durationUnion is not bounded here, so a union longer than the
+// table raises a range error, which is exactly the case that then decides the separation at
+// random.
+// Proposed fix: bound durationUnion to the table, which is the real correction, and make the
+// handler leave the function with endBySeparation false rather than falling through.
 		aleaSeparation := randomGenerator.alea0;
 		separationRisk := d.monthly_risk_separation [durationUnion];
 
@@ -1095,12 +1175,7 @@ try // 1
 except // 1
 	on E: Exception do begin
     	writeAndWaitConst(['===> ERROR: ', E.Message]);
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false,E.Message)
-{$ENDIF}
+		breakOnFailure;
 	end;
 end;
 
@@ -1113,6 +1188,7 @@ end;
 			unionStates.breakdownBySeparation := true;
 		end else
 			endBySeparation := false;
+// END BUG  **N32**
 	end;
 
 	procedure calcNuptScaleFactor (minAge: longint; scaleFactor: double; var n: tabNuptVar);
@@ -1229,11 +1305,13 @@ end;
 	end;
 		
 	function std_Campbell_Wood_1988 (mean: double): double;
-	{adaptation équation Campbell & Wood [1988]}
+	{adaptation equation Campbell & Wood [1988]}
 	var
 		std : double;
 	begin
 		std := 107.0 * ln (mean) - 292.0;
+		// don't let std become negative...
+		if (std < 0.0) then std := 0.0;
 		std_Campbell_Wood_1988 := sqrt (std);
 	end;
 	
@@ -1446,12 +1524,7 @@ try // 1
 except // 1
 	on E: Exception do begin
     	writeAndWaitConst(['===> ERROR: ', E.Message]);
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false,E.Message)
-{$ENDIF}
+		breakOnFailure;
 	end;
 end;
 
@@ -1468,12 +1541,7 @@ try // 2
 except // 2
 	on E: Exception do begin
     	writeAndWaitConst(['===> ERROR: ', E.Message]);
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false,E.Message)
-{$ENDIF}
+		breakOnFailure;
 	end;
 end;
 
@@ -1494,12 +1562,7 @@ try // 3
 except // 3
 	on E: Exception do begin
     	writeAndWaitConst(['===> ERROR: ', E.Message]);
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false,E.Message)
-{$ENDIF}
+		breakOnFailure;
 	end;
 end;
 
@@ -1522,29 +1585,71 @@ end;
 			causesEndUnion := no_union;
 	end;
 
+// >>> Claude 2026-09-12 start
 	function ageWomenEndUnion (ages: TabAgeEvents; out statutEndUnion: PartnershipStatusesType): double;
+	{**N31 finished here**, on the guard you added.
+
+	 A union ends at the earliest of three events: the woman's own death, the death of her
+	 partner expressed on her age scale, and a separation. Any of the three can be kNotDefined,
+	 which is a sentinel and not an age, so each one is tested before it is used and the earliest
+	 of those that are defined wins. The status follows from which one won.
+
+	 What this changes beyond the guard already in place. The separation used to be compared with
+	 the partner's death alone, so a partner with no date of death, which is how a union is left
+	 by truncateAtAge and by calcStateWoman before the reconstruction, made every separation
+	 invisible: the union was reported as running to her death, with the status everInUnion
+	 rather than separated, which puts her exposure and her children in the wrong column of the
+	 tables by partnership status. The other residue was a union with neither death defined,
+	 which returned the sentinel with the status widow.
+
+	 A union with no end at all is still possible, since all three can be undefined, and it is
+	 reported rather than given a status it does not have. kNotDefined is returned in that case,
+	 as before, because the callers test for it.}
 	var
 		ageUnion, ageUnionPartner, ageEndUnion, ageAtDeath, ageAtDeathPartner: double;
 	begin
-		statutEndUnion := neverInUnion;
 		ageUnion := ages[le_union, woman];
 		ageUnionPartner := ages[le_union, man];
 		ageEndUnion := ages[le_endUnion, woman];
 		ageAtDeath := ages[le_death, woman];
-		ageAtDeathPartner := ages[le_death, man] + ageUnion - ageUnionPartner;
-		if (ageAtDeath = kNotDefined) or (ageAtDeath > ageAtDeathPartner) then begin
-			ageWomenEndUnion := ageAtDeathPartner;
-			statutEndUnion := widow;
-		end else begin
-			ageWomenEndUnion := ageAtDeath;
+		{the partner's age at death, moved onto the woman's age scale by the difference between
+		 their two ages at union. Both of his ages are needed for that, and truncateAtAge clears
+		 them together.}
+		if (ages[le_death, man] = kNotDefined) or (ageUnionPartner = kNotDefined) then
+			ageAtDeathPartner := kNotDefined
+		else
+			ageAtDeathPartner := ages[le_death, man] + ageUnion - ageUnionPartner;
+
+		result := kNotDefined;
+		statutEndUnion := everInUnion;
+
+		{her own death}
+		if (ageAtDeath <> kNotDefined) then begin
+			result := ageAtDeath;
 			statutEndUnion := everInUnion;
 		end;
-		if (ageEndUnion > 0) and (ageEndUnion < ageAtDeathPartner) then begin
-			ageWomenEndUnion := ageEndUnion;
+		{his death, if it comes first}
+		if (ageAtDeathPartner <> kNotDefined) and
+				((result = kNotDefined) or (ageAtDeathPartner < result)) then begin
+			result := ageAtDeathPartner;
+			statutEndUnion := widow;
+		end;
+		{the separation, if it comes first. The test on zero is the one that was there: an age at
+		 end of union of zero or less means no separation was recorded.}
+		if (ageEndUnion > 0) and
+				((result = kNotDefined) or (ageEndUnion < result)) then begin
+			result := ageEndUnion;
 			statutEndUnion := separated;
 		end;
+
+		if (result = kNotDefined) then
+			if reportFailure (chk_nup_unionHasNoEnd,
+					['union at age ', ageUnion, ' of a woman with no age at death, whose partner ',
+					 'has no age at death either, and with no separation recorded']) then
+				breakOnFailure;
 	end;
-	
+// <<< Claude 2026-09-12 end
+
 	function numChildrenInUnion (pChild: pInfoChildType; nUnion: longint): longint;
 	var
 		n: longint;

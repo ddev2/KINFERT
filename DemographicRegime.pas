@@ -86,15 +86,28 @@ uses
 
 	Destructor TDemRegInitThread.Destroy();
 	begin
-		myRandomGenerator.Destroy();
+		inherited Destroy;
+		if Assigned (myRandomGenerator) then myRandomGenerator.Destroy;
 	end;
 	
+// BUG  **N42**  the seed is drawn inside the worker, which is the race fixed in Kinship
+// initRandomized reaches the run-time library's own generator, and the comment in
+// RandomNumbers.pas says it must be called from the main thread only. Here every init thread
+// calls it from inside its own Execute, so two threads that start in the same clock tick can
+// seed identically and give two cohorts the same fertility schedule. This is the same fault
+// that was corrected in Kinship in round 3, where seeding moved into the three thread
+// constructors through initWithSeed and nextThreadSeed.
+// **The constructor already creates the generator on the main thread**, three lines above, so
+// the fix is to delete this line and seed there instead, with nextThreadSeed.
+// Reached only with MULTITHREADING and MULTITHREADING_INIT both on. Verify with V23: two
+// cohorts must never share a seed, which the run header prints.
 	procedure TDemRegInitThread.Execute;
 	var
 		ran: double;
 	begin
 		myThreadState := thread_active;
 		myRandomGenerator.initRandomized();
+// END BUG
 		ran := myRandomGenerator.alea0;
 		if (g_GENPARAM.TALKATIVE.value) then
         	memoWriteLn (['TDemRegInitThread.Execute first random number: ', ran]);
@@ -730,6 +743,23 @@ uses
 			writeArrayOfDouble(outFile, tab, effSpacing.value);
 			writeArrayOfDouble(outFile, tab, meanTimeSpacing.value);
 
+// BUG  **N19**  the education dump names a different table from the one the mode uses
+// The three tests below select the table to write from the mode in force, and the mapping is
+// shifted by one. What each mode actually reads, in EducationalLevel.pas, is:
+//     eduStochastic   nothing at all, it uses a hardcoded one third each (see N20)
+//     eduCohort       eduEgo
+//     eduIntraFamily  eduEgo, then eduEgoPartner for a partner and eduEgoPartnerChildren
+//                     for a child or grandchild
+// while the writer below dumps eduEgo for eduStochastic, eduEgoPartner for eduCohort and
+// eduEgoPartnerChildren for eduIntraFamily. The header writer, in this same unit, repeats
+// the same three tests, so the file is self-describing and reads back correctly: what is
+// wrong is that the columns describe parameters the run did not use.
+// Proposed fix: write the table the mode reads, that is eduEgo for eduCohort and the three
+// tables for eduIntraFamily, and nothing for eduStochastic until N20 gives it a
+// distribution. The header must follow in the same order.
+// **This changes the column set of the cohort file for all three modes**, so it is a file
+// format decision: before or after the release, and with what note for files already
+// written. The same change has to be made in the header writer further down this unit.
 			if g_GENPARAM.eduKind.value = eduStochastic then
 				for vSex := man to woman do
 					for edLevel1 := eduLow to eduHigh do
@@ -739,6 +769,7 @@ uses
 					for vSex := man to woman do
 						for edLevel2 := eduLow to eduHigh do
 						bWrite (outFile, [eduEgoPartner [edLevel1, vSex, edLevel2].value, tab]);
+// END BUG  **N19**, the last of the three tests
 			if g_GENPARAM.eduKind.value = eduIntraFamily then
 				for edLevel1 := eduLow to eduHigh do
 					for edLevel2 := eduLow to eduHigh do
@@ -1088,6 +1119,21 @@ uses
 					if (g_GENPARAM.TALKATIVE.value) then begin
 						stopTime (tStart, '===== Init threads phase lasted: ');
 					end;
+// BUG  **N43**  the pool loop cannot exit on the flag it sets, and counts a thread twice
+// (a) allThreadsDead is set true just before the loop over the threads and then set false on
+//     the FIRST pass through that loop, whatever the state of the thread. So half the exit
+//     test, until ... or allThreadsDead, is dead: the loop can only end through
+//     nActiveThreads <= 0.
+// (b) nActiveThreads is decremented for every thread found terminated, on every pass, but the
+//     state is set to thread_dead in the same branch, so that part is sound. What is not is
+//     the other side: a thread is started when its state is thread_suspended, and the state
+//     only becomes thread_active inside Execute, that is once the system has scheduled it. A
+//     thread started on one pass and not yet scheduled is therefore still thread_suspended on
+//     the next pass and is started again, and nActiveThreads counted twice, so the count
+//     never returns to zero and the loop spins.
+// Proposed fix: set the state to thread_active in the main thread, immediately before start,
+// not inside Execute; and set allThreadsDead false only for a thread whose state is not
+// thread_dead. The WaitFor and Free loop below is correct and should stay.
 					repeat
 						allThreadsDead := true;
 						for ind := Low(initThreads) to High(initThreads) do begin
@@ -1109,6 +1155,7 @@ uses
 								end;
 						end;
 					until (nActiveThreads <= 0) or (allThreadsDead);
+// END BUG  **N43**
 					if (g_GENPARAM.TALKATIVE.value) then
 						memoWriteLn (['All TDemRegInitThread ended. Now wait for... ',nActiveThreads, ' active threads']);
 					for ind := Low(initThreads) to High(initThreads) do begin
@@ -1762,10 +1809,14 @@ onExit:
 		for ind := 0 to kMaxIndBirthIntervals do
 			bWrite (outFile, ['WAITING_TIME_SPACING_', ind, tab]);
 
+// BUG  **N19**  the header of the education columns, which must change with the writer
+// These three tests repeat the ones in the value writer above and carry the same shift. They
+// have to be corrected together, or the file stops being self-describing.
 		if g_GENPARAM.eduKind.value = eduStochastic then
 			for vSex := man to woman do
 				for edLevel1 := eduLow to eduHigh do
 					bWrite (outFile, [pFirstDemReg^.eduEgo [edLevel1, vSex].name, tab]);
+// END BUG
 		if g_GENPARAM.eduKind.value = eduCohort then
 			for edLevel1 := eduLow to eduHigh do
 				for vSex := man to woman do

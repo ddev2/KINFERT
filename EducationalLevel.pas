@@ -173,6 +173,16 @@ temp: double;
 			writeAndWaitConst(['===> ERROR: bad eduLevel: ', s]){bad thing};
 	end;
 	
+// BUG  **N20**  the stochastic mode ignores the six education parameters
+// The thirds below are written into the code, so with EDU_STATUS set to the stochastic mode
+// every person is drawn from a flat one third, one third, one third whatever the cohort file
+// or the dialog says. The six EDU_* parameters of the demographic regime, which the cohort
+// mode reads through p^.eduEgo, are not consulted at all, and nothing tells the user.
+// Proposed fix: read the same distribution the cohort mode reads, that is p^.eduEgo for the
+// person's sex, and take the regime as an argument like the other three routines here. The
+// mode then means "the distribution of the regime, without any family correlation", which
+// is what its name suggests. If a flat third really is wanted for testing, it should be a
+// documented option and say so in the memo.
 	function edStatusStocha (randomGenerator: TRandomNumberGenerator): string;
 	var
 		dummy: double;
@@ -185,6 +195,7 @@ temp: double;
 		else
 			edStatusStocha := 'A';
 	end;
+// END BUG
 	
 	function edStatusCohort (randomGenerator: TRandomNumberGenerator; pRelative: pRelativeType): string;
 	var
@@ -249,12 +260,30 @@ if pPartner^.status = '' then begin
 	writeAndWait ('===> ERROR: EdStatus bad in edStatusPartner');
 end;
 		
+// BUG  **N17**  the partner correlation matrix is indexed with the wrong sex
+// eduEgoPartner is declared as [EduLevels, Sex, EduLevels]: the education of the person
+// already assigned, the sex of THAT person, and the education being drawn. Here the first
+// index is the partner's level, correctly, but the second is pRelative^.gender, that is the
+// sex of the person being assigned, not the sex of the partner whose level is in the first
+// index. The row read is therefore the one for a couple of the other configuration.
+// It survives a smoke test because the matrix is strongly diagonal for both sexes, so the
+// correlation stays positive and only its asymmetry between men and women is lost. It is
+// wrong whenever the assortment differs by sex, which is the reason the matrix has a sex
+// index at all.
+// Proposed fix: index with the partner's sex, which is pPartner^.gender, since the first
+// index already describes the partner:
+//     p^.eduEgoPartner [eduLevelPartner, pPartner^.gender, eduLow]
+// **Check the intention against the manual first**: the alternative reading is that the
+// matrix is meant to be read as [ego's level, ego's sex, partner's level], in which case the
+// first index is the one to change, not the second. The two readings give different results
+// and only one of them matches how the cohort file is filled in.
 		if (dummy < p^.eduEgoPartner [eduLevelPartner, pRelative^.gender, eduLow].cumulValue) then
 			edStatusPartner := 'B'
 		else if (dummy < p^.eduEgoPartner [eduLevelPartner, pRelative^.gender, eduMedium].cumulValue) then
 			edStatusPartner := 'M'
 		else
 			edStatusPartner := 'A';		
+// END BUG
 	end;
 	
 	function edStatusIntraFamily (randomGenerator: TRandomNumberGenerator;
@@ -267,8 +296,21 @@ end;
 		begin
 			edStatusIntraFamily := edStatusPartner (randomGenerator, p, pRelative);
 		end else begin
+// BUG  **N18**  the intra-family mode correlates four kin types out of twenty-seven, and
+//                siblings are not among them
+// Only ego, the partner, the children and the grandchildren get a correlated status. Every
+// other kin type falls through to edStatusCohort, which draws from the cohort distribution
+// with no family link at all, so in a mode whose name promises family correlation most of
+// the network is drawn independently. Siblings are the clearest case: they are handled by
+// the line below, which sends them to the cohort distribution, although they share both
+// parents with ego and are the kin for which a correlation is best documented.
+// Proposed fix: decide which kin types should be correlated and with whom, then route them.
+// Siblings would take the distribution conditional on the parents, as the children do
+// through edStatusChild. **Blocked on Q5**: whether education correlates between siblings is
+// yours to answer, and the answer decides how much of this routine changes.
 			if (pRelative^.typeOfKin = kt_sibling) then
 				edStatusIntraFamily := edStatusCohort (randomGenerator, pRelative)
+// END BUG  **N18**
 			else if (pRelative^.typeOfKin = kt_child) then
 				edStatusIntraFamily := edStatusChild (randomGenerator, p, pRelative)
 			else if (pRelative^.typeOfKin = kt_grandChild) then

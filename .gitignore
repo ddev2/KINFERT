@@ -52,3 +52,12 @@ heapTrace.log
 # Created by the app at runtime; provide *.example templates instead.
 KinFert ConfigDir.cfg
 KinFert OutputDir.cfg
+
+# --- Reference papers -----------------------------------------
+# Published articles kept locally for reference. They are other
+# people's copyright and do not belong in the repository.
+References/
+references/
+# --- Working folders kept out of the repository ---------------
+_to_delete/
+backup/

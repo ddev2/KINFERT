@@ -12,23 +12,23 @@ Each ego therefore ends with a genealogical tree spanning descendants, ancestors
 
 **This is a pre-release. It is published so that the code and its documentation can be read and checked, not because it is finished.**
 
-The program has been in use for research, but a systematic audit carried out in August 2026 found a number of defects that affect results. Some are fixed; several are not. Anyone using KinFert for substantive work should read `docs/KinFert-TODO.md` first, and in particular section 2E.
+The program has been in use for research, but a systematic audit carried out in August 2026 found a number of defects that affect results. Some are fixed; several are not. Anyone using KinFert for substantive work should read `docs/KinFert-TODO.md` first, and in particular sections 2 and 3.
 
-The findings that are **fixed** are listed in `docs/CHANGES-2026-08-26.md`, with the unit and line of every change. Each site is marked in the source with a `// --- CLAUDE 2026-08-26 [ID]` block that also carries the replaced code, commented out, so any change can be read in place.
+The findings that are **fixed** are described in `docs/KinFert-FIXED.md`, unit by unit, with what each one changed. A change that has not yet been reviewed is wrapped in the source between two line comments, `// >>> Claude <date> start` and `// <<< Claude <date> end`, so it can be read in place; the markers are removed once the change is accepted.
 
 The findings that are **still open and affect results** include, at the time of writing:
 
 | ID | Effect |
 |---|---|
-| N4 | Heterogeneity in fecundability is applied as a 12 per cent coefficient of variation instead of the intended N(0.23, 0.12), so most of the heterogeneity is absent. |
-| N2, N6 | Two time-origin errors in the birth interval: the effect of an infant death is overstated by about a gestation, and the contraceptive spacing wait is applied twice. |
+| N6b | Separation is tested twice over the months a woman spends on spacing contraception, so the hazard is applied twice to those months. |
 | N7 | The parity progression target adjustment sets progression to near-certainty at parities the simulation never reached, with no convergence test. |
-| N8 | Women who are still fecund at the top of the fertile age range are recorded as sterile at the bottom of it. |
+| N11 | Every cohort after the first loses its parameter list, so an edit to cohort 2 is silently discarded. |
+| N17, N19, N20 | The education module indexes the partner correlation matrix with the wrong sex, dumps a different table from the one in force, and ignores its six parameters in stochastic mode. |
 | N9, N10 | The intrinsic growth rate omits the proportion female at birth, and the net reproduction rate hard-codes 0.488 rather than reading the parameter. |
 | N13, N14 | The infant-mortality age correction is inverted, and a life expectancy outside the tabulated range is warned about but not clamped. |
 | N22 to N26 | Several rules in the inheritance module do not match the succession rules stated in its own header comment. |
 
-The two audit documents, `docs/KinFert-PreRelease-Audit.md` and `docs/KinFert-PreRelease-Audit-2.md`, give the evidence for each one.
+`docs/KinFert-TODO.md` gives the evidence for each one, with the unit and the routine.
 
 ## Building from source
 
@@ -42,7 +42,7 @@ You need:
 
 `kinfert.lpi` declares exactly those two packages. To build, open `kinfert.lpi` in Lazarus and compile, or run `lazbuild kinfert.lpi` from a terminal.
 
-Compile-time switches live in `Defines.pas`, which every unit includes with `{$I Defines.pas}`. Range checking is on, `Debug` is defined, and `ARM` is defined for `CPUAARCH64`.
+Compile-time switches live in `Defines.pas`, which every unit includes with `{$I Defines.pas}`. Range checking is on, and `ARM` is defined for `CPUAARCH64`. The `Debug` symbol was removed in August 2026: it was defined in every build, so the blocks it guarded were never optional and are now unconditional. Diagnostics are controlled at run time instead, by the `DEBUG` parameter and by `gRunFromIDE`.
 
 Compiled binaries and build artefacts are not stored in the repository.
 
@@ -54,9 +54,8 @@ Compiled binaries and build artefacts are not stored in the repository.
 | `kinfert.lpi`, `kinfert.lpr` | The Lazarus project. |
 | `docs/KinFert-Manual.md` | User and reference manual: every window and option, the demographic model, the kin taxonomy, and the file formats. A first draft, with open questions collected in its Appendix F. |
 | `docs/KinFert-TODO.md` | The working list of what remains before a finished release. |
-| `docs/KinFert-PreRelease-Audit.md` | Audit of the individual-file output path. |
-| `docs/KinFert-PreRelease-Audit-2.md` | Audit of the demographic engine. |
-| `docs/CHANGES-2026-08-26.md` | Index of the fixes applied on 26 August 2026. |
+| `docs/KinFert-FIXED.md` | What has been corrected since the audit began, and why. |
+| `tools/` | `compareruns.lpr`, which compares two results folders, and the small scripts described in `tools/README.md`. |
 
 ### The main units
 

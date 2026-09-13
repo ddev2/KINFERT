@@ -8,7 +8,7 @@ uses
 	cthreads,
 	{$ENDIF}
 
-	Declarations, DemographicRegime, FertilityRuntime, Fertility, Nuptiality, Inheritance, Kinship,
+	Declarations, DemographicRegime, FertilityRuntime, Fertility, Nuptiality, Inheritance, Kinship, Verification,
 	Utilities, RandomNumbers, Init, StringOfLib, SysUtils{$IFDEF VerboseProfiler}, Profiler{$ENDIF};
 
 	function run_all(	randomGenerator: TRandomNumberGenerator;
@@ -253,6 +253,11 @@ uses
 
 									gParam_descFinaleAgeUnion := RP.indFertAmeno; {We need that value in the fertility unit}
 
+									{one simulation setting starts here: the counters of the quantities
+									 this setting defines are emptied, so that what the graph window
+									 draws belongs to one setting and not to a mixture of them}
+									resetFertilityCountsThisSetting;
+
 									idWomanTemp := idWoman;
 									RunHeader (@RP, pDemReg);
 
@@ -306,8 +311,16 @@ uses
 		if (loopPhase <> k_onlyOne) then
 			memoWriteLn(['Simulating cohort: ', currCohort]);
 		
-		if ( (loopPhase = k_onlyOne) or (loopPhase = k_first) ) then
+		if ( (loopPhase = k_onlyOne) or (loopPhase = k_first) ) then begin
+			{resetVerification now runs BEFORE initParams. Reading the parameters is part of the
+			 run, and some of the checks fire there: calc_survival tests the life expectancy
+			 while the cohorts are being built, inside initParams. With the reset afterwards,
+			 anything recorded during initialisation was wiped before the run began and never
+			 reached verification.txt.}
+			resetVerification;
 			if not initParams(randomGenerator) then goto error;
+			resetFertilityCounts;
+		end;
 			
 		idWoman := 0;
 				
@@ -342,6 +355,9 @@ uses
 		end;
 
 		if ( g_GENPARAM.KINSHIP.value ) then begin
+			{a cohort is a simulation setting of its own: it carries its own demographic regime}
+			resetFertilityCountsThisSetting;
+
 			if ((loopPhase = k_onlyOne) or (loopPhase = k_first)) then
 				initMotherhood (randomGenerator);
 	if gRunFromIDE then begin
@@ -359,6 +375,12 @@ uses
 
 		if ( g_GENPARAM.KINSHIP.value ) and ((loopPhase = k_onlyOne) or (loopPhase = k_last)) then
 			disposeMotherhood;
+
+		if ((loopPhase = k_onlyOne) or (loopPhase = k_last)) then begin
+			reportFecundabilityCheck;
+			reportFertilityChecks (pDemReg);
+			verificationReport;
+		end;
 
 		result := true;
 		

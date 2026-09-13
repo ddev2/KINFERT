@@ -9,7 +9,7 @@ uses
 	cthreads,
 	{$ENDIF}
 	Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, ComCtrls, ExtCtrls, StdCtrls,
-	Declarations, DemographicRegime, Kinship, Utilities, StringOfLib, Math,
+	Declarations, DemographicRegime, Kinship, Fertility, Utilities, StringOfLib, Math,
 	FPCanvas,
 	TACustomSeries,
 	TAGraph, TASeries, TAChartAxis, TASources, TALegend,
@@ -31,6 +31,10 @@ TDrawParameters = class
 	scaleFactorX, scaleFactorY: double;
 	offsetLabelX: longint;
 	rangeValuesX: array of longint;
+	{A marker at each point of the curve, psNone for a plain line. Set it on a curve that has to
+	 be told apart from another one it nearly coincides with, which is the case of every observed
+	 curve drawn beside the input it is read against.}
+	markerStyle: TSeriesPointerStyle;
 	Constructor Create(lx: string; ly: string); overload;
 	Constructor Create(lx: string; ly: string; st: string; ct: string = ''; lt: string = ''; lvt: boolean = false; sF: double = 1.0); overload;
 	Constructor Create(lx: string; ly: string; st: string; ct: string; lt: string; lvt: boolean; sF: double; olx: longint;
@@ -91,6 +95,9 @@ TGraphsForm = class(TForm)
 	procedure CreateManualAxis(aChart: TChart; alignment: TChartAxisAlignment);
 	procedure DrawIntegers(aChart: TChart; n: Integer; const a: array of longint; par: TDrawParameters);
 	procedure Draw(aChart: TChart; n: Integer; const a: array of double; par: TDrawParameters); overload;
+	procedure setSeriesColor(aChart: TChart; n: Integer; aColor: TColor);
+	function simulatedTitle(lastSettingOnly: boolean): string;
+	function chartTitleFor(base: string; hasObserved: boolean): string;
 	procedure Draw(aChart: TChart; n: Integer; const a: array of double;
 								legendX: string = ''; legendY: string = ''; seriesTitle: string = ''; chartTitle: string = '';
 								lastValueIsTotal: boolean = false); overload;
@@ -121,6 +128,20 @@ TGraphsForm = class(TForm)
 	procedure SexCreate;
 	procedure ChildGroomCreate;
 	procedure ChildGroomChange(Sender: TObject);
+// >>> Claude 2026-09-12 start
+	procedure drawUnionsByGroomCohort;
+	procedure drawSearchBoth;
+	procedure drawSearchByGeneration (const total, miss: array of arrayOfLongint; what: string;
+								firstCohort, lastCohort, marginBelow, marginAbove: longint);
+	function addSearchCurve (const total, miss: array of arrayOfLongint; seriesTitle: string;
+								firstCohort, marginBelow, generation, n: longint;
+								out firstDrawn, lastDrawn, nSearches, nMissed: longint;
+								out worstPct: double): boolean;
+	procedure setSeriesXY (aChart: TChart; n: longint; const xs, ys: array of double);
+	procedure setChart5Axis (title, labelX, labelY: string; first, last: longint; yMax: double);
+	procedure noSearchRecorded (what: string);
+	function searchSummary (nSearches, nMissed: longint): string;
+// <<< Claude 2026-09-12 end
 	procedure ChildGroomEnter(Sender: TObject);
 	procedure ChildGroomClose(Sender: TObject);
 	procedure KinTypesChange(Sender: TObject);
@@ -258,6 +279,7 @@ const
 		chartTitle := ct;
 		legendTitle := lt;
 		lastValueIsTotal := lvt;
+		markerStyle := psNone;
 		Init (lbx, lby);
 		scaleFactorY := sF;
 		scaleFactorX := kNoScaleFactor;
@@ -308,12 +330,11 @@ const
 		OutputsFertilitySheet.caption := 'Outputs: Fertility';
 		OutputsKinshipSheet.caption := 'Outputs: Kinship';
 
-	// clRed, clLime, clBlue, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy
 		prop_colors := arrayOfLongint.Create(
-			clRed, clLime, clBlue, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy,
-			clRed, clLime, clBlue, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy,
-			clRed, clLime, clBlue, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy,
-			clRed, clLime, clBlue, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy
+			clRed, clBlue, clLime, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy,
+			clRed, clBlue, clLime, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy,
+			clRed, clBlue, clLime, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy,
+			clRed, clBlue, clLime, clFuchsia, clAqua, clYellow, clMaroon, clGreen, clOlive, clNavy
 			);
 		prop_linetypes := arrayOfTFPPenStyle.Create(
 				psSolid, psSolid, psSolid, psSolid, psSolid, psSolid, psSolid, psSolid, psSolid, psSolid,
@@ -442,6 +463,40 @@ const
 		setLength (b, 0);
 	end;
 
+	function TGraphsForm.chartTitleFor(base: string; hasObserved: boolean): string;
+	{The title of a chart that draws an input and, once a simulation has run, what the run drew
+	 beside it. Before the first run there is one curve and the title names it alone.}
+	begin
+		if hasObserved then
+			result := base + ' (theoretical and simulated)'
+		else
+			result := base;
+	end;
+
+	function TGraphsForm.simulatedTitle(lastSettingOnly: boolean): string;
+	{The legend entry of an observed curve. A sweep, or a run of several cohorts, simulates more
+	 than one setting. The quantities the demographic regime defines are counted for the last
+	 setting alone, since their input differs between settings; the others are counted over the
+	 whole run, their input being the same in every one. The legend says which of the two the
+	 curve is, and does not say it at all when only one setting ran.}
+	begin
+		if (gCountSimulationSettings <= 1) then
+			result := 'Simulated'
+		else if lastSettingOnly then
+			result := 'Simulated, last of ' + IntToStr (gCountSimulationSettings) + ' settings'
+		else
+			result := 'Simulated, all ' + IntToStr (gCountSimulationSettings) + ' settings';
+	end;
+
+	procedure TGraphsForm.setSeriesColor(aChart: TChart; n: Integer; aColor: TColor);
+	{Overrides the colour prop_colors gives by position. For a curve whose meaning is fixed
+	 rather than positional, the standard of a relational model for instance, the colour should
+	 not change with the number of curves drawn beside it.}
+	begin
+		if (n >= 1) and (n <= aChart.SeriesCount) then
+			TLineSeries (aChart.Series [n-1]).SeriesColor := aColor;
+	end;
+
 	procedure TGraphsForm.Draw(aChart: TChart; n: Integer; const a: array of double; par: TDrawParameters);
 	var
 		i, nData, nSeries: Integer;
@@ -484,6 +539,17 @@ const
 		end;
 		chartSeries.SeriesColor := prop_colors[n-1];
 		chartSeries.LinePen.Style := prop_linetypes[n-1];
+		{a hollow marker, so that the line under it stays visible and two curves that nearly
+		 coincide can still be told apart}
+		chartSeries.ShowPoints := (par.markerStyle <> psNone);
+		if chartSeries.ShowPoints then begin
+			chartSeries.Pointer.Style := par.markerStyle;
+			chartSeries.Pointer.HorizSize := 3;
+			chartSeries.Pointer.VertSize := 3;
+			chartSeries.Pointer.Brush.Color := clWhite;
+			chartSeries.Pointer.Pen.Color := prop_colors[n-1];
+			chartSeries.Pointer.Visible := true;
+		end;
 		if par.seriesTitle <> '' then
 			chartSeries.Title := par.seriesTitle
 		else
@@ -560,7 +626,6 @@ const
 		with InputsList do begin
 			Items.Clear;
 			Items.Add('fecundability');
-			Items.Add('schedule temporary sterility');
 			Items.Add('definitive sterility');
 			Items.Add('distrib fecundability');
 			Items.Add('fecundability heterogeneity curve');
@@ -578,32 +643,67 @@ const
 		temp: array of double;
 		range: array of longint;
 		dp: TDrawParameters;
+		simInd: longint = 4;
 	begin
 		Chart1.ClearSeries;
 		case InputsList.ItemIndex of	//what entry (which item) has currently been chosen
 			0: Draw(Chart1, 1, gFecundability,
 				TDrawParameters.Create('Age in years', 'Monthly (lunar) probability', kNoSeriesTitle,
 											'Fecundability: monthly (lunar) probability of pregnancy start'));
-			1: Draw(Chart1, 1, gSchedule_temporary_sterility,
-				'Duration in lunar months after previous childbirth',
-				'Probability of amenorrhea', kNoSeriesTitle,
-				'Lesthaeghe-Page standard schedule of amenorrhea');
-			2: begin
-				dp := TDrawParameters.Create('Age in years', 'Probability of being sterile',
-				kNoSeriesTitle, 'Permanent Sterility by age', kNoLegendTitle,
-				kLastValueIsNotTotal, kNoScaleFactor);
+			1: begin
 				setLength(range{%H-}, 1);
 				range [0] := 11;
+				dp := TDrawParameters.Create('Age in years', 'Probability of being sterile',
+				'Pittinger & Wood', chartTitleFor ('Permanent sterility by age: ' + definitiveSterilityModelName,
+											gHasObserved_definitive_sterility), kNoLegendTitle,
+				kLastValueIsNotTotal, kNoScaleFactor);
 				dp.rangeValuesX := range;
-				Draw(Chart1, 1, gDefinitive_sterility, dp);
+				Draw(Chart1, 1, gDefinitive_sterility_PW, dp);
+				dp := TDrawParameters.Create('Age in years', 'Probability of being sterile',
+				'Kinfert', chartTitleFor ('Permanent sterility by age: ' + definitiveSterilityModelName,
+											gHasObserved_definitive_sterility), kNoLegendTitle,
+				kLastValueIsNotTotal, kNoScaleFactor);
+				dp.rangeValuesX := range;
+				Draw(Chart1, 2, gDefinitive_sterility_Kinfert, dp);
+				dp := TDrawParameters.Create('Age in years', 'Probability of being sterile',
+				'Léridon', chartTitleFor ('Permanent sterility by age: ' + definitiveSterilityModelName,
+											gHasObserved_definitive_sterility), kNoLegendTitle,
+				kLastValueIsNotTotal, kNoScaleFactor);
+				dp.rangeValuesX := range;
+				Draw(Chart1, 3, gDefinitive_sterility_Leridon, dp);
+				if
+					g_GENPARAM.fixedParameters [noInitialSterility].state.value or
+					g_GENPARAM.fixedParameters [fixedDefinitiveSterility].state.value then
+				begin
+					dp := TDrawParameters.Create('Age in years', 'Probability of being sterile',
+					'Modified', chartTitleFor ('Permanent sterility by age: ' + definitiveSterilityModelName,
+											gHasObserved_definitive_sterility), kNoLegendTitle,
+											kLastValueIsNotTotal, kNoScaleFactor);
+					dp.rangeValuesX := range;
+					Draw(Chart1, 4, gDefinitive_sterility, dp);
+					simInd := 5
+				end else
+                	simInd := 4;
+				
+				{whichever of the three models is in force is what the draws are read against}
+				if gHasObserved_definitive_sterility then begin
+					dp := TDrawParameters.Create('Age in years', 'Probability of being sterile',
+					simulatedTitle (false), chartTitleFor ('Permanent sterility by age: ' +
+											definitiveSterilityModelName, true), kNoLegendTitle,
+					kLastValueIsNotTotal, kNoScaleFactor);
+					dp.rangeValuesX := range;
+					dp.markerStyle := psCircle;
+					Draw(Chart1, simInd, gObserved_definitive_sterility, dp);
+				end;
 				setLength(range, 0);
 			end;
-			3: Draw(Chart1, 1, gDistrib_fecundability, 'Intervals between 0 and 1',
+			2: Draw(Chart1, 1, gDistrib_fecundability, 'Intervals between 0 and 1',
 							'Proportion of women with relative level under interval', kNoSeriesTitle,
-							'Distribution of fecundability across women (around mean level of: ' + floatToStr (gMean_fecundability) + ')');
-			4: begin
+							'Cumulative distribution of fecundability across women (around mean level of: ' + floatToStr (gMean_fecundability) + ')');
+			3: begin
 				dp := TDrawParameters.Create('Fecundability probability', 'Proportion of women',
-															kNoSeriesTitle, 'Highest fecundability value (at age 22)', kNoLegendTitle,
+															'Theoretical', chartTitleFor ('Distribution of individual fecundability at age 22',
+																			gHasObserved_fecundability), kNoLegendTitle,
 															kLastValueIsNotTotal, kNoScaleFactor);
 				dp.scaleFactorX := 1 / kMaxDistribFecundability;
 				setLength (temp{%H-}, kMaxDistribFecundability+1);
@@ -612,31 +712,118 @@ const
 				end;
 				Draw(Chart1, 1, temp, dp);
 				setLength (temp, 0);
+				{and the levels the simulation drew, filled by reportFecundabilityCheck}
+				if gHasObserved_fecundability then begin
+					dp := TDrawParameters.Create('Fecundability probability', 'Proportion of women',
+															simulatedTitle (false), chartTitleFor ('Distribution of individual fecundability at age 22', true),
+															kNoLegendTitle, kLastValueIsNotTotal, kNoScaleFactor);
+					dp.scaleFactorX := 1 / kMaxDistribFecundability;
+					dp.markerStyle := psCircle;
+					Draw(Chart1, 2, gDistrib_fecundability_simulated, dp);
+				end;
 			end;
-			5: begin
-				dp := TDrawParameters.Create('Age in years', 'Probability',
-													kNoSeriesTitle, 'Intrauterine Mortality Risk: probability of having a natural abortion if pregnant', kNoLegendTitle,
-													kLastValueIsNotTotal, kNoScaleFactor);
+			4: begin
+				{Both alternative schedules, then the working array if a modifier has changed it,
+				 then the proportion of the conceptions simulated at each age that ended in a
+				 spontaneous abortion. Laid out like the permanent sterility chart above.}
 				setLength(range, 2);
 				range [0] := 11;
 				range [1] := 58;
+				dp := TDrawParameters.Create('Age in years', 'Probability of a natural abortion if pregnant',
+													'Léridon [2004]', chartTitleFor ('Intrauterine mortality risk by age: ' +
+																	intrauterineRiskModelName,
+																	gHasObserved_intrauterine_risk), kNoLegendTitle,
+													kLastValueIsNotTotal, kNoScaleFactor);
 				dp.rangeValuesX := range;
-				Draw(Chart1, 1, gIntrauterine_mortality_risk, dp);
+				Draw(Chart1, 1, gIntrauterine_mortality_risk_Leridon, dp);
+				dp := TDrawParameters.Create('Age in years', 'Probability of a natural abortion if pregnant',
+													'Magnus [2019]', chartTitleFor ('Intrauterine mortality risk by age: ' +
+																	intrauterineRiskModelName,
+																	gHasObserved_intrauterine_risk), kNoLegendTitle,
+													kLastValueIsNotTotal, kNoScaleFactor);
+				dp.rangeValuesX := range;
+				Draw(Chart1, 2, gIntrauterine_mortality_risk_Magnus, dp);
+				if g_GENPARAM.fixedParameters [fixedIntrauterineMortality].state.value then begin
+					dp := TDrawParameters.Create('Age in years', 'Probability of a natural abortion if pregnant',
+													'Modified', chartTitleFor ('Intrauterine mortality risk by age: ' +
+																	intrauterineRiskModelName,
+																	gHasObserved_intrauterine_risk), kNoLegendTitle,
+													kLastValueIsNotTotal, kNoScaleFactor);
+					dp.rangeValuesX := range;
+					Draw(Chart1, 3, gIntrauterine_mortality_risk, dp);
+					simInd := 4
+				end else
+					simInd := 3;
+				{whichever of the two schedules is in force is what the draws are read against}
+				if gHasObserved_intrauterine_risk then begin
+					dp := TDrawParameters.Create('Age in years', 'Probability of a natural abortion if pregnant',
+													simulatedTitle (false), chartTitleFor ('Intrauterine mortality risk by age: ' +
+																	intrauterineRiskModelName, true),
+													kNoLegendTitle, kLastValueIsNotTotal, kNoScaleFactor);
+					dp.rangeValuesX := range;
+					dp.markerStyle := psCircle;
+					Draw(Chart1, simInd, gObserved_intrauterine_risk, dp);
+				end;
 				setLength(range, 0);
 			end;
-			6: Draw(Chart1, 1, gDistrib_intrauterine_mortality_risk,
-				TDrawParameters.Create('Lunar month of pregnancy terminated by a natural abortion',
-											'Proportion of pregnancies with natural abortion', kNoSeriesTitle, 'Distribution of intrauterine mortality risk across pregnancies', kNoLegendTitle,
-											kLastValueIsNotTotal, kNoScaleFactor, kNoOffsetX, [0, 1, 2, 3, 4, 5, 6, 7, 8], []));
-			7: begin
-				dp := TDrawParameters.Create('Age in years', 'Probability of a stillbirth',
-													kNoSeriesTitle, 'Stillbirth risk by age', kNoLegendTitle,
-													kLastValueIsNotTotal, kNoScaleFactor);
+			5: begin
+				dp := TDrawParameters.Create('Lunar month of pregnancy terminated by a natural abortion',
+											'Proportion of pregnancies with natural abortion', 'Theoretical',
+											chartTitleFor ('Intrauterine mortality: the month a pregnancy is lost (Barrett)',
+															gHasObserved_distrib_intrauterine), kNoLegendTitle,
+											kLastValueIsNotTotal, kNoScaleFactor, kNoOffsetX, [0, 1, 2, 3, 4, 5, 6, 7, 8], []);
+				Draw(Chart1, 1, gDistrib_intrauterine_mortality_risk, dp);
+				if gHasObserved_distrib_intrauterine then begin
+					dp := TDrawParameters.Create('Lunar month of pregnancy terminated by a natural abortion',
+											'Proportion of pregnancies with natural abortion', simulatedTitle (true),
+											chartTitleFor ('Intrauterine mortality: the month a pregnancy is lost (Barrett)', true),
+											kNoLegendTitle, kLastValueIsNotTotal, kNoScaleFactor, kNoOffsetX, [0, 1, 2, 3, 4, 5, 6, 7, 8], []);
+					dp.markerStyle := psCircle;
+					Draw(Chart1, 2, gObserved_distrib_intrauterine, dp);
+				end;
+			end;
+			6: begin
+				{Both alternative schedules, then the working array if a modifier has changed it,
+				 then the proportion of the conceptions simulated at each age that ended in a
+				 stillbirth. Laid out like the permanent sterility chart above.}
 				setLength(range, 2);
 				range [0] := 11;
 				range [1] := 58;
+				dp := TDrawParameters.Create('Age in years', 'Probability of a stillbirth',
+													'Barrett [1971]', chartTitleFor ('Stillbirth risk by age: ' +
+																	stillbirthRiskModelName,
+																	gHasObserved_stillbirth_risk), kNoLegendTitle,
+													kLastValueIsNotTotal, kNoScaleFactor);
 				dp.rangeValuesX := range;
-				Draw(Chart1, 1, gStillbirth_mortality_risk, dp);
+				Draw(Chart1, 1, gStillbirth_mortality_risk_Barrett, dp);
+				dp := TDrawParameters.Create('Age in years', 'Probability of a stillbirth',
+													'United States 2023', chartTitleFor ('Stillbirth risk by age: ' +
+																	stillbirthRiskModelName,
+																	gHasObserved_stillbirth_risk), kNoLegendTitle,
+													kLastValueIsNotTotal, kNoScaleFactor);
+				dp.rangeValuesX := range;
+				Draw(Chart1, 2, gStillbirth_mortality_risk_US2023, dp);
+				if g_GENPARAM.fixedParameters [fixedIntrauterineMortality].state.value then begin
+					dp := TDrawParameters.Create('Age in years', 'Probability of a stillbirth',
+													'Modified', chartTitleFor ('Stillbirth risk by age: ' +
+																	stillbirthRiskModelName,
+																	gHasObserved_stillbirth_risk), kNoLegendTitle,
+													kLastValueIsNotTotal, kNoScaleFactor);
+					dp.rangeValuesX := range;
+					Draw(Chart1, 3, gStillbirth_mortality_risk, dp);
+					simInd := 4
+				end else
+					simInd := 3;
+				{whichever of the two schedules is in force is what the draws are read against}
+				if gHasObserved_stillbirth_risk then begin
+					dp := TDrawParameters.Create('Age in years', 'Probability of a stillbirth',
+													simulatedTitle (false), chartTitleFor ('Stillbirth risk by age: ' +
+																	stillbirthRiskModelName, true),
+													kNoLegendTitle, kLastValueIsNotTotal, kNoScaleFactor);
+					dp.rangeValuesX := range;
+					dp.markerStyle := psCircle;
+					Draw(Chart1, simInd, gObserved_stillbirth_risk, dp);
+				end;
 				setLength(range, 0);
 			end;
 		end;
@@ -678,6 +865,9 @@ const
 	procedure TGraphsForm.InputsVarChange(Sender: TObject);
 	var
 		ageUnion: longint;
+		nS: longint;	{series drawn so far. Draw creates a series only when it is asked for the
+						 one just after the last, so a curve that is skipped must not leave a hole}
+		dp: TDrawParameters;
 	begin
 		Chart2.ClearSeries;
 		case InputsVarList.ItemIndex of	//what entry (which item) has currently been chosen
@@ -709,9 +899,41 @@ const
 						doubleToMinStringHelper (prop_pDemReg^.effSpacing.value[1] * 100) +
 						'% of women)',
 						'Monthly (lunar) probability of NOT using contraception', kNoSeriesTitle);
-			4:	Draw(Chart2, 1, prop_pDemReg^.temporary_sterility,
-						'Lunar months after end of pregnancy',
-						'Probability of being temporary sterile (amenorrhea post partum)', kNoSeriesTitle);
+			{Three curves, because the model is relational. gSchedule_temporary_sterility is the
+			 standard of Lesthaeghe and Page, the same in every run; the cohort selected above
+			 derives its own schedule from it with its AMENO_ALPHA and AMENO_BETA, and that is what
+			 its women draw from, so it is the theoretical curve here. The standard is drawn in
+			 black behind the two, to show what the two parameters did to it. The simulated curve
+			 belongs to the last setting simulated, which its legend entry says.}
+			4:	begin
+					dp := TDrawParameters.Create('Lunar months after end of pregnancy',
+										'Probability of being temporary sterile (amenorrhea post partum)',
+										'Theoretical',
+										chartTitleFor ('Amenorrhea: the Lesthaeghe and Page schedule of this cohort',
+														gHasObserved_temporary_sterility), kNoLegendTitle,
+										kLastValueIsNotTotal, kNoScaleFactor);
+					nS := 1;
+					Draw(Chart2, nS, prop_pDemReg^.temporary_sterility, dp);
+					if gHasObserved_temporary_sterility then begin
+						dp := TDrawParameters.Create('Lunar months after end of pregnancy',
+											'Probability of being temporary sterile (amenorrhea post partum)',
+											simulatedTitle (true),
+											chartTitleFor ('Amenorrhea: the Lesthaeghe and Page schedule of this cohort', true),
+											kNoLegendTitle, kLastValueIsNotTotal, kNoScaleFactor);
+						dp.markerStyle := psCircle;
+						Inc (nS);
+						Draw(Chart2, nS, gObserved_temporary_sterility, dp);
+					end;
+					dp := TDrawParameters.Create('Lunar months after end of pregnancy',
+										'Probability of being temporary sterile (amenorrhea post partum)',
+										'Lesthaeghe-Page standard',
+										chartTitleFor ('Amenorrhea: the Lesthaeghe and Page schedule of this cohort',
+														gHasObserved_temporary_sterility), kNoLegendTitle,
+										kLastValueIsNotTotal, kNoScaleFactor);
+					Inc (nS);
+					Draw(Chart2, nS, gSchedule_temporary_sterility, dp);
+					setSeriesColor (Chart2, nS, clBlack);
+				end;
 			5:	begin
 					Draw(Chart2, 1, prop_pDemReg^.mortalityInfo.survival_men,
 								'Age in years',
@@ -1117,19 +1339,47 @@ const
 		OutputsKinshipChange(Sender);
 	end;
 
+// >>> Claude 2026-09-12 start
+	{The Children-Grooms tab, rebuilt.
+
+	 One question is asked here, and these charts exist to answer it: does the pre-simulation
+	 provide enough candidates? Two searches depend on it. A child, or an ascendant of a child,
+	 asks the birth index for a mother who gave birth in the child's own cohort. A man asks the
+	 bride index for a woman of the cohort and the age at union his own cohort implies. When the
+	 cell asked for is empty the search moves to a neighbouring one, so a relative is still
+	 produced, but from a cohort or an age at union other than the one the model called for.
+	 The share of searches that had to move IS the answer, and everything else that used to be
+	 on this tab was a step on the way to it.
+
+	 Four entries. The first is the answer, both searches on one chart. The next two split it by
+	 generation, since the ascendants are looked up in cohorts well before ego's and it is
+	 useful to know which generation is short of candidates. The fourth is the other side of the
+	 same coin: unions the simulation produced that the groom index could not hold at all, which
+	 is a loss before any search is made.
+
+	 What was removed: the counts of lookups by cohort and generation, fourteen entries of them,
+	 which said where the searches fell but not whether they succeeded, and the mean distance in
+	 years of a search that missed, which is now in the memo and in verification.txt where it
+	 can be read as a number instead of estimated off a chart.}
+	const
+		kItemSearchBoth = 0;
+		kItemMotherByGeneration = 1;
+		kItemBrideByGeneration = 2;
+		kItemUnionsOffered = 3;
+
 	procedure TGraphsForm.ChildGroomCreate;
 	begin
 		with ChildGroomList do begin
 			Items.Clear;
-			Items.Add('state Grooms');
-			Items.Add('state Children');
-			//Items.Add('state Brides');
-			//Items.Add('state Mothers');
-			//Items.Add('state Years');
+			Items.Add('Searches that did not find their candidate');
+			Items.Add('Mother search, by generation');
+			Items.Add('Bride search, by generation');
+			Items.Add('Unions produced, by groom cohort');
 			ItemIndex := 0;
 		end;
 		ChildGroomChange(self);
 	end;
+// <<< Claude 2026-09-12 end
 
 	function cLabelsX (minVal, maxVal: longint): arrayOfDouble;
 	var
@@ -1150,50 +1400,358 @@ const
 		end;
 	end;
 
-	procedure TGraphsForm.ChildGroomChange(Sender: TObject);
+// >>> Claude 2026-09-12 start
+	{Decades covering [first, last], for a chart drawn over an arbitrary span of cohorts.
+	 cLabelsX above always widens by kStateRangeLengthLimit on each side, which these charts
+	 cannot use because they trim the span they draw.}
+	function cLabelsXSpan (first, last: longint): arrayOfDouble;
+	var
+		n, ind, val, firstTen, lastTen: longint;
+	begin
+		firstTen := floor (first / 10.0);
+		lastTen := ceil (last / 10.0);
+		n := lastTen - firstTen + 1;
+		if (n < 1) then n := 1;
+		setLength (result{%H-}, n);
+		ind := 0;
+		for val := firstTen to firstTen + n - 1 do begin
+			result[ind] := val * 10;
+			Inc (ind);
+		end;
+	end;
+
+	{The share of searches, in per cent by cohort, that had to be answered from a cell other
+	 than the one asked for, over the cohorts where a search was made. Returns the span drawn
+	 so that the caller can label the axis, and zero when no search was recorded.
+
+	 A cohort where no search at all was made is left out of the curve rather than drawn as a
+	 zero, since zero out of zero is not a share of nothing: it is not a measurement. TAChart
+	 draws a straight segment across a gap, which is the right reading here: the curve is an
+	 estimate over the cohorts that carry searches.}
+	function TGraphsForm.addSearchCurve (const total, miss: array of arrayOfLongint;
+								seriesTitle: string;
+								firstCohort, marginBelow, generation, n: longint;
+								out firstDrawn, lastDrawn, nSearches, nMissed: longint;
+								out worstPct: double): boolean;
+	var
+		dp: TDrawParameters;
+		xs, ys: array of double;
+		gen, genRow, i, nCohorts, nPoints: longint;
+		tot, bad: longint;
+	begin
+		result := false;
+		firstDrawn := 0;
+		lastDrawn := 0;
+		nSearches := 0;
+		nMissed := 0;
+		worstPct := 0.0;
+		if (length (total) = 0) then exit;
+		nCohorts := length (total [0]);
+		setLength (xs{%H-}, nCohorts);
+		setLength (ys{%H-}, nCohorts);
+		nPoints := 0;
+		for i := 0 to nCohorts - 1 do begin
+			tot := 0;
+			bad := 0;
+			for gen := kMinKinGeneration to kMaxKinGeneration do begin
+				genRow := kinGenerationRow (gen);
+				if (genRow >= length (total)) then continue;
+				{generation 0 means every generation at once}
+				if (generation <> 0) and (gen <> generation) then continue;
+				tot := tot + total [genRow, i];
+				bad := bad + miss [genRow, i];
+			end;
+			if (tot = 0) then continue;
+			nSearches := nSearches + tot;
+			nMissed := nMissed + bad;
+			xs [nPoints] := firstCohort - marginBelow + i;
+			ys [nPoints] := 100.0 * bad / tot;
+			if (ys [nPoints] > worstPct) then worstPct := ys [nPoints];
+			Inc (nPoints);
+		end;
+		if (nPoints = 0) then exit;
+		firstDrawn := trunc (xs [0]);
+		lastDrawn := trunc (xs [nPoints - 1]);
+		setLength (xs, nPoints);
+		setLength (ys, nPoints);
+
+		dp := TDrawParameters.Create ('Birth cohort', 'Per cent of searches answered from another cell');
+		dp.seriesTitle := seriesTitle;
+		dp.offsetLabelX := 0;
+		{A curve that never leaves zero is the outcome one wants, and a plain line on the floor
+		 of the frame reads as an empty chart. Markers make it visible as a measurement that ran
+		 and found nothing, which is not the same thing as no measurement at all. A curve that
+		 does leave zero is drawn plain, since it has a shape of its own to show.}
+		if (worstPct = 0.0) then
+			dp.markerStyle := psCircle;
+		Draw (Chart5, n, ys, dp);
+		setSeriesXY (Chart5, n, xs, ys);
+		dp.Free;
+		setLength (xs, 0);
+		setLength (ys, 0);
+		result := true;
+	end;
+
+	{The sentence that says what the chart shows, put in the title so that a run in which
+	 nothing went wrong says so rather than showing a blank frame.}
+	function TGraphsForm.searchSummary (nSearches, nMissed: longint): string;
+	begin
+		if (nSearches = 0) then
+			result := 'no search recorded'
+		else if (nMissed = 0) then
+			result := IntToStr (nSearches) + ' searches, every one found the cell it asked for'
+		else
+			result := IntToStr (nSearches) + ' searches, ' + IntToStr (nMissed) +
+					' answered from another cell (' +
+					str_float (100.0 * nMissed / nSearches) + ' per cent)';
+	end;
+
+	{What to draw when no search at all was recorded, which is a state worth naming: the counts
+	 are filled while the kinship is being built, so a run that built no kinship leaves them
+	 empty, and so does a graph window opened before the first run.}
+	procedure TGraphsForm.noSearchRecorded (what: string);
 	var
 		dp: TDrawParameters;
 	begin
+		dp := TDrawParameters.Create ('Birth cohort', 'Per cent of searches answered from another cell');
+		dp.chartTitle := what + ': no search was recorded. These counts are filled while the ' +
+					'kinship is built, so a run without kinship, or a window opened before the ' +
+					'first run, leaves them empty';
+		Draw (Chart5, 1, [0.0], dp);
+		dp.Free;
+	end;
+
+	{Replaces the points Draw wrote with the real cohorts on the x axis, so that a curve with
+	 gaps in it lands on the right years. Draw lays its points out at consecutive x values plus
+	 one offset, which cannot express a gap.}
+	procedure TGraphsForm.setSeriesXY (aChart: TChart; n: longint; const xs, ys: array of double);
+	var
+		i: longint;
+		serie: TLineSeries;
+	begin
+		if (n < 1) or (n > aChart.SeriesCount) then exit;
+		serie := TLineSeries (aChart.Series [n-1]);
+		serie.Clear;
+		for i := 0 to high (xs) do
+			serie.AddXY (xs [i], ys [i]);
+	end;
+
+	{Entry 0: the answer, both searches on one chart. A curve on the floor says the
+	 pre-simulation has a candidate for every search, and it carries markers so that it cannot
+	 be mistaken for an empty chart; a curve that lifts says the candidates run out, and where.
+	 The title carries the counts either way.}
+	procedure TGraphsForm.drawSearchBoth;
+	var
+		n, f, l, first, last, nS, nM: longint;
+		worst, worstAll: double;
+		title: string;
+		drewOne: boolean;
+	begin
 		Chart5.ClearSeries;
-		dp := TDrawParameters.Create('Cohort', 'Count');
-		case ChildGroomList.ItemIndex of	//what entry (which item) has currently been chosen
-		0:
-			begin
-				dp.chartTitle := 'Count of grooms';
-				dp.offsetLabelX:= gFirstCohortGrooms - kStateRangeLengthLimit;
-				dp.labelsX := clabelsX(gFirstCohortGrooms, gLastCohortGrooms);
-				DrawIntegers(Chart5, 1, gStateGrooms, dp);
+		n := 0;
+		first := 0;
+		last := 0;
+		worstAll := 0.0;
+		drewOne := false;
+		if addSearchCurve (gMotherSearch, gMotherSearchMiss, 'mother search',
+				gFirstCohortAncestorsChildren, gChildStateMarginBelow, 0, n + 1,
+				f, l, nS, nM, worst) then begin
+			Inc (n);
+			first := f;
+			last := l;
+			drewOne := true;
+			if (worst > worstAll) then worstAll := worst;
+			title := 'Mother: ' + searchSummary (nS, nM);
+		end else
+			title := 'Mother: no search recorded';
+		if addSearchCurve (gBrideSearch, gBrideSearchMiss, 'bride search',
+				gFirstCohortGrooms, gGroomStateMarginBelow, 0, n + 1,
+				f, l, nS, nM, worst) then begin
+			Inc (n);
+			if not drewOne then begin
+				first := f;
+				last := l;
+			end else begin
+				if (f < first) then first := f;
+				if (l > last) then last := l;
 			end;
-		1:
-			begin
-				dp.chartTitle := 'Count of children';
-				dp.offsetLabelX := gFirstCohortAncestorsChildren - kStateRangeLengthLimit;
-				dp.labelsX := clabelsX(gFirstCohortAncestorsChildren, gLastCohortAncestorsChildren);
-				DrawIntegers(Chart5, 1, gStateChildren, dp);
+			drewOne := true;
+			if (worst > worstAll) then worstAll := worst;
+			title := title + '.  Bride: ' + searchSummary (nS, nM);
+		end else
+			title := title + '.  Bride: no search recorded';
+		if not drewOne then begin
+			noSearchRecorded ('Searches that did not find their candidate');
+			exit;
+		end;
+		setChart5Axis ('Searches that did not find their candidate. ' + title,
+				'Birth cohort', 'Per cent of searches answered from another cell',
+				first, last, worstAll);
+	end;
+
+	{Entries 1 and 2: the same measure, one curve per generation, so that a shortage can be
+	 attributed to the generation it belongs to. The ascendants are looked up in cohorts one,
+	 two and three mean ages at childbearing before ego's, which is where an index that is too
+	 narrow shows first.}
+	procedure TGraphsForm.drawSearchByGeneration (const total, miss: array of arrayOfLongint;
+								what: string;
+								firstCohort, lastCohort, marginBelow, marginAbove: longint);
+	var
+		gen, n, f, l, first, last, nS, nM, totS, totM: longint;
+		worst, worstAll: double;
+		drewOne: boolean;
+	begin
+		Chart5.ClearSeries;
+		n := 0;
+		first := 0;
+		last := 0;
+		totS := 0;
+		totM := 0;
+		worstAll := 0.0;
+		drewOne := false;
+		for gen := kMaxKinGeneration downto kMinKinGeneration do
+			if addSearchCurve (total, miss, str_kinGeneration [gen],
+					firstCohort, marginBelow, gen, n + 1, f, l, nS, nM, worst) then begin
+				Inc (n);
+				if not drewOne then begin
+					first := f;
+					last := l;
+				end else begin
+					if (f < first) then first := f;
+					if (l > last) then last := l;
+				end;
+				drewOne := true;
+				totS := totS + nS;
+				totM := totM + nM;
+				if (worst > worstAll) then worstAll := worst;
 			end;
-		2:
-			begin
-				dp.chartTitle := 'Count of brides';
-				dp.offsetLabelX := gFirstCohortBrides - kStateRangeLengthLimit;
-				dp.labelsX := clabelsX(gFirstCohortBrides, gLastCohortBrides);
-				DrawIntegers(Chart5, 1, gStateBrides, dp);
+		if not drewOne then begin
+			noSearchRecorded (what);
+			exit;
+		end;
+		setChart5Axis (what + ', by generation. ' + searchSummary (totS, totM) +
+					'. Index cohorts ' + IntToStr (firstCohort) + ' to ' + IntToStr (lastCohort),
+				'Birth cohort', 'Per cent of searches answered from another cell',
+				first, last, worstAll);
+	end;
+
+	{Entry 3: the write side. Every union the simulation produced, by the groom's birth cohort,
+	 with the two edges of the groom index drawn as vertical lines. Anything outside them is a
+	 union the index could not hold at all, which is a loss before any search is made, and a
+	 different quantity from a search that had to move.}
+	procedure TGraphsForm.drawUnionsByGroomCohort;
+	var
+		dp: TDrawParameters;
+		col: array of longint;
+		band, i, nCohorts: longint;
+		edge: TConstantLine;
+	begin
+		Chart5.ClearSeries;
+		nCohorts := length (gStateGroomsByAge);
+		if (nCohorts = 0) then begin
+			dp := TDrawParameters.Create ('Groom birth cohort', 'Unions');
+			dp.chartTitle := 'Unions produced, by groom cohort: no run yet';
+			Draw (Chart5, 1, [0.0], dp);
+			dp.Free;
+			exit;
+		end;
+		setLength (col{%H-}, nCohorts);
+		for i := 0 to nCohorts - 1 do begin
+			col [i] := 0;
+			for band := 0 to kNbGroomAgeBands - 1 do
+				col [i] := col [i] + gStateGroomsByAge [i, band];
+		end;
+		dp := TDrawParameters.Create ('Groom birth cohort (the end points hold everything further out)',
+									'Unions produced');
+		dp.chartTitle := 'Unions produced, by groom cohort. ' + IntToStr (gGroomCohortSkipped) +
+					' of ' + IntToStr (gGroomUnionsSeen) + ' fell outside the index, which holds ' +
+					IntToStr (gFirstCohortGrooms) + ' to ' + IntToStr (gLastCohortGrooms);
+		dp.offsetLabelX := gFirstCohortGrooms - kStateRangeLengthLimit;
+		dp.labelsX := cLabelsXSpan (gFirstCohortGrooms - kStateRangeLengthLimit,
+					gFirstCohortGrooms - kStateRangeLengthLimit + nCohorts - 1);
+		DrawIntegers (Chart5, 1, col, dp);
+		dp.Free;
+		setLength (col, 0);
+
+		for i := 0 to 1 do begin
+			edge := TConstantLine.Create (self);
+			edge.LineStyle := lsVertical;
+			if (i = 0) then begin
+				edge.Position := gFirstCohortGrooms;
+				edge.Title := 'first cohort in the index';
+			end else begin
+				edge.Position := gLastCohortGrooms;
+				edge.Title := 'last cohort in the index';
 			end;
-		3:
-			begin
-				dp.chartTitle := 'Count of mothers';
-				dp.offsetLabelX := gFirstCohortWomen - kStateRangeLengthLimit;
-				dp.labelsX := clabelsX(gFirstCohortWomen, gLastCohortWomen);
-				DrawIntegers(Chart5, 1, gStateMothers, dp);
-			end;
-		4:
-			begin
-				dp.chartTitle := 'Count of union years';
-				dp.offsetLabelX := gFirstYearUnions - kStateRangeLengthLimit;
-				dp.labelsX := clabelsX(gFirstYearUnions, gLastYearUnions);
-				DrawIntegers(Chart5, 1, gStateYearUnions, dp);
-			end;
+			edge.Pen.Color := clBlack;
+			edge.Pen.Width := 2;
+			edge.Pen.Style := psDash;
+			Chart5.AddSeries (edge);
 		end;
 	end;
+
+	{The axis captions, the title and the vertical range, set once after the curves are drawn.
+	 Draw takes them from the parameters of each curve, which is awkward when the curves carry
+	 their own x values, so they are set here instead.
+
+	 The vertical range is forced to start at zero and to be at least one per cent tall. Left to
+	 itself the chart would fit the range to the data, and a run in which nothing missed would
+	 draw a flat line squeezed onto the frame, which is what an empty chart looks like.}
+	procedure TGraphsForm.setChart5Axis (title, labelX, labelY: string; first, last: longint;
+								yMax: double);
+	var
+		axis: TChartAxis;
+		src: TListChartSource;
+		labels: arrayOfDouble;
+		i: longint;
+	begin
+		if (Chart5.Title.Text.Count > 0) then begin
+			Chart5.Title.Text.Strings[0] := title;
+			Chart5.Title.Font.Size := 14;
+			Chart5.Title.Visible := true;
+		end;
+		Chart5.LeftAxis.Title.caption := labelY;
+		Chart5.LeftAxis.Title.visible := true;
+		Chart5.LeftAxis.visible := true;
+		if (yMax < 1.0) then yMax := 1.0;
+		Chart5.LeftAxis.Range.Min := 0.0;
+		Chart5.LeftAxis.Range.Max := yMax * 1.1;
+		Chart5.LeftAxis.Range.UseMin := true;
+		Chart5.LeftAxis.Range.UseMax := true;
+		axis := Chart5.AxisList[2];
+		axis.visible := false;
+		axis := Chart5.AxisList[3];
+		labels := cLabelsXSpan (first, last);
+		src := TListChartSource.Create (Chart5);
+		for i := 0 to high (labels) do
+			src.add (labels[i], labels[i]);
+		axis.Marks.Source := src;
+		axis.Title.caption := labelX;
+		axis.Title.visible := true;
+		axis.visible := true;
+		Chart5.BottomAxis.visible := false;
+		setLength (labels, 0);
+	end;
+
+	procedure TGraphsForm.ChildGroomChange(Sender: TObject);
+	begin
+		Chart5.ClearSeries;
+		case ChildGroomList.ItemIndex of
+		kItemSearchBoth:
+			drawSearchBoth;
+		kItemMotherByGeneration:
+			drawSearchByGeneration (gMotherSearch, gMotherSearchMiss, 'Mother search',
+					gFirstCohortAncestorsChildren, gLastCohortAncestorsChildren,
+					gChildStateMarginBelow, gChildStateMarginAbove);
+		kItemBrideByGeneration:
+			drawSearchByGeneration (gBrideSearch, gBrideSearchMiss, 'Bride search',
+					gFirstCohortGrooms, gLastCohortGrooms,
+					gGroomStateMarginBelow, gGroomStateMarginAbove);
+		kItemUnionsOffered:
+			drawUnionsByGroomCohort;
+		end;
+	end;
+// <<< Claude 2026-09-12 end
 
 	procedure TGraphsForm.ChildGroomEnter(Sender: TObject);
 	begin

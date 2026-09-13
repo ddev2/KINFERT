@@ -17,6 +17,20 @@
 {$ELSE}
 	{$AsmMode intel}
 {$ENDIF}
+{ breakOnFailure stops the debugger at the line that failed, so that the Locals window
+  shows the variables of that routine rather than those of the checking code. Written as a
+  macro because the trap has to be compiled in place; macros are on, the flags carry -Sm.
+  Use it with the checking functions of Verification.pas, which return true on the first
+  failure of each check:
+
+      if checkFalse (chk_something, badCondition, ['woman ', idWoman]) then breakOnFailure;
+
+  The test on gRunFromIDE is inside the macro, so an ordinary run never reaches an int 3. }
+{$IFNDEF ARM}
+	{$define breakOnFailure:=if gRunFromIDE then asm int 3 end}
+{$ELSE}
+	{$define breakOnFailure:=if gRunFromIDE then assert(false)}
+{$ENDIF}
 {$define OLD_INFOCHILDTYPE} // if not defined, uses a dynamic array with a constant size for storing the linked list of child info records
 							// instead of creating child info records on the fly with 'new'
 							// unfortunately using a dynamic array is too slow if we have to create a lot of them and can not reuse them

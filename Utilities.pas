@@ -66,6 +66,14 @@ var
 	gOutFileIndivKeys: TFileType;
 	gDebugFile: TFileType;
 	gDebugError: boolean = false;
+	{Where writeAndWait sends its message so that it reaches verification.txt as well as
+	 the memo. Verification.pas uses Utilities, so Utilities cannot use Verification; the
+	 dependency is turned round with this hook, which Verification sets in its own
+	 initialization. While it is nil, writeAndWait behaves exactly as it used to.}
+type
+	TProblemReporter = procedure (const message: string);
+var
+	gProblemReporter: TProblemReporter = nil;
 	gDebugFertFile: TFileType;
 	//gFiles: TStoreFiles;
 
@@ -1001,9 +1009,15 @@ end;
 	end;
 	
 	procedure writeAndWait (s: string);
+	{The name is historical. It waited for a keypress when the program could be started from
+	 a terminal, which it no longer can, so nothing here waits for anything. What it does now
+	 is write the message to the memo, copy it to the debug file when running from the IDE,
+	 light the error indicator, and hand the message to Verification so that it is counted and
+	 printed in verification.txt at the end of the run instead of scrolling away in the memo.
+
+	 The readLn branch is gone. It was compiled only without LAZARUS_GUI, and a build without
+	 the GUI would block on a terminal that is not there.}
 	begin
-{$IFDEF LAZARUS_GUI}
-		//ShowMessage(s);
 		memoWriteLn([s]);
 		if gRunFromIDE then
 			if gDebugFile <> nil then begin
@@ -1012,11 +1026,8 @@ end;
 				LeaveCriticalSection (g_CriticalSection);
 			end;
 		gDebugError := TRUE;
-{$ELSE}
-		memoWriteLn([s]);
-		write ('Press RETURN to keep processing...');
-		readLn(temp);
-{$ENDIF}
+		if (gProblemReporter <> nil) then
+			gProblemReporter (s);
 	end;
 
 	procedure fileScreenWrite (outFile: TFileType; const Args: Array of const; writeToFile: boolean = true);
@@ -1278,11 +1289,16 @@ end;
 	end;
 
 	function str_float (float: double; minFloatDigitsInFile: longint = 0): string;
+	{Reads the output-format parameters through the accessors in Declarations.pas rather than
+	 directly, because they are nil until initGeneralCmd has run. This routine is reached from
+	 contextToString in Verification.pas whenever a check is given a number as context, and
+	 checks now fire during initialisation, so a direct dereference here would be an access
+	 violation rather than a message.}
 	begin
-		if g_GENPARAM.OUTPUT_INDIVIDUAL_AGE_FLOAT.value then
+		if outputAgesAsFloat then
 			result := FloatToStrF(	float, ffFixed,
-									g_GENPARAM.outputs_fmt[res_floatingNumberPrecision].value,
-									max (minFloatDigitsInFile, g_GENPARAM.outputs_fmt[res_floatingNumberDigits].value),
+									outputFloatingPrecision,
+									max (minFloatDigitsInFile, outputFloatingDigits),
 									gFormatSettings)
 		else
 			result := IntToStr (trunc (float));
@@ -1353,9 +1369,9 @@ end;
 	  Main thread only, like writeState: it opens its own file with aSync false.
 	  Tabs inside string values are replaced by spaces so the columns stay aligned.
 	  -------------------------------------------------------------------------------- }
-	procedure dumpArray_strings (name: string; const s: Array of string; firstIndex: longint);
+	procedure dumpArray_strings (name: string; const s: Array of string; firstIndex: longint = 0);
 	var
-		ind, res: longint;
+		ind, res, val: longint;
 		f: TFileType;
 	begin
 		if length (s) = 0 then begin
@@ -1366,14 +1382,13 @@ end;
 		f := TFileType.Create (gPathToResult + name + '.txt', res, 'DUMPARRAY');
 		if (res = 0) then begin
 			f.aSync := false;
-			bWrite (f, ['index', tab]);
-			for ind := 0 to length (s) - 1 do
-				bWrite (f, [firstIndex + ind, tab]);
+			bWrite (f, ['index', tab, name]);
 			cWriteLn (f);
-			bWrite (f, [name, tab]);
-			for ind := 0 to length (s) - 1 do
-				bWrite (f, [s[ind], tab]);
-			cWriteLn (f);
+			for ind := 0 to length (s) - 1 do begin
+				val := firstIndex + ind;
+				bWrite (f, [val, tab, s[ind]]);
+				cWriteLn (f);
+			end;
 		end;
 		f.Destroy;
 	end;

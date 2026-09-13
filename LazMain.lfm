@@ -125,7 +125,7 @@ object KinFertForm: TKinFertForm
   object Reset_nRuns: TButton
     Left = 176
     Height = 25
-    Hint = 'Reset the simulation count (useful for graphs)'
+    Hint = 'Forget the results kept from earlier runs, so the graphs start again from the next simulation'
     Top = 104
     Width = 134
     Caption = 'Reset run count'

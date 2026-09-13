@@ -95,6 +95,39 @@ const
 				'grand father', 'grand mother', 'aunt-uncle', 'first cousin', 'first cousin once removed', 'first cousin twice removed', 'first cousin thrice removed',
 				'great grand father', 'great grand mother', 'grand aunt-uncle', 'great first cousin once removed', 'second cousin', 'second cousin once removed', 'second cousin twice removed',
 				'non-bio', 'total');
+
+	{Generation of each type of kin relative to ego, positive above ego for the ascendants,
+	 negative below for the descendants. A sibling, a first cousin and a second cousin all
+	 belong to ego's own generation and count 0, even though they require an ancestor one, two
+	 and three generations up.
+
+	 The kinship reconstruction builds the ascendant line one generation at a time: it takes a
+	 person already built and looks for that person's mother among the women whose birth
+	 histories were indexed. The cohort it queries is therefore about ego's cohort less the
+	 generation number times the mean age at childbearing, so the generation says how far back
+	 in time the index has to reach. Keeping the diagnostic counts by generation separates the
+	 lookups made for ego from those made for the more distant ascendants, which fall in quite
+	 different cohorts and are pooled into a single indistinct curve otherwise.
+
+	 The great grandparents and their offspring are the deepest kin the enumeration reaches, so
+	 the generation runs from -3, the great grandchildren, to +3.}
+	kMinKinGeneration = -3;
+	kMaxKinGeneration = 3;
+	kMaxAscendantGeneration = kMaxKinGeneration;
+	kNbKinGenerations = kMaxKinGeneration - kMinKinGeneration + 1;
+
+	kinGeneration : array [KinTypes] of longint = (
+				{none} 0, {ego} 0, {partner} 0, {child} -1, {grand child} -2, {great grand child} -3,
+				{father} 1, {mother} 1, {sibling} 0, {niece-nephew} -1, {grand niece-nephew} -2, {great grand niece-nephew} -3,
+				{grand father} 2, {grand mother} 2, {aunt-uncle} 1, {first cousin} 0, {first cousin once removed} -1, {first cousin twice removed} -2, {first cousin thrice removed} -3,
+				{great grand father} 3, {great grand mother} 3, {grand aunt-uncle} 2, {great first cousin once removed} 1, {second cousin} 0, {second cousin once removed} -1, {second cousin twice removed} -2,
+				{non-bio} 0, {total} 0);
+
+	{Names of the generations, for chart titles and series titles. 'ego' names the whole of ego's
+	 own generation, which holds ego, ego's partner, the siblings and the cousins.}
+	str_kinGeneration : array [kMinKinGeneration..kMaxKinGeneration] of string = (
+				'great grandchildren', 'grandchildren', 'children', 'ego',
+				'parents', 'grandparents', 'great grandparents');
 var
 {GLOBAL VARIABLES INITIALIZED WHEN THE PROGRAM STARTS, WHICH CAN CHANGE LATER, BUT BEFORE THE START OF THE SIMULATION}
 	gKinToSimulate: KinSetType = [kt_ego, kt_partner, kt_father, kt_mother, kt_sibling, kt_grandFather, kt_grandMother, kt_auntUncle, kt_child, kt_grandChild];
@@ -193,6 +226,11 @@ const
 	kInfoChildCheck = 1234567890;
 
 var
+	{Set properly by initGeneral at start up. It is also given a sane value in this unit's
+	 initialization below, because a zeroed TFormatSettings has #0 as its decimal separator
+	 and every number formatted before initGeneral runs would come out as "3 142" rather
+	 than "3.142". The checks in Verification.pas can now fire during initialisation, so
+	 that window is reachable.}
 	gFormatSettings: TFormatSettings;
 	
 type
@@ -242,7 +280,7 @@ type
 	typTabNupt = (normal, aggregated);
 	{'dead' is added AFTER 'any' on purpose: several arrays are indexed by this type and
 	 many loops run 'neverInUnion to any', so appending keeps every existing ordinal.}
-	PartnershipStatusesType = (neverInUnion, firstUnion, secondUnions, widow, separated, everInUnion, any, dead);
+	PartnershipStatusesType = (neverInUnion, firstUnion, secondUnions, widow, separated, everInUnion, any, dead, undefined);
 	// any = neverInUnion + firstUnion + secondUnions + widow + separated
 	// everInUnion = firstUnion + secondUnions + widow + separated
 	UnionGenStatesType = (ongoing, endedAge50);
@@ -693,6 +731,7 @@ type
 	fixedParameterKind = (	fixedUnionAge, noInitialSterility, fixedDefinitiveSterility, fixedAmenorrhea,
 							fixedFecundability, homogeneousFecundability, HighLowFecundability, reshuffledFecundability,
 							LeridonDefinitiveSterility, KinFertDefinitiveSterility, fixedIntrauterineMortality,
+							LeridonOverMagnusIntrauterine, BarrettOverUS2023Stillbirth,
 							homogeneousSeparation, normaldistributionfecundability, stdUnionDanielOrCampbellWood,
 							waitingTimeErlangPoisson
 						 );
@@ -1019,6 +1058,18 @@ type
 var
 {GLOBAL VARIABLES USED IN THE MAIN THREAD}
 	g_GENPARAM: GeneralParameters;
+	{The three output-format parameters are objects created by initGeneralCmd at start up,
+	 and they are nil until it has run. Anything that formats a number reads them, and the
+	 checks in Verification.pas format the numbers passed to them as context, so a check
+	 that fires before initGeneralCmd would dereference nil and bring the program down.
+	 outputAgesAsFloat, outputFloatingDigits and outputFloatingPrecision, declared at the end
+	 of this interface, read the parameter when it exists and fall back on these values
+	 otherwise, so formatting never crashes and the output is unchanged once the parameters
+	 are in place.}
+const
+	kDefaultFloatingDigits = 3;		{FLOATING_POINT_DIGITS as initGeneralCmd creates it}
+	kDefaultFloatingPrecision = 10;	{FLOATING_POINT_PRECISION as initGeneralCmd creates it}
+var
 	gWritingConfigFile: boolean = false;
 	
 const
@@ -1077,15 +1128,68 @@ var
 	gFecundability: array of double; {MODIFIABLE VIA CONFIG but constant with time}
 	gSchedule_temporary_sterility: array[0..kMaxMonthTemporarySterility] of double; {constant with time}
 	gDefinitive_sterility: array of double; {MODIFIABLE VIA CONFIG but constant with time}
+	gDefinitive_sterility_PW, gDefinitive_sterility_Leridon, gDefinitive_sterility_Kinfert: array of double; {alternative schedules}
 	gMean_fecundability: double; {constant}
 	gStdDev_fecundability: double; {constant}
 	gDistrib_fecundability: array of double; {MODIFICABLE VIA VARIABLES BELOW constant with time}
-	gFecundability_alpha, gFecundability_beta: double; {VARIABLE FOR ALTERING BETA FECUNDABILITY. AT THE MOMENT NOT ADJUSTABLE THROUGH CONFIG	 constant with time}
+	gFecundability_alpha, gFecundability_beta: double; {VARIABLE FOR ALTERING BETA FECUNDABILITY. AT THE MOMENT NOT ADJUSTABLE THROUGH CONFIG constant with time}
+	{Verification of the fecundability heterogeneity model. Filled only when the check
+	 is active, that is when the program runs from the IDE or in a debug session. See
+	 resetFecundabilityCheck and reportFecundabilityCheck in Fertility.pas.}
+	gCount_fecundability_draws: array [0..kMaxDistribFecundability] of longint;
+	gDistrib_fecundability_simulated: array [0..kMaxDistribFecundability] of double;
+
+	{What the simulation actually drew, counted during the run and turned into a curve at the
+	 end of it by reportFertilityChecks. Each observed curve is stored in the same form as the
+	 input it is read against, so that the two can be plotted on one chart: cumulative against
+	 a cumulative input, survival against a survival schedule, density against a density.}
+	gCount_ageSterile: array [kMinAgeFert..kMaxAgeFert] of longint;
+	gObserved_definitive_sterility: array [0..kMaxAgeFert] of double;				{cumulative, indexed by age like gDefinitive_sterility}
+	gCount_amenorrhea: array [0..kMaxMonthTemporarySterility] of longint;
+	gObserved_temporary_sterility: array [0..kMaxMonthTemporarySterility] of double;	{survival}
+	gCount_intrauterine_month: array [0..8] of longint;
+	gObserved_distrib_intrauterine: array [0..8] of double;							{cumulative}
+	{conceptions by the mother's age at conception, and how many of them ended in a spontaneous
+	 abortion or in a stillbirth, so that the two risk schedules can be read against what the
+	 run produced. The observed arrays are risks by age, in the same form as their input.}
+	gCount_conceptions: array [0..kMaxAgeFert] of longint;
+	gCount_intrauterine_byAge: array [0..kMaxAgeFert] of longint;
+	gCount_stillbirth_byAge: array [0..kMaxAgeFert] of longint;
+	gObserved_intrauterine_risk: array [0..kMaxAgeFert] of double;					{risk by age}
+	gObserved_stillbirth_risk: array [0..kMaxAgeFert] of double;					{risk by age}
+
+	{Each of these becomes true when the run fills the curve beside it, so that the graph window
+	 draws an observed curve only when there is something to draw. All false before the first
+	 run, and set false again when the counters are emptied.}
+	gHasObserved_definitive_sterility: boolean;
+	gHasObserved_temporary_sterility: boolean;
+	gHasObserved_distrib_intrauterine: boolean;
+	gHasObserved_intrauterine_risk: boolean;
+	gHasObserved_stillbirth_risk: boolean;
+	gHasObserved_fecundability: boolean;
+
+	{How many parameter settings this run has simulated. A sweep, or a run of several cohorts,
+	 simulates more than one, and the quantities that are read from the demographic regime differ
+	 between them: the amenorrhea schedule, the waiting time distributions of the spacing, the
+	 proportion female at birth, and the distribution of the month at which a pregnancy is lost.
+	 Those four are counted for the last setting alone, so that the observed curve is comparable
+	 with one input rather than with a mixture. The others are read from tables that do not
+	 change between settings, so they are counted over the whole run, which is more precise.}
+	gCountSimulationSettings: longint;
+
+	gCount_spacing: array [0..kMaxIndBirthIntervals, 0..kMaxDurationContraceptionInBirthIntervals] of longint;
+	gObserved_spacing: array [0..kMaxIndBirthIntervals, 0..kMaxDurationContraceptionInBirthIntervals] of double;	{cumulative}
+	gCount_birthsBySex: array [Sex] of longint;
 	
 	{intrauterine mortality and stillbirths}
 	gIntrauterine_mortality_risk: array of double; {MODIFIABLE VIA CONFIG but constant with time}
 	gDistrib_intrauterine_mortality_risk: array of double; {MODIFIABLE VIA CONFIG but constant with time}
 	gStillbirth_mortality_risk: array of double; {MODIFIABLE VIA CONFIG but constant with time}
+	{alternative schedules, in the same way as gDefinitive_sterility_PW, _Leridon and
+	 _Kinfert. The defaults are Magnus and US2023; INTRA_LERIDON_MAGNUS and
+	 STILLBIRTH_BARRETT_US2023 select the older Leridon and Barrett schedules instead.}
+	gIntrauterine_mortality_risk_Leridon, gIntrauterine_mortality_risk_Magnus: array of double;
+	gStillbirth_mortality_risk_Barrett, gStillbirth_mortality_risk_US2023: array of double;
 	
 {OUTPUT GLOBAL VARIABLES}
 {MOST OF THESE VARIABLES CHANGE AT RUNTIME, SO WE SHOULD *CHECK* AND *DETERMINE* WHICH ARE MODIFIED INSIDE A SPECIFIC THREAD}
@@ -1225,9 +1329,64 @@ Var
 	type
 		loopTypes = (k_onlyOne, k_first, k_second, k_last);
 		
+	{safe readers for the output-format parameters; see the note beside g_GENPARAM}
+	function outputAgesAsFloat: boolean;
+	function outputFloatingDigits: longint;
+	function outputFloatingPrecision: longint;
+
+	{Deepest ascendant generation the given set of kin requires, 0 when the set asks for no
+	 ascendant at all. Used to size the diagnostic arrays of Kinship and to label their charts.}
+	function maxAscendantGeneration (kinSet: KinSetType): longint;
+	{Row of the diagnostic arrays that holds a given generation, the generation clamped into
+	 [kMinKinGeneration, kMaxKinGeneration] first}
+	function kinGenerationRow (generation: longint): longint;
+
 implementation
 
 uses Memory, Utilities;
+
+	function outputAgesAsFloat: boolean;
+	begin
+		result := (g_GENPARAM.OUTPUT_INDIVIDUAL_AGE_FLOAT = nil) or
+					g_GENPARAM.OUTPUT_INDIVIDUAL_AGE_FLOAT.value;
+	end;
+
+	function outputFloatingDigits: longint;
+	begin
+		if (g_GENPARAM.outputs_fmt[res_floatingNumberDigits] = nil) then
+			result := kDefaultFloatingDigits
+		else
+			result := g_GENPARAM.outputs_fmt[res_floatingNumberDigits].value;
+	end;
+
+	function outputFloatingPrecision: longint;
+	begin
+		if (g_GENPARAM.outputs_fmt[res_floatingNumberPrecision] = nil) then
+			result := kDefaultFloatingPrecision
+		else
+			result := g_GENPARAM.outputs_fmt[res_floatingNumberPrecision].value;
+	end;
+
+	function maxAscendantGeneration (kinSet: KinSetType): longint;
+	var
+		k: KinTypes;
+		g: longint;
+	begin
+		result := 0;
+		for k := kFirstKinInEnum to kLastKinInEnum do
+			if (k in kinSet) then begin
+				g := kinGeneration [k];
+				if (g > kMaxAscendantGeneration) then g := kMaxAscendantGeneration;
+				if (g > result) then result := g;
+			end;
+	end;
+
+	function kinGenerationRow (generation: longint): longint;
+	begin
+		if (generation < kMinKinGeneration) then generation := kMinKinGeneration;
+		if (generation > kMaxKinGeneration) then generation := kMaxKinGeneration;
+		result := generation - kMinKinGeneration;
+	end;
 
 {$IFDEF LAZARUS_GUI}
 procedure defaultConfigFile;
@@ -1372,7 +1531,7 @@ end;
 	begin
 	end;
 	
-	procedure GenericName.copyMeTo (var toObj: GenericName);
+procedure GenericName.copyMeTo (var toObj: GenericName);
 	begin
 		if toObj = nil then exit;
 		toObj.name := name;
@@ -2234,5 +2393,11 @@ end;
 
 		hp := GetFPCHeapStatus;
 	end;
+
+initialization
+	{a decimal point before anyone has had a chance to set one; initGeneral overwrites this
+	 with the same thing once it runs}
+	gFormatSettings := DefaultFormatSettings;
+	gFormatSettings.DecimalSeparator := '.';
 
 end.

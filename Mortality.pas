@@ -7,14 +7,14 @@ uses
 	{$IFDEF UNIX}
 	cthreads,
 	{$ENDIF}
-	Declarations, RandomNumbers, Utilities, Math;
+	Declarations, RandomNumbers, Utilities, Verification, Math;
 	
 	function realAge (randomGenerator: TRandomNumberGenerator; age: double; midYear: boolean = true): double;
 
 	function calc_ageDeath (randomGenerator: TRandomNumberGenerator;
                             ageInit: agesLife;
-							survival: TabSurvival): double;
-	function calc_ageDeath0_3years (randomGenerator: TRandomNumberGenerator; age: agesLife; survival: TabSurvival): double;
+							survival: TabSurvival;
+							sex: Sex): double;
 	procedure calc_survival_men (e0: double; var survival: array of double);
 	procedure calc_survival_women (e0: double; var survival: array of double);
 
@@ -268,11 +268,31 @@ const
 			result := age;
 	end;
 
+	{Age at death, drawn from the survival table, for someone alive at ageInit.
+
+	Above age 1 the age within the year of death is drawn uniformly, which is a fair
+	approximation. It is not fair in the first year, where deaths concentrate in the
+	first days, so for a death before the first birthday we use the Coale and Demeny
+	approximation of L0, with the values of Andreev and Kingkade, 2015:
+		L0 = a.l0 + (1-a).l1
+		a = 0.35 for women and 0.33 for men, when q0 >= 0.1
+		a = 0.05 + 3 * q0 for women and 0.0425 + 2.875 * q0 for men, when q0 < 0.1
+	where a is the mean number of years lived in the interval by those who die in it,
+	against 0.5 under the uniform assumption.
+
+	The age within the first year is drawn from F(t) = t^k on (0,1), with k = a / (1 - a),
+	whose mean is exactly a. As q0 falls, a falls and the draw concentrates on the first
+	days. An alternative would be a continuous formula such as Bourgeois Pichat or
+	Heligman/Pollard/Rodgers, but neither carries a free parameter that reproduces a.
+
+	Either branch consumes one random draw after the search for the year of death, so
+	the length of the random sequence is the same as before the correction was added.}
 	function calc_ageDeath (randomGenerator: TRandomNumberGenerator;
                             ageInit: agesLife;
-							survival: TabSurvival): double;
+							survival: TabSurvival;
+							sex: Sex): double;
 		var
-			dummy: double;
+			dummy, a, q0, k: double;
 			age: agesLife;
 	begin
 		age := ageInit;
@@ -280,32 +300,27 @@ const
 		while (age < kMaxAgeLife) and (dummy < survival[age + 1]) do begin
 			Inc ( age );
 		end;
-		calc_ageDeath := age + randomGenerator.alea(0, 0.9999999999);
-	end;
-
-	function calc_ageDeath0_3years (randomGenerator: TRandomNumberGenerator; age: agesLife; survival: TabSurvival): double;
-	var
-		a, q0: double;
-	begin
-		if age = 0 then
-		begin
-		{For the first year, we apply the approximation of Coale and Demeny for the calculation of L0}
-		{L0 = a.l0 + (1-a).l1}
-		{with a=0.34 for q0 < 0.1}
-		{and a=0.463+2.9375 for q0 >= 0.1}
-		{a is the number of years lived in the age interval by the deceased of the interval}
-		{The uniform approximation is based on the assumption that a is equal to 0.5}
-		{This is corrected by multiplying the monthly value by the factor a / 0.5}
-		{It would be better to look for another continuous formula, such as Bourgeois Pichat or Heligman/Pollard/Rodgers}
-			q0 := 1 - survival[1] / survival[0];
-			if q0 < 0.1 then
-				a := 0.34
+		if age > 0 then
+			calc_ageDeath := age + randomGenerator.alea (0, 0.9999999999)
+		else begin
+			if (Length (survival) < 2) or (survival[0] <= 0.0) then
+				q0 := 0.0
 			else
-				a := 0.463 + 2.9375 * q0;
-			calc_ageDeath0_3years := ( 1.0 * max ( 1, round(randomGenerator.alea(0.500001, 12.499999 * 0.5 / a) * a / 0.5) ) ) / 12.0;
-		end else
-		begin
-			calc_ageDeath0_3years := ( age * 12.0 + round(randomGenerator.alea(0.500001, 12.499999)) ) / 12.0;
+				q0 := 1.0 - survival[1] / survival[0];
+			if q0 >= 0.1 then begin
+				if sex = woman then
+					a := 0.35
+				else
+					a := 0.33;
+			end else begin
+				if sex = woman then
+					a := 0.05 + 3.0 * q0
+				else
+					a := 0.0425 + 2.875 * q0;
+			end;
+			k := a / (1.0 - a);
+			{the floor of half a day keeps ageToLunarMonths on its positive branch}
+			calc_ageDeath := max (1.0 / 730.0, power (randomGenerator.alea0, 1.0 / k));
 		end;
 	end;
 
@@ -329,9 +344,16 @@ const
 		ageAlive: agesLife;
 	begin
 	
-		{find a survival table in the model life table by interpolation}
-		if (e0 < lifeTable_e0_min) or (e0 > lifeTable_e0_max) then
-			writeAndWait('e0 too low or too high');
+		{Find a survival table in the model life table by interpolation}
+		
+		// case of e0 out of range: warning
+		if checkFalse (chk_mor_e0OutOfRange,
+						(e0 < lifeTable_e0_min) or (e0 > lifeTable_e0_max),
+						['asked for ', e0, ', used ',
+						 min (max (e0, lifeTable_e0_min), lifeTable_e0_max)]) then
+			breakOnFailure;
+		// case of e0 out of range: we reset it into the legal range of values
+		e0 := min (max (e0, lifeTable_e0_min), lifeTable_e0_max);
 		
 		ind_max := numLifeTable;
 		for i := 2 to numLifeTable do
@@ -342,8 +364,6 @@ const
 		ind_min := ind_max - 1;
 		e0_min := lifeTable_e0 [ind_min];
 		e0_max := lifeTable_e0 [ind_max];
-		
-		if (e0_max > lifeTable_e0_max) then e0_max := lifeTable_e0_max;
 		
 		for ageGroup := low(lifeTable_ageGroups) to high (lifeTable_ageGroups) do begin
 			survival_ageGroup[ageGroup] := lifeTable[ind_min, ageGroup] + (lifeTable[ind_max, ageGroup] - lifeTable[ind_min, ageGroup]) * (e0 - e0_min) / (e0_max - e0_min);

@@ -133,7 +133,10 @@ type
 implementation
 {$R *.lfm}
 uses
-	Declarations, ReadCmdFileUnit, {$IFDEF VerboseProfiler}Profiler,{$ENDIF} Init;
+	Declarations, ReadCmdFileUnit, {$IFDEF VerboseProfiler}Profiler,{$ENDIF} Init, Verification;
+	{Verification is used here only for verificationFailures, to say how many checks failed.
+	 It sits in the implementation clause, where a reference back to Utilities, which itself
+	 refers to this unit, costs nothing.}
 
 var
 	deltaLogWidth, deltaLogHeight: longint;
@@ -397,6 +400,10 @@ begin
 end;
 
 procedure TKinFertForm.Reset_nRunsClick(Sender: TObject);
+{Forgets the results kept from earlier runs. g_nRuns and g_nRuns_aggrKinship count the simulations
+ made since the program started, and the output charts draw one curve per simulation, so without
+ this the curves accumulate from run to run. clearResults sets both counts back to zero and
+ releases the stored tables, so the next run is again the first.}
 begin
 	if gSimulationRunning then begin
 		exit;
@@ -447,15 +454,25 @@ timeProfile_start();
 end;
 
 procedure TKinFertForm.endSimulation(Sender: TObject);
+var
+	errorMessage: string;
 begin
 	self.FlushString({%H-}PtrInt(nil));
 	self.statusCaption ('finished, simulation: ' + IntToStr (g_nRuns));
 	simulationRan := True;
 	if gDebugError then begin
 		errorShape.brush.color := clRed;
-		errorShape.Hint := 'Error in the code. Look at the debug file...';
+		{a failed check sets gDebugError, so say how many failed and where to read them. A
+		 message written the old way, through writeAndWait, leaves the count at zero and
+		 keeps the wording it had before.}
+		if (verificationFailures > 0) then
+			errorMessage := IntToStr (verificationFailures) +
+				' verification failures. See the table at the end of the memo, and verification.txt in the results folder'
+		else
+			errorMessage := 'Error in the code. Look at the debug file...';
+		errorShape.Hint := errorMessage;
 		errorShape.ShowHint := true;
-		self.statusCaption ('Error in the code. Look at the debug file...');
+		self.statusCaption (errorMessage);
 	end;
 
 	gSimulationRunning := false;

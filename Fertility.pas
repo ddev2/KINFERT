@@ -9,7 +9,7 @@ uses
 	{$IFDEF UNIX}
 	cthreads,
 	{$ENDIF}
-	Declarations, RandomNumbers, Utilities, Math, SysUtils, Memory
+	Declarations, RandomNumbers, Utilities, Verification, Math, SysUtils, Memory
     {$IFDEF VerboseProfiler}, Profiler{$ENDIF}
     ;
 
@@ -29,6 +29,13 @@ uses
 	procedure fixParameter (kind: fixedParameterKind; value: double);
 
 	procedure normalHeterogeneityFecundability (mean, stdDev: double);
+	procedure betaHeterogeneityFecundability (alpha, beta: double);
+
+	procedure resetFecundabilityCheck;
+	procedure reportFecundabilityCheck;
+	function definitiveSterilityModelName: string;
+	function intrauterineRiskModelName: string;
+	function stillbirthRiskModelName: string;
 
 	procedure init_temporary_sterility (p: pStructDemographicRegimeSettings; alpha, beta: double);
 	function init_waiting_time_distribution (
@@ -71,7 +78,18 @@ uses
 	procedure calcFertility_NC (const distNC: array of longint; out TFR, VARIANCE: double);
 
 implementation
-	
+
+// >>> Claude 2026-09-12 start
+const
+	{How far the mean a waiting time distribution delivers may stand from the mean asked for,
+	 in years, before chk_fer_waitingTimeMean counts it a failure. The distribution is built on
+	 whole lunar months and is cut off at the end of its array, so the two cannot agree exactly;
+	 measured over the ranges the program uses, the gap is under a thousandth of a year. Twenty
+	 thousandths leaves room for a long mean in a short array and still catches an error of the
+	 kind the rate used to cause, which was a factor of more than three.}
+	kWaitingTimeMeanTolerance = 0.02;
+// <<< Claude 2026-09-12 end
+
 	function ageToLunarMonths (age: double): longint;
 	begin
 		if age > 0 then
@@ -121,7 +139,6 @@ implementation
 			end;
 			for ind := paramVal to kMaxMonthTemporarySterility do
 				p^.temporary_sterility [ind] := 0;
-			
 			exit;
 			
 		end else begin
@@ -187,20 +204,104 @@ implementation
 	end;
 	
 	function gamma (z: double): double;
-	{Gergő Nemes's approximation}
+	{Gergő Nemes's approximation. No longer used by the Erlang waiting time, which works with
+	 the logarithm of the gamma function instead, but left here since it is a general routine.}
 	var
 		res: double;
 	begin
 		res := 0.5 * ( ln (2* pi) - ln (z) ) + z * ( ln ( z + 1 / ( 12 * z - 1 / (10 * z) ) ) - 1);
 		result := exp (res);
 	end;
+
+// >>> Claude 2026-09-12 start
+	function lnGammaFn (z: double): double;
+	{The logarithm of the gamma function, by the Lanczos approximation with g = 7 and nine
+	 coefficients, which holds about fifteen significant digits for a positive argument. The
+	 logarithm rather than the function itself, because the incomplete gamma below needs it
+	 inside an exponential and Gamma (z) itself passes the range of a double at z = 171.}
+	const
+		kLanczos_g = 7.0;
+		kLanczos: array [0..8] of double = (
+			0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+			771.32342877765313, -176.61502916214059, 12.507343278686905,
+			-0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7);
+	var
+		x, t, sum: double;
+		i: longint;
+	begin
+		x := z - 1.0;
+		sum := kLanczos [0];
+		for i := 1 to 8 do
+			sum := sum + kLanczos [i] / (x + i);
+		t := x + kLanczos_g + 0.5;
+		result := 0.5 * ln (2 * pi) + (x + 0.5) * ln (t) - t + ln (sum);
+	end;
+
+	function gammaP (a, x: double): double;
+	{The regularised lower incomplete gamma function, that is the distribution function of a
+	 gamma variate of shape a and rate one evaluated at x. The series below converges quickly
+	 for x under a + 1 and the continued fraction for x above it, which is the standard
+	 division; both are written in logarithms, so no intermediate can overflow.
+
+	 It is here so that the Erlang waiting time can be written as a distribution function
+	 rather than as a sum of densities: the array then needs no normalisation, since it is a
+	 distribution function by construction.
+
+	 Checked against three closed forms to twelve decimals: P(1, x) = 1 - exp(-x),
+	 P(2, x) = 1 - (1 + x) exp(-x), and P(0.5, x) = erf(sqrt(x)).}
+	const
+		kMaxIterations = 300;
+		kRelativeAccuracy = 3.0e-14;
+		kTinyDouble = 1.0e-300;
+	var
+		ap, del, sum, b, c, d, h, an: double;
+		i: longint;
+	begin
+		result := 0.0;
+		if (x <= 0.0) or (a <= 0.0) then exit;
+		if (x < a + 1.0) then begin
+			{series}
+			ap := a;
+			del := 1.0 / a;
+			sum := del;
+			for i := 1 to kMaxIterations do begin
+				ap := ap + 1.0;
+				del := del * x / ap;
+				sum := sum + del;
+				if (abs (del) < abs (sum) * kRelativeAccuracy) then break;
+			end;
+			result := sum * exp (-x + a * ln (x) - lnGammaFn (a));
+		end else begin
+			{continued fraction, in the modified Lentz form, for the complement}
+			b := x + 1.0 - a;
+			c := 1.0 / kTinyDouble;
+			d := 1.0 / b;
+			h := d;
+			for i := 1 to kMaxIterations do begin
+				an := -i * (i - a);
+				b := b + 2.0;
+				d := an * d + b;
+				if (abs (d) < kTinyDouble) then d := kTinyDouble;
+				c := b + an / c;
+				if (abs (c) < kTinyDouble) then c := kTinyDouble;
+				d := 1.0 / d;
+				del := d * c;
+				h := h * del;
+				if (abs (del - 1.0) < kRelativeAccuracy) then break;
+			end;
+			result := 1.0 - exp (-x + a * ln (x) - lnGammaFn (a)) * h;
+		end;
+		{rounding can put the result a hair outside its range}
+		if (result < 0.0) then result := 0.0;
+		if (result > 1.0) then result := 1.0;
+	end;
+// <<< Claude 2026-09-12 end
 	
 	procedure init_waiting_time_distribution_Erlang (maxDuration: longint; var arrayDurationAcc: array of double; mean, propContraception: double; lambda: double = 1);
 	var
 		k: double;
 		i: longint;
-		last, temp: double;
-		fact: double;
+		last: double;
 		mean_check: double;
 	begin
 		if (mean = 0.0) or (propContraception = 0) then
@@ -212,20 +313,53 @@ implementation
 			for i := 0 to maxDuration do
 				arrayDurationAcc [i] := 0.0;
 
-			k := mean * kNbLunarMonths;
-			last := 0.0;
-			fact := gamma (k);
-			mean_check := 0.0;
+// >>> Claude 2026-09-12 start
+			{**The Erlang waiting time, rewritten.** Three faults are corrected, and the array is
+			 built as a distribution function rather than as an accumulated sum of densities, so
+			 that it needs no normalisation.
 
+			 (a) The shape now carries the rate. An Erlang of shape k and rate lambda has mean
+			 k / lambda, and k was set from the mean alone. The two repartnering calls in
+			 Nuptiality pass lambda = 0.3, so those two distributions had a mean 1 / 0.3, that
+			 is 3.33 times, larger than the value the user asked for: a mean of 5 years was
+			 delivered as 16.7. The five calls in DemographicRegime pass the default lambda = 1
+			 and were right for that reason alone.
+
+			 (b) No term is evaluated at zero. The old line called power (i, k - 1) at i = 0,
+			 which is zero raised to a negative power for a shape below one, and zero raised to
+			 zero for the exponential case. Nothing is evaluated at a point now: each cell is
+			 the distribution function at the upper edge of the month it stands for.
+
+			 (c) No normalisation, and none needed. The old code summed the DENSITY at each
+			 whole month and then forced the last cell to 1. A sum of densities is not a sum of
+			 probabilities: for a small shape it passes 1 well before the end of the array, so
+			 the cumulative curve saturated early and the tail of the distribution was dead. A
+			 mean of three months came out as three and a half. Each cell now holds
+			 P(k, lambda * (i + 0.5)), the probability that the wait is nearer to i months than
+			 to any other whole number, accumulated by construction and bounded by 1. The last
+			 cell is still forced to 1, which puts the tail beyond the end of the array into the
+			 last month, exactly as the Poisson version above does.
+
+			 What it changes in practice. With lambda = 1 the two forms agree: the delivered mean
+			 was already the mean asked for and the largest gap between the two cumulative curves
+			 is 0.001, so the contraception and spacing distributions barely move. Repartnering
+			 moves by the factor of 3.33.}
+			k := mean * kNbLunarMonths * lambda;
 			for i := 0 to maxDuration do
-			begin
-				temp := power (lambda, k) * power (i, k - 1) * exp ( - lambda * i ) / fact;
-				mean_check := mean_check + i * temp;
-				arrayDurationAcc [i] := temp + last;
+				arrayDurationAcc [i] := gammaP (k, lambda * (i + 0.5));
+
+			{the mean the array actually delivers, in years, read against the mean asked for}
+			mean_check := 0.0;
+			last := 0.0;
+			for i := 0 to maxDuration do begin
+				mean_check := mean_check + i * (arrayDurationAcc [i] - last);
 				last := arrayDurationAcc [i];
 			end;
-			mean_check := ( mean_check ) / kNbLunarMonths;
-			arrayDurationAcc [maxDuration] := 1.0;			
+			mean_check := mean_check / kNbLunarMonths;
+			checkValue (chk_fer_waitingTimeMean, mean_check, mean, kWaitingTimeMeanTolerance);
+
+			arrayDurationAcc [maxDuration] := 1.0;
+// <<< Claude 2026-09-12 end
 		end;
 	end;
 	
@@ -301,10 +435,150 @@ implementation
 		for i := 22 to kMaxAgeFert do
 			gFecundability[i] := gFecundability[i-1];
 		
-		for i := 10 to kMaxAgeFert do
+		for i := kMinAgeFert to kMaxAgeFert do
 			gFecundability[i] := gFecundability[i] * 12 / kNbLunarMonths;
 	end;
 	
+	{ --------------------------------------------------------------------------------
+	  Verification of the fecundability heterogeneity model
+
+	  resetFecundabilityCheck empties the histogram of drawn levels and is called at the
+	  end of every rebuild of gDistrib_fecundability, so that the counts always refer to
+	  the distribution in force. fecundabilityLevel then counts each draw, and
+	  reportFecundabilityCheck compares the simulated distribution with the theoretical
+	  one at the end of the run.
+
+	  The check always runs. It costs one atomic increment per draw, which is about five
+	  nanoseconds more than an ordinary increment, so a run drawing ten million levels
+	  spends some fifty milliseconds on it. The increment has to be atomic: fecundabilityLevel
+	  is called from the cohort worker threads. Only the two dump files are kept for runs
+	  from the IDE, since they are written into the results folder; the summary in the memo
+	  and gDistrib_fecundability_simulated, which the graph window plots against the
+	  theoretical curve, are produced on every run.
+
+	  What the comparison can and cannot show. The simulated histogram is compared with
+	  the distribution stored in gDistrib_fecundability, so it verifies the inverse-CDF
+	  sampler and the random number generator. It cannot verify the formula that built
+	  gDistrib_fecundability, since that array is at once the source of the draws and the
+	  standard of comparison. The report therefore also gives the mean and the standard
+	  deviation of the built grid itself, which can be read against the parameters
+	  requested from normalHeterogeneityFecundability or betaHeterogeneityFecundability.
+	  For the normal the two will not agree exactly: the grid is truncated at p = 0,
+	  which raises the mean and lowers the standard deviation, so 0.23 and 0.12 become
+	  about 0.238 and 0.112. For the beta they should agree to the precision of the grid.
+
+	  On the index: the sampler returns the smallest i in [1, kMaxDistribFecundability]
+	  whose cumulative value reaches the draw, so the theoretical probability of i = 1 is
+	  gDistrib_fecundability[1], which absorbs cell 0, and that of i > 1 is the difference
+	  between two consecutive cumulative values. The theoretical column below is built
+	  that way, so a correct sampler shows no gap at the first cell.
+	  -------------------------------------------------------------------------------- }
+	procedure resetFecundabilityCheck;
+		var
+			i: longint;
+	begin
+		for i := 0 to kMaxDistribFecundability do begin
+			gCount_fecundability_draws [i] := 0;
+			gDistrib_fecundability_simulated [i] := 0.0;
+		end;
+		gHasObserved_fecundability := false;
+	end;
+
+	procedure reportFecundabilityCheck;
+		var
+			i, nDraws: longint;
+			theoretical: array [0..kMaxDistribFecundability] of double;
+			p, w: double;
+			meanSim, meanThe, sdSim, sdThe: double;
+			sumSqSim, sumSqThe: double;
+			cumSim, cumThe, gap, maxGap, pAtMaxGap: double;
+	begin
+		nDraws := 0;
+		for i := 0 to kMaxDistribFecundability do
+			nDraws := nDraws + gCount_fecundability_draws [i];
+
+		if (nDraws = 0) then begin
+			memoWriteLn (['Fecundability heterogeneity check: no draw recorded. Either no woman ',
+				'was simulated, or the fixed parameter homogeneousFecundability is set.']);
+			exit;
+		end;
+
+		{probability of each index, as the sampler sees it}
+		theoretical [0] := 0.0;
+		theoretical [1] := gDistrib_fecundability [1];
+		for i := 2 to kMaxDistribFecundability do
+			theoretical [i] := gDistrib_fecundability [i] - gDistrib_fecundability [i-1];
+
+		{the verdict goes into the verification table; the lines below stay in the memo
+		 because they carry the demography rather than the statistic}
+		checkDistribution (chk_fecundabilityDraws, gCount_fecundability_draws, theoretical);
+
+		meanSim := 0.0; meanThe := 0.0; sumSqSim := 0.0; sumSqThe := 0.0;
+		for i := 0 to kMaxDistribFecundability do begin
+			p := 1.0 * i / kMaxDistribFecundability;
+			w := gCount_fecundability_draws [i] / nDraws;
+			gDistrib_fecundability_simulated [i] := w;
+			gHasObserved_fecundability := true;
+			meanSim := meanSim + w * p;
+			sumSqSim := sumSqSim + w * p * p;
+			meanThe := meanThe + theoretical [i] * p;
+			sumSqThe := sumSqThe + theoretical [i] * p * p;
+		end;
+		sdSim := sqrt (max (0.0, sumSqSim - meanSim * meanSim));
+		sdThe := sqrt (max (0.0, sumSqThe - meanThe * meanThe));
+
+		{largest distance between the two cumulative distributions}
+		cumSim := 0.0; cumThe := 0.0; maxGap := 0.0; pAtMaxGap := 0.0;
+		for i := 0 to kMaxDistribFecundability do begin
+			cumSim := cumSim + gDistrib_fecundability_simulated [i];
+			cumThe := cumThe + theoretical [i];
+			gap := abs (cumSim - cumThe);
+			if (gap > maxGap) then begin
+				maxGap := gap;
+				pAtMaxGap := 1.0 * i / kMaxDistribFecundability;
+			end;
+		end;
+
+		memoWriteLn (['--- Fecundability heterogeneity check ---']);
+		memoWriteLn (['Draws recorded: ', nDraws]);
+		memoWriteLn (['Theoretical grid in force: mean ', meanThe, ', standard deviation ', sdThe]);
+		memoWriteLn (['Parameters requested: mean ', gMean_fecundability, ', standard deviation ',
+			gStdDev_fecundability, ' (normal); alpha ', gFecundability_alpha, ', beta ', gFecundability_beta, ' (beta)']);
+		memoWriteLn (['Simulated women: mean ', meanSim, ', standard deviation ', sdSim]);
+		memoWriteLn (['Mean multiplier applied to gFecundability: simulated ', meanSim / gMean_fecundability,
+			', theoretical ', meanThe / gMean_fecundability, '. The two agree when the sampler is unbiased. ',
+			'Both are above 1 when the grid is truncated, which is the case for a normal centred on 0.23.']);
+		memoWriteLn (['Largest gap between the simulated and the theoretical cumulative distribution: ',
+			maxGap, ' at fecundability ', pAtMaxGap]);
+		memoWriteLn (['Kolmogorov-Smirnov 5 per cent band for this number of draws: ', 1.36 / sqrt (1.0 * nDraws),
+			'. With several million draws that band is very narrow, so read the size of the gap itself.']);
+
+		{written only from the IDE, like the other dumps in this unit, to keep them out of
+		 the results folder of an ordinary run}
+		if gRunFromIDE then begin
+			dumpArray ('fecundability_simulated', gDistrib_fecundability_simulated);
+			dumpArray ('fecundability_theoretical', theoretical);
+		end;
+	end;
+
+	function definitiveSterilityModelName: string;
+	{Which of the three models wrote gDefinitive_sterility for this run. All three write the
+	 same array, and both the draw and the check read that array, so the comparison is always
+	 against the model actually in use. This is for the chart title.}
+	begin
+		if g_GENPARAM.fixedParameters [LeridonDefinitiveSterility].state.value then
+			result := 'Leridon'
+		else if g_GENPARAM.fixedParameters [KinFertDefinitiveSterility].state.value then
+			result := 'KinFert'
+		else
+			result := 'Pittinger and Wood';
+		if g_GENPARAM.fixedParameters [noInitialSterility].state.value then
+			result := result + ', no initial sterility';
+		if g_GENPARAM.fixedParameters [fixedDefinitiveSterility].state.value then
+			result := result + ', fixed after age ' +
+					IntToStr (round (g_GENPARAM.fixedParameters [fixedDefinitiveSterility].param.value));
+	end;
+
 	procedure betaHeterogeneityFecundability (alpha, beta: double);
 		var
 			i: longint;
@@ -333,15 +607,17 @@ implementation
 		for i := 0 to kMaxDistribFecundability do
 			gDistrib_fecundability [i] := gDistrib_fecundability [i] / tot;
 		
+		if gRunFromIDE then
+			dumpArray ('gDistrib_fecundability_beta', gDistrib_fecundability);
+
+		// cumulative function
 		for i := 1 to kMaxDistribFecundability do
 			gDistrib_fecundability [i] := gDistrib_fecundability [i] + gDistrib_fecundability [i-1];
 		
 		gDistrib_fecundability [kMaxDistribFecundability] := 1.0;
 		
-		if gRunFromIDE then
-			dumpArray ('gDistrib_fecundability_beta', gDistrib_fecundability);
-
 		initFecundability ();
+		resetFecundabilityCheck;
 	end;
 	
 	procedure normalHeterogeneityFecundability (mean, stdDev: double);
@@ -397,16 +673,17 @@ implementation
 		for i := 0 to kMaxDistribFecundability do
 			gDistrib_fecundability [i] := gDistrib_fecundability [i] / tot;
 
+		if gRunFromIDE then
+			dumpArray ('gDistrib_fecundability_normal', gDistrib_fecundability);
+
 		// cumulative function
 		for i := 1 to kMaxDistribFecundability do
 			gDistrib_fecundability [i] := gDistrib_fecundability [i] + gDistrib_fecundability [i-1];
 
 		gDistrib_fecundability [kMaxDistribFecundability] := 1.0;
 
-		if gRunFromIDE then
-			dumpArray ('gDistrib_fecundability_normal', gDistrib_fecundability);
-
 		initFecundability ();
+		resetFecundabilityCheck;
 	end;
 	
 	procedure normalHeterogeneityFecundability_old (mean, stdDev: double);
@@ -436,16 +713,12 @@ implementation
 		for i := 0 to kMaxDistribFecundability do
 			gDistrib_fecundability [i] := gDistrib_fecundability [i] / tot;
 		
-		
 		// cumulative function
 		for i := 1 to kMaxDistribFecundability do
 			gDistrib_fecundability [i] := gDistrib_fecundability [i] + gDistrib_fecundability [i-1];
 		
 		gDistrib_fecundability [kMaxDistribFecundability] := 1.0;
 
-		if gRunFromIDE then
-			dumpArray ('gDistrib_fecundability', gDistrib_fecundability);
-			
 		initFecundability ();
 	end;
 	
@@ -456,32 +729,299 @@ implementation
 	begin
 		{Pittinger / Wood}
 		for ageWomen := kMinAgeFert to kMaxAgeFert do
-			gDefinitive_sterility[ageWomen] := 1 - exp(0.00043 * (1 - power (1.14345, ageWomen - 5.67)) / ln (1.14345) );
-		gDefinitive_sterility[kMaxAgeFert] := 1.0;
-		
-		{Léridon 2004, rétropolé et extrapolé par ajustement d'un polynome du troisième degré}
+			gDefinitive_sterility_PW[ageWomen] := 1 - exp(0.00043 * (1 - power (1.14345, ageWomen - 5.67)) / ln (1.14345) );
+		gDefinitive_sterility_PW[kMaxAgeFert] := 1.0;
+		gDefinitive_sterility := copy (gDefinitive_sterility_PW);
+		{Kinfert}
+		gDefinitive_sterility_Kinfert[10] := 0.01;
+		gDefinitive_sterility_Kinfert[11] := 0.0115;
+		gDefinitive_sterility_Kinfert[12] := 0.013;
+		gDefinitive_sterility_Kinfert[13] := 0.0145;
+		gDefinitive_sterility_Kinfert[14] := 0.016;
+		gDefinitive_sterility_Kinfert[15] := 0.0175;
+		gDefinitive_sterility_Kinfert[16] := 0.019;
+		gDefinitive_sterility_Kinfert[17] := 0.0205;
+		gDefinitive_sterility_Kinfert[18] := 0.022;
+		gDefinitive_sterility_Kinfert[19] := 0.0235;
+		gDefinitive_sterility_Kinfert[20] := 0.025;
+		gDefinitive_sterility_Kinfert[21] := 0.0265;
+		gDefinitive_sterility_Kinfert[22] := 0.028;
+		gDefinitive_sterility_Kinfert[23] := 0.0295;
+		gDefinitive_sterility_Kinfert[24] := 0.031;
+		gDefinitive_sterility_Kinfert[25] := 0.0325;
+		gDefinitive_sterility_Kinfert[26] := 0.035;
+		gDefinitive_sterility_Kinfert[27] := 0.03722199;
+		gDefinitive_sterility_Kinfert[28] := 0.040377765;
+		gDefinitive_sterility_Kinfert[29] := 0.045386742;
+		gDefinitive_sterility_Kinfert[30] := 0.05167339;
+		gDefinitive_sterility_Kinfert[31] := 0.060726363;
+		gDefinitive_sterility_Kinfert[32] := 0.073012125;
+		gDefinitive_sterility_Kinfert[33] := 0.088836923;
+		gDefinitive_sterility_Kinfert[34] := 0.108178073;
+		gDefinitive_sterility_Kinfert[35] := 0.131531607;
+		gDefinitive_sterility_Kinfert[36] := 0.159840247;
+		gDefinitive_sterility_Kinfert[37] := 0.192559791;
+		gDefinitive_sterility_Kinfert[38] := 0.227886378;
+		gDefinitive_sterility_Kinfert[39] := 0.264109658;
+		gDefinitive_sterility_Kinfert[40] := 0.3;
+		gDefinitive_sterility_Kinfert[41] := 0.335109658;
+		gDefinitive_sterility_Kinfert[42] := 0.371886378;
+		gDefinitive_sterility_Kinfert[43] := 0.416559791;
+		gDefinitive_sterility_Kinfert[44] := 0.496840247;
+		gDefinitive_sterility_Kinfert[45] := 0.626531607;
+		gDefinitive_sterility_Kinfert[46] := 0.751178073;
+		gDefinitive_sterility_Kinfert[47] := 0.838836923;
+		gDefinitive_sterility_Kinfert[48] := 0.899012125;
+		gDefinitive_sterility_Kinfert[49] := 0.931726363;
+		gDefinitive_sterility_Kinfert[50] := 0.95067339;
+		gDefinitive_sterility_Kinfert[51] := 0.965386742;
+		gDefinitive_sterility_Kinfert[52] := 0.978377765;
+		gDefinitive_sterility_Kinfert[53] := 0.99022199;
+		gDefinitive_sterility_Kinfert[54] := 0.996;
+		gDefinitive_sterility_Kinfert[55] := 0.997;
+		gDefinitive_sterility_Kinfert[56] := 0.998;
+		gDefinitive_sterility_Kinfert[57] := 0.9985;
+		gDefinitive_sterility_Kinfert[58] := 0.9991;
+		gDefinitive_sterility_Kinfert[59] := 1;
+		{Leridon 2008}
+		gDefinitive_sterility_Leridon[10] := 0.01;
+		gDefinitive_sterility_Leridon[11] := 0.01;
+		gDefinitive_sterility_Leridon[12] := 0.01;
+		gDefinitive_sterility_Leridon[13] := 0.01;
+		gDefinitive_sterility_Leridon[14] := 0.01;
+		gDefinitive_sterility_Leridon[15] := 0.01;
+		gDefinitive_sterility_Leridon[16] := 0.01;
+		gDefinitive_sterility_Leridon[17] := 0.01;
+		gDefinitive_sterility_Leridon[18] := 0.01;
+		gDefinitive_sterility_Leridon[19] := 0.01;
+		gDefinitive_sterility_Leridon[20] := 0.01;
+		gDefinitive_sterility_Leridon[21] := 0.01;
+		gDefinitive_sterility_Leridon[22] := 0.01;
+		gDefinitive_sterility_Leridon[23] := 0.01;
+		gDefinitive_sterility_Leridon[24] := 0.01;
+		gDefinitive_sterility_Leridon[25] := 0.01;
+		gDefinitive_sterility_Leridon[26] := 0.011;
+		gDefinitive_sterility_Leridon[27] := 0.012;
+		gDefinitive_sterility_Leridon[28] := 0.014;
+		gDefinitive_sterility_Leridon[29] := 0.017;
+		gDefinitive_sterility_Leridon[30] := 0.02;
+		gDefinitive_sterility_Leridon[31] := 0.024;
+		gDefinitive_sterility_Leridon[32] := 0.029;
+		gDefinitive_sterility_Leridon[33] := 0.035;
+		gDefinitive_sterility_Leridon[34] := 0.042;
+		gDefinitive_sterility_Leridon[35] := 0.051;
+		gDefinitive_sterility_Leridon[36] := 0.064;
+		gDefinitive_sterility_Leridon[37] := 0.082;
+		gDefinitive_sterility_Leridon[38] := 0.105;
+		gDefinitive_sterility_Leridon[39] := 0.133;
+		gDefinitive_sterility_Leridon[40] := 0.166;
+		gDefinitive_sterility_Leridon[41] := 0.204;
+		gDefinitive_sterility_Leridon[42] := 0.249;
+		gDefinitive_sterility_Leridon[43] := 0.306;
+		gDefinitive_sterility_Leridon[44] := 0.401;
+		gDefinitive_sterility_Leridon[45] := 0.546;
+		gDefinitive_sterility_Leridon[46] := 0.685;
+		gDefinitive_sterility_Leridon[47] := 0.785;
+		gDefinitive_sterility_Leridon[48] := 0.855;
+		gDefinitive_sterility_Leridon[49] := 0.895;
+		gDefinitive_sterility_Leridon[50] := 0.919;
+		gDefinitive_sterility_Leridon[51] := 0.937;
+		gDefinitive_sterility_Leridon[52] := 0.952;
+		gDefinitive_sterility_Leridon[53] := 0.965;
+		gDefinitive_sterility_Leridon[54] := 0.976;
+		gDefinitive_sterility_Leridon[55] := 0.985;
+		gDefinitive_sterility_Leridon[56] := 0.991;
+		gDefinitive_sterility_Leridon[57] := 0.996;
+		gDefinitive_sterility_Leridon[58] := 0.999;
+		gDefinitive_sterility_Leridon[59] := 1;
+
+		{-------- intrauterine mortality risk by age: two alternative schedules --------}
+		{Léridon 2004, rétropolé et extrapolé par ajustement d'un polynome du troisième degré.
+		 A cubic cannot reproduce the J shape: it has no minimum, it runs about 35 per cent
+		 above the observed level through the twenties, and it understates the near
+		 exponential rise after 38 (0.315 against 0.536 at age 45).}
 		for ageWomen := kMinAgeFert to kMaxAgeFert do
-			gIntrauterine_mortality_risk[ageWomen] := 0.05091517857 + 0.0093172619 * ageWomen - 0.00046642857 * ageWomen * ageWomen + 0.00000866667 * ageWomen * ageWomen * ageWomen;
-		gIntrauterine_mortality_risk[kMaxAgeFert] := 1.0;
+			gIntrauterine_mortality_risk_Leridon[ageWomen] := 0.05091517857 + 0.0093172619 * ageWomen - 0.00046642857 * ageWomen * ageWomen + 0.00000866667 * ageWomen * ageWomen * ageWomen;
+		gIntrauterine_mortality_risk_Leridon[kMaxAgeFert] := 1.0;
 
-		{Barrett 1978}
+		{Magnus, Wilcox, Morken, Weinberg and Haberg (2019), BMJ 364:l869: the whole Norwegian
+		 register 2009-2013, 421,201 pregnancies, risk of miscarriage by maternal age, overall
+		 12.8 per cent. Anchors at the published group midpoints (15.8 per cent under 20, 11.2
+		 at 20-24, 9.8 at 25-29 with the minimum 9.5 at age 27, 10.8 at 30-34, 16.7 at 35-39,
+		 32.2 at 40-44, 53.6 at 45 and over), interpolated by single year of age with a
+		 monotone cubic on the logit scale. Held flat below 18, where the source has one open
+		 group only. These are CLINICALLY RECOGNISED pregnancies, the same basis as the
+		 fecundability parameter, so the two are consistent.}
+		gIntrauterine_mortality_risk_Magnus[10] := 0.170000;
+		gIntrauterine_mortality_risk_Magnus[11] := 0.170000;
+		gIntrauterine_mortality_risk_Magnus[12] := 0.170000;
+		gIntrauterine_mortality_risk_Magnus[13] := 0.170000;
+		gIntrauterine_mortality_risk_Magnus[14] := 0.170000;
+		gIntrauterine_mortality_risk_Magnus[15] := 0.170000;
+		gIntrauterine_mortality_risk_Magnus[16] := 0.170000;
+		gIntrauterine_mortality_risk_Magnus[17] := 0.170000;
+		gIntrauterine_mortality_risk_Magnus[18] := 0.162464;
+		gIntrauterine_mortality_risk_Magnus[19] := 0.152626;
+		gIntrauterine_mortality_risk_Magnus[20] := 0.139453;
+		gIntrauterine_mortality_risk_Magnus[21] := 0.126146;
+		gIntrauterine_mortality_risk_Magnus[22] := 0.115582;
+		gIntrauterine_mortality_risk_Magnus[23] := 0.109116;
+		gIntrauterine_mortality_risk_Magnus[24] := 0.103684;
+		gIntrauterine_mortality_risk_Magnus[25] := 0.099186;
+		gIntrauterine_mortality_risk_Magnus[26] := 0.096131;
+		gIntrauterine_mortality_risk_Magnus[27] := 0.095000;
+		gIntrauterine_mortality_risk_Magnus[28] := 0.095666;
+		gIntrauterine_mortality_risk_Magnus[29] := 0.097512;
+		gIntrauterine_mortality_risk_Magnus[30] := 0.100326;
+		gIntrauterine_mortality_risk_Magnus[31] := 0.103897;
+		gIntrauterine_mortality_risk_Magnus[32] := 0.108000;
+		gIntrauterine_mortality_risk_Magnus[33] := 0.113974;
+		gIntrauterine_mortality_risk_Magnus[34] := 0.123155;
+		gIntrauterine_mortality_risk_Magnus[35] := 0.135305;
+		gIntrauterine_mortality_risk_Magnus[36] := 0.150098;
+		gIntrauterine_mortality_risk_Magnus[37] := 0.167000;
+		gIntrauterine_mortality_risk_Magnus[38] := 0.187646;
+		gIntrauterine_mortality_risk_Magnus[39] := 0.214112;
+		gIntrauterine_mortality_risk_Magnus[40] := 0.246043;
+		gIntrauterine_mortality_risk_Magnus[41] := 0.282534;
+		gIntrauterine_mortality_risk_Magnus[42] := 0.322000;
+		gIntrauterine_mortality_risk_Magnus[43] := 0.362727;
+		gIntrauterine_mortality_risk_Magnus[44] := 0.405641;
+		gIntrauterine_mortality_risk_Magnus[45] := 0.452820;
+		gIntrauterine_mortality_risk_Magnus[46] := 0.506340;
+		gIntrauterine_mortality_risk_Magnus[47] := 0.568107;
+		gIntrauterine_mortality_risk_Magnus[48] := 0.638548;
+		gIntrauterine_mortality_risk_Magnus[49] := 0.711528;
+		gIntrauterine_mortality_risk_Magnus[50] := 0.780000;
+		gIntrauterine_mortality_risk_Magnus[51] := 0.798000;
+		gIntrauterine_mortality_risk_Magnus[52] := 0.816000;
+		gIntrauterine_mortality_risk_Magnus[53] := 0.834000;
+		gIntrauterine_mortality_risk_Magnus[54] := 0.852000;
+		gIntrauterine_mortality_risk_Magnus[55] := 0.870000;
+		gIntrauterine_mortality_risk_Magnus[56] := 0.888000;
+		gIntrauterine_mortality_risk_Magnus[57] := 0.906000;
+		gIntrauterine_mortality_risk_Magnus[58] := 0.924000;
+		gIntrauterine_mortality_risk_Magnus[kMaxAgeFert] := 1.0;
+
+		{-------- stillbirth risk by age: two alternative schedules --------}
+		{Barrett 1971, linear and monotone. The level at age 30 is plausible for a historical
+		 population; the shape is not, since the observed curve is J shaped with a minimum
+		 around 27 and an elevation below 20.}
 		for i := kMinAgeFert to kMaxAgeFert do
-			gStillbirth_mortality_risk[i] := 0.03 + 0.001 * (i - 30);
-		gStillbirth_mortality_risk[kMaxAgeFert] := 1.0;
+			gStillbirth_mortality_risk_Barrett[i] := 0.03 + 0.001 * (i - 30);
+		gStillbirth_mortality_risk_Barrett[kMaxAgeFert] := 1.0;
 
-		{Barrett 1978}
-		gDistrib_intrauterine_mortality_risk[1] := 0.453799845;
-		gDistrib_intrauterine_mortality_risk[2] := gDistrib_intrauterine_mortality_risk[1] + 0.249589915;
-		gDistrib_intrauterine_mortality_risk[3] := gDistrib_intrauterine_mortality_risk[2] + 0.137274453;
-		gDistrib_intrauterine_mortality_risk[4] := gDistrib_intrauterine_mortality_risk[3] + 0.075500949;
-		gDistrib_intrauterine_mortality_risk[5] := gDistrib_intrauterine_mortality_risk[4] + 0.041525522;
-		gDistrib_intrauterine_mortality_risk[6] := gDistrib_intrauterine_mortality_risk[5] + 0.022839037;
-		gDistrib_intrauterine_mortality_risk[7] := gDistrib_intrauterine_mortality_risk[6] + 0.01256147;
-		gDistrib_intrauterine_mortality_risk[8] := gDistrib_intrauterine_mortality_risk[7] + 0.006908809;
+		{National Center for Health Statistics, Fetal Mortality: United States, 2023, National
+		 Vital Statistics Reports 74(8): fetal deaths at 20 weeks or more per 1,000 live births
+		 plus fetal deaths, by maternal age (6.91 at 15-19, 5.51 at 20-24, 5.07 at 25-29, 5.15
+		 at 30-34, 5.86 at 35-39, 8.36 at 40-44, 13.25 at 45 and over). The SHAPE only is taken
+		 from that source and rescaled so that age 30 keeps Barrett's 3.0 per cent, which is a
+		 plausible historical level; modern absolute rates are several times lower. Part of the
+		 elevation below 20 in the United States is social rather than obstetric, so that end of
+		 the curve is the least certain.}
+		gStillbirth_mortality_risk_US2023[10] := 0.040638;
+		gStillbirth_mortality_risk_US2023[11] := 0.040638;
+		gStillbirth_mortality_risk_US2023[12] := 0.040638;
+		gStillbirth_mortality_risk_US2023[13] := 0.040638;
+		gStillbirth_mortality_risk_US2023[14] := 0.040638;
+		gStillbirth_mortality_risk_US2023[15] := 0.040638;
+		gStillbirth_mortality_risk_US2023[16] := 0.040638;
+		gStillbirth_mortality_risk_US2023[17] := 0.040638;
+		gStillbirth_mortality_risk_US2023[18] := 0.038583;
+		gStillbirth_mortality_risk_US2023[19] := 0.036778;
+		gStillbirth_mortality_risk_US2023[20] := 0.035220;
+		gStillbirth_mortality_risk_US2023[21] := 0.033909;
+		gStillbirth_mortality_risk_US2023[22] := 0.032844;
+		gStillbirth_mortality_risk_US2023[23] := 0.031992;
+		gStillbirth_mortality_risk_US2023[24] := 0.031184;
+		gStillbirth_mortality_risk_US2023[25] := 0.030488;
+		gStillbirth_mortality_risk_US2023[26] := 0.030001;
+		gStillbirth_mortality_risk_US2023[27] := 0.029817;
+		gStillbirth_mortality_risk_US2023[28] := 0.029839;
+		gStillbirth_mortality_risk_US2023[29] := 0.029901;
+		gStillbirth_mortality_risk_US2023[30] := 0.030000;
+		gStillbirth_mortality_risk_US2023[31] := 0.030130;
+		gStillbirth_mortality_risk_US2023[32] := 0.030287;
+		gStillbirth_mortality_risk_US2023[33] := 0.030621;
+		gStillbirth_mortality_risk_US2023[34] := 0.031250;
+		gStillbirth_mortality_risk_US2023[35] := 0.032131;
+		gStillbirth_mortality_risk_US2023[36] := 0.033218;
+		gStillbirth_mortality_risk_US2023[37] := 0.034463;
+		gStillbirth_mortality_risk_US2023[38] := 0.036171;
+		gStillbirth_mortality_risk_US2023[39] := 0.038618;
+		gStillbirth_mortality_risk_US2023[40] := 0.041702;
+		gStillbirth_mortality_risk_US2023[41] := 0.045284;
+		gStillbirth_mortality_risk_US2023[42] := 0.049165;
+		gStillbirth_mortality_risk_US2023[43] := 0.053411;
+		gStillbirth_mortality_risk_US2023[44] := 0.058312;
+		gStillbirth_mortality_risk_US2023[45] := 0.063959;
+		gStillbirth_mortality_risk_US2023[46] := 0.070456;
+		gStillbirth_mortality_risk_US2023[47] := 0.077924;
+		gStillbirth_mortality_risk_US2023[48] := 0.082599;
+		gStillbirth_mortality_risk_US2023[49] := 0.087275;
+		gStillbirth_mortality_risk_US2023[50] := 0.091950;
+		gStillbirth_mortality_risk_US2023[51] := 0.096625;
+		gStillbirth_mortality_risk_US2023[52] := 0.101301;
+		gStillbirth_mortality_risk_US2023[53] := 0.105976;
+		gStillbirth_mortality_risk_US2023[54] := 0.110652;
+		gStillbirth_mortality_risk_US2023[55] := 0.115327;
+		gStillbirth_mortality_risk_US2023[56] := 0.120003;
+		gStillbirth_mortality_risk_US2023[57] := 0.124678;
+		gStillbirth_mortality_risk_US2023[58] := 0.129353;
+		gStillbirth_mortality_risk_US2023[kMaxAgeFert] := 1.0;
+
+		{The working arrays. The defaults are the newer schedules, Magnus for intrauterine
+		 mortality and the United States 2023 shape for stillbirth. INTRA_LERIDON_MAGNUS and
+		 STILLBIRTH_BARRETT_US2023 put the older Léridon and Barrett schedules back, so a
+		 ticked box means the earlier behaviour and an unticked box the current evidence.}
+		gIntrauterine_mortality_risk := copy (gIntrauterine_mortality_risk_Magnus);
+		gStillbirth_mortality_risk := copy (gStillbirth_mortality_risk_US2023);
+
+		{Barrett (1971), Demography 8(4):481-490, p.482, verbatim: "The gestation interval
+		 preceding a foetal death is geometrically distributed. Twenty-four per cent of
+		 conceptions end in foetal deaths. The program causes the probability of foetal death
+		 to increase from 0.11 in the second month of gestation to Pn = P(n-1) x 0.55 in the
+		 nth month (3 <= n <= 8), losses in the first month being regarded as equivalent to
+		 reduced fecundability."
+
+		 So the index runs from 2 to 8, SEVEN values, and there is deliberately no first
+		 month: losses before the end of the first month of gestation are absorbed into
+		 fecundability, which is also what keeps this schedule on the same basis as the
+		 fecundability parameter. Barrett's absolute values 0.11 x 0.55^k for k = 0 to 6 sum
+		 to 0.2407, the 24 per cent of conceptions he quotes, so they are per-conception
+		 probabilities; normalised over the seven terms the first is 0.45 / (1 - 0.55^7).
+
+		 Until 9 September 2026 this table held eight values at indices 1 to 8, normalised
+		 over eight terms as 0.45 / (1 - 0.55^8) = 0.453799845, so every share sat one month
+		 earlier than Barrett intended and an eighth month was invented. Because
+		 durationPregnancyInMonths is used directly as a duration in AbortionOrStillBorn, the
+		 mean month of loss was 2.1547 against Barrett's 3.1140, and every spontaneous
+		 abortion shortened the non-susceptible period by 0.96 of a month. Indices 0 and 1 are
+		 left at zero, and the search in FertilityRuntime.pas now starts at 2.
+
+		 Two points from the same page that are NOT addressed here, and remain open:
+		   1. Barrett's month is a lunar month, "13 months to a year, a definition that
+		      applies here wherever months refers to the simulation" (p.481). kNbLunarMonths
+		      is 12, so these are calendar months and the schedule is stretched by 13/12.
+		   2. kLivingBirth_durationPregnancyInMonths = kNbLunarMonths - 3 gives Barrett's 10
+		      lunar months for a live birth only when kNbLunarMonths is 13. With 12 it gives
+		      9, which is Barrett's gestation for a stillbirth, and
+		      kStillBirth_durationPregnancyInMonths = kNbLunarMonths - 4 then gives 8. Both
+		      are one lunar month short of the paper.}
+		gDistrib_intrauterine_mortality_risk[0] := 0.0;
+		gDistrib_intrauterine_mortality_risk[1] := 0.0;
+		gDistrib_intrauterine_mortality_risk[2] := 0.456956872;
+		gDistrib_intrauterine_mortality_risk[3] := gDistrib_intrauterine_mortality_risk[2] + 0.251326280;
+		gDistrib_intrauterine_mortality_risk[4] := gDistrib_intrauterine_mortality_risk[3] + 0.138229454;
+		gDistrib_intrauterine_mortality_risk[5] := gDistrib_intrauterine_mortality_risk[4] + 0.076026200;
+		gDistrib_intrauterine_mortality_risk[6] := gDistrib_intrauterine_mortality_risk[5] + 0.041814410;
+		gDistrib_intrauterine_mortality_risk[7] := gDistrib_intrauterine_mortality_risk[6] + 0.022997925;
+		gDistrib_intrauterine_mortality_risk[8] := gDistrib_intrauterine_mortality_risk[7] + 0.012648859;
 	
 		{Fecundability heterogeneity distributed as a beta function}
 		{Hutterite: Majumdar & Sheps [1970]}
-		betaHeterogeneityFecundability (3.14, 9.19);
+		betaHeterogeneityFecundability (3.4, 9.19);	{Majumdar & Sheps: mean 0.2701, sd 0.1204, CV 44.6%}
+		betaHeterogeneityFecundability (2.599, 8.700); {For Leridon's N(0.23, 0.12) instead, that is mean 0.23 and sd 0.12 exactly}
 		
 		{Lesthaeghe and Page [1980]}
 		gSchedule_temporary_sterility[0]  := 1.0;
@@ -532,6 +1072,86 @@ implementation
 		
 	end;
 
+	{ ------------------------------------------------------------------------------
+	  Conflicts between the fixed parameters, declared beside the definitions below.
+
+	  Several case arms of fixParameter write the SAME table, and initFixedParameters
+	  walks the enum from low to high, so without the two declarations here the switch
+	  that happens to sit later in fixedParameterKind silently wins and the user is told
+	  nothing. The two situations are different and are handled differently.
+
+	  kExclusionGroups: switches that each write a WHOLE table are alternatives, so at
+	  most one of a group may be on. resolveFixedParameterConflicts reports the clash and
+	  turns off all but one, so the run is defined and the configuration echo records what
+	  actually happened.
+
+	  kFixedParamModifiers: switches that ADJUST whatever table is already in place. They
+	  must run after the ones that write a whole table, so initFixedParameters applies the
+	  parameters in two passes. This leaves the order of fixedParameterKind untouched.
+	  ------------------------------------------------------------------------------ }
+	type
+		exclusionGroupType = record
+			what: string;
+			members: set of fixedParameterKind;
+		end;
+
+	const
+		kNbExclusionGroups = 2;
+		kExclusionGroups: array [1..kNbExclusionGroups] of exclusionGroupType = (
+			(what: 'the age schedule of permanent sterility (gDefinitive_sterility)';
+			 members: [LeridonDefinitiveSterility, KinFertDefinitiveSterility]),
+			(what: 'the fecundability age schedule (gFecundability)';
+			 members: [HighLowFecundability, normaldistributionfecundability])
+		);
+		{LeridonOverMagnusIntrauterine and BarrettOverUS2023Stillbirth each write one whole
+		 table and each has only one alternative, the unflagged default, so no exclusion group
+		 is needed. Add one here if a third schedule is ever introduced for either.}
+
+
+		{noInitialSterility zeroes ages up to 25, fixedDefinitiveSterility flattens from 26:
+		 both adjust the base table rather than replacing it.}
+		kFixedParamModifiers = [noInitialSterility, fixedDefinitiveSterility,
+								fixedIntrauterineMortality];
+		{fixedIntrauterineMortality flattens whatever pair of risk schedules is in place, so
+		 it belongs in the second pass. Before this it ran in the first pass and wrote a
+		 hard coded constant of its own, which silently discarded the selected schedule.}
+		kMaxRiskSumAtAnyAge = 0.99;
+		{the runtime tests dummy < intrauterine + stillbirth with dummy on [0,1), so the two
+		 risks must sum to less than one at every age or a live birth becomes impossible}
+
+	procedure resolveFixedParameterConflicts;
+	var
+		ind: longint;
+		kind, winner: fixedParameterKind;
+		nOn: longint;
+		names: string;
+	begin
+		for ind := 1 to kNbExclusionGroups do begin
+			nOn := 0;
+			names := '';
+			winner := low (fixedParameterKind);
+			for kind := low (fixedParameterKind) to high (fixedParameterKind) do
+				if (kind in kExclusionGroups[ind].members) and
+				   (g_GENPARAM.fixedParameters [kind].state.value) then begin
+					nOn := nOn + 1;
+					names := stringConcatenate_sep (names, g_GENPARAM.fixedParameters [kind].state.name, ', ');
+					{the last one found is the one the old single-pass loop left in place,
+					 so keeping it changes no run that was already working}
+					winner := kind;
+				end;
+			if (nOn > 1) then begin
+				writeAndWaitConst (['===> ERROR: ', names,
+					' are all set, and they all define ', kExclusionGroups[ind].what,
+					'. Only one can apply. Keeping ',
+					g_GENPARAM.fixedParameters [winner].state.name,
+					' and turning the others off.']);
+				for kind := low (fixedParameterKind) to high (fixedParameterKind) do
+					if (kind in kExclusionGroups[ind].members) and (kind <> winner) then
+						g_GENPARAM.fixedParameters [kind].state.value := false;
+			end;
+		end;
+	end;
+
 	procedure initialSetFixedParameters;
 	begin
 		with g_GENPARAM do begin
@@ -578,6 +1198,18 @@ implementation
 			fixedParameters [KinFertDefinitiveSterility] := parameterStateName.Create (kNotUsed, TRUE, 'KINFERT_STERILITY', '',
 												'KinFert''s sterility scheme based on Leridon [2008] and South African 1921 Census (TRUE or FALSE)' + LineEnding +
 												'If all alternative schemes are FALSE, we fall back on Pittinger and Wood', '', g_GENPARAM.listOfParams);
+			{Which age schedule of intrauterine mortality: the older Léridon or the newer Magnus}
+			fixedParameters [LeridonOverMagnusIntrauterine] := parameterStateName.Create (kNotUsed, FALSE, 'INTRA_LERIDON_MAGNUS', '',
+												'Age schedule of intrauterine mortality: Leridon [2004] if TRUE, Magnus et al. [2019] if FALSE' + LineEnding +
+												'The default is FALSE, that is Magnus, whose J shape has its minimum at age 27 and rises' + LineEnding +
+												'to 53.6 per cent at 45. The Léridon cubic has no minimum and reaches only 31.5 per cent.',
+												'', g_GENPARAM.listOfParams);
+			{Which age schedule of stillbirth risk: the older Barrett or the newer United States 2023 shape}
+			fixedParameters [BarrettOverUS2023Stillbirth] := parameterStateName.Create (kNotUsed, FALSE, 'STILLBIRTH_BARRETT_US2023', '',
+												'Age schedule of stillbirth risk: Barrett [1971] if TRUE, United States 2023 shape if FALSE' + LineEnding +
+												'The default is FALSE, that is the J shaped NCHS 2023 pattern rescaled to Barrett''s 3 per' + LineEnding +
+												'cent at age 30. Barrett is 0.03 + 0.001 * (age - 30), linear and without the young-age rise.',
+												'', g_GENPARAM.listOfParams);
 			{Intrauterine mortality and stillbirth rate do not increase with age. Constant at their level at age 15}
 			fixedParameters [fixedIntrauterineMortality] := parameterStateName.Create (kNotUsed, FALSE, 'FIXED_INTRAUTERINE_MORTALITY', '',
 												'Intrauterine mortality is constant with age (TRUE or FALSE)', '', g_GENPARAM.listOfParams);
@@ -585,7 +1217,13 @@ implementation
 			fixedParameters [homogeneousSeparation] := parameterStateName.Create (kNotUsed, FALSE, 'HOMOGENEOUS_SEPARATION', '',
 												'Separation risk does not depend on number of children (TRUE or FALSE)', '', g_GENPARAM.listOfParams);
 			{Fecundability is distributed according to a normal instead of beta}
-			fixedParameters [normaldistributionfecundability] := parameterStateName.Create (kNotUsed, TRUE, 'NORMAL_HETEROGENEITY_FECUNDABILITY', '',
+			{Default changed from TRUE to FALSE: the beta set in initFertilityModel now stands.
+			 Fecundability is a probability bounded on (0,1), so a beta is the natural family,
+			 while truncating the normal at p = 0 distorts the moments, turning Leridon's
+			 nominal 0.23 and 0.12 into a realised 0.2381 and 0.1118. Set this back to TRUE to
+			 reproduce runs made before 9 September 2026.}
+			fixedParameters [normaldistributionfecundability] := parameterStateName.Create (kNotUsed, FALSE, 'NORMAL_HETEROGENEITY_FECUNDABILITY', '',
+
 												'Heterogeneity of fecundability distributed as a normal mean 0.23, std dev 0.12, like Leridon [2004] (TRUE) or as a beta (FALSE)', '', g_GENPARAM.listOfParams);																											  
 			fixedParameters [stdUnionDanielOrCampbellWood] := parameterStateName.Create (kNotUsed, TRUE, 'STDDEV_UNION_KIND', '',
 												'(Obsolete) Standard Deviation of Union according to Daniel (TRUE) or to Campbell and Wood 1988. Defect value is TRUE', '', g_GENPARAM.listOfParams);
@@ -595,15 +1233,78 @@ implementation
 		
 	end;
 	
+	procedure capConceptionOutcomeRisks;
+	{The two risks are read together at conception, as dummy < intrauterine + stillbirth with
+	 dummy on [0,1), so their sum must stay below one at every age. Any pairing of the
+	 schedules can break that at the oldest ages, where both are close to their ceiling. Where
+	 the sum is too large both are scaled by the same factor, which preserves their ratio and
+	 so preserves the split between an abortion and a stillbirth.}
+	var
+		ageWomen: longint;
+		total, factor: double;
+	begin
+		for ageWomen := kMinAgeFert to kMaxAgeFert - 1 do begin
+			total := gIntrauterine_mortality_risk[ageWomen] + gStillbirth_mortality_risk[ageWomen];
+			if total > kMaxRiskSumAtAnyAge then begin
+				factor := kMaxRiskSumAtAnyAge / total;
+				gIntrauterine_mortality_risk[ageWomen] := gIntrauterine_mortality_risk[ageWomen] * factor;
+				gStillbirth_mortality_risk[ageWomen] := gStillbirth_mortality_risk[ageWomen] * factor;
+			end;
+		end;
+	end;
+
 	procedure initFixedParameters();
 	var
 		kind: fixedParameterKind;
 	begin
+		{Rebuild the base tables first. The case arms below OVERWRITE gDefinitive_sterility,
+		 gFecundability, gIntrauterine_mortality_risk and gStillbirth_mortality_risk, so
+		 without this a switch could only be turned ON. initFertilityModel used to run only
+		 from initGeneral, that is only at program start, while this routine runs on every
+		 run through initParams; so unticking a switch left whatever the last run had
+		 written, and the option appeared to do nothing. initFertilityModel is a pure table
+		 builder, no allocation and no I/O, so calling it here is safe and cheap.}
+		initFertilityModel;
+
+		resolveFixedParameterConflicts;
+		{First pass: the parameters that write a whole table.}
 		for kind := low (fixedParameterKind) to high (fixedParameterKind) do begin
-			fixParameter (kind, g_GENPARAM.fixedParameters [kind].param.value);
+			if not (kind in kFixedParamModifiers) then
+				fixParameter (kind, g_GENPARAM.fixedParameters [kind].param.value);
 		end;
+		{Second pass: the modifiers, which adjust whatever the first pass left in place.
+		 Without this, noInitialSterility and fixedDefinitiveSterility ran at enum
+		 positions 2 and 3 and were then overwritten by LERIDON_STERILITY or
+		 KINFERT_STERILITY at positions 9 and 10.}
+		for kind := low (fixedParameterKind) to high (fixedParameterKind) do begin
+			if (kind in kFixedParamModifiers) then
+				fixParameter (kind, g_GENPARAM.fixedParameters [kind].param.value);
+		end;
+		capConceptionOutcomeRisks;
 	end;
 	
+	function intrauterineRiskModelName: string;
+	begin
+		if g_GENPARAM.fixedParameters [LeridonOverMagnusIntrauterine].state.value then
+			result := 'Léridon [2004]'
+		else
+			result := 'Magnus [2019]';
+
+		if g_GENPARAM.fixedParameters [fixedIntrauterineMortality].state.value then
+			result := result + ', constant with age';
+	end;
+
+	function stillbirthRiskModelName: string;
+	begin
+		if g_GENPARAM.fixedParameters [BarrettOverUS2023Stillbirth].state.value then
+			result := 'Barrett [1971]'
+		else
+			result := 'United States 2023 shape';
+
+		if g_GENPARAM.fixedParameters [fixedIntrauterineMortality].state.value then
+			result := result + ', constant with age';
+	end;
+
 	procedure info_FixParameter ();
 	begin
 		if ( g_GENPARAM.fixedParameters [fixedUnionAge].state.value = true ) then
@@ -622,6 +1323,11 @@ implementation
 			aWriteLnAll (' HighLowFecundability');
 		if ( g_GENPARAM.fixedParameters [fixedIntrauterineMortality].state.value = true ) then
 			aWriteLnAll (' fixedIntrauterineMortality');
+		if ( g_GENPARAM.fixedParameters [LeridonOverMagnusIntrauterine].state.value = true ) then
+			aWriteLnAll (' LeridonOverMagnusIntrauterine');
+		if ( g_GENPARAM.fixedParameters [BarrettOverUS2023Stillbirth].state.value = true ) then
+			aWriteLnAll (' BarrettOverUS2023Stillbirth');
+
 		if ( g_GENPARAM.fixedParameters [LeridonDefinitiveSterility].state.value = true ) then
 			aWriteLnAll (' LeridonDefinitiveSterility');
 		if ( g_GENPARAM.fixedParameters [KinFertDefinitiveSterility].state.value = true ) then
@@ -691,122 +1397,38 @@ implementation
 							gFecundability[i] := gFecundability[i-1] - 0.01;
 						for i := 33 to kMaxAgeFert do
 							gFecundability[i] := gFecundability[i-1];
-						for i := 10 to kMaxAgeFert do
+						for i := kMinAgeFert to kMaxAgeFert do
 							gFecundability[i] := gFecundability[i] * 13 / kNbLunarMonths;
+					end;
+				LeridonOverMagnusIntrauterine:
+					begin
+						{ticked means the older schedule; Magnus is what initFertilityModel left}
+						gIntrauterine_mortality_risk := copy (gIntrauterine_mortality_risk_Leridon);
+					end;
+				BarrettOverUS2023Stillbirth:
+					begin
+						{ticked means the older schedule; US 2023 is what initFertilityModel left}
+						gStillbirth_mortality_risk := copy (gStillbirth_mortality_risk_Barrett);
 					end;
 				fixedIntrauterineMortality:
 					begin
+						{Flatten whichever pair of schedules the first pass left in place, at its
+						 own value at age 15. It used to write two hard coded constants instead,
+						 one of them from a Leridon fit that is nowhere else in the unit, so the
+						 selected schedule was discarded and the level did not match it.}
 						for ageWomen := kMinAgeFert to kMaxAgeFert do
-							gIntrauterine_mortality_risk[ageWomen] := 0.32124248 - 0.01775048 * 15 + 0.00039157 * 15 * 15;
-
+							gIntrauterine_mortality_risk[ageWomen] := gIntrauterine_mortality_risk[15];
 						for i := kMinAgeFert to kMaxAgeFert do
-							gStillbirth_mortality_risk[i] := 0.03 + 0.001 * (15 - 30);
+							gStillbirth_mortality_risk[i] := gStillbirth_mortality_risk[15];
 					end;
+
 				KinFertDefinitiveSterility:
 					begin
-						gDefinitive_sterility[10] := 0.01;
-						gDefinitive_sterility[11] := 0.0115;
-						gDefinitive_sterility[12] := 0.013;
-						gDefinitive_sterility[13] := 0.0145;
-						gDefinitive_sterility[14] := 0.016;
-						gDefinitive_sterility[15] := 0.0175;
-						gDefinitive_sterility[16] := 0.019;
-						gDefinitive_sterility[17] := 0.0205;
-						gDefinitive_sterility[18] := 0.022;
-						gDefinitive_sterility[19] := 0.0235;
-						gDefinitive_sterility[20] := 0.025;
-						gDefinitive_sterility[21] := 0.0265;
-						gDefinitive_sterility[22] := 0.028;
-						gDefinitive_sterility[23] := 0.0295;
-						gDefinitive_sterility[24] := 0.031;
-						gDefinitive_sterility[25] := 0.0325;
-						gDefinitive_sterility[26] := 0.035;
-						gDefinitive_sterility[27] := 0.03722199;
-						gDefinitive_sterility[28] := 0.040377765;
-						gDefinitive_sterility[29] := 0.045386742;
-						gDefinitive_sterility[30] := 0.05167339;
-						gDefinitive_sterility[31] := 0.060726363;
-						gDefinitive_sterility[32] := 0.073012125;
-						gDefinitive_sterility[33] := 0.088836923;
-						gDefinitive_sterility[34] := 0.108178073;
-						gDefinitive_sterility[35] := 0.131531607;
-						gDefinitive_sterility[36] := 0.159840247;
-						gDefinitive_sterility[37] := 0.192559791;
-						gDefinitive_sterility[38] := 0.227886378;
-						gDefinitive_sterility[39] := 0.264109658;
-						gDefinitive_sterility[40] := 0.3;
-						gDefinitive_sterility[41] := 0.335109658;
-						gDefinitive_sterility[42] := 0.371886378;
-						gDefinitive_sterility[43] := 0.416559791;
-						gDefinitive_sterility[44] := 0.496840247;
-						gDefinitive_sterility[45] := 0.626531607;
-						gDefinitive_sterility[46] := 0.751178073;
-						gDefinitive_sterility[47] := 0.838836923;
-						gDefinitive_sterility[48] := 0.899012125;
-						gDefinitive_sterility[49] := 0.931726363;
-						gDefinitive_sterility[50] := 0.95067339;
-						gDefinitive_sterility[51] := 0.965386742;
-						gDefinitive_sterility[52] := 0.978377765;
-						gDefinitive_sterility[53] := 0.99022199;
-						gDefinitive_sterility[54] := 0.996;
-						gDefinitive_sterility[55] := 0.999;
-						gDefinitive_sterility[56] := 0.998;
-						gDefinitive_sterility[57] := 0.998;
-						gDefinitive_sterility[58] := 0.9991;
-						gDefinitive_sterility[59] := 1;
+						gDefinitive_sterility := copy (gDefinitive_sterility_Kinfert);
 					end;
 				LeridonDefinitiveSterility:
 					begin
-						gDefinitive_sterility[10] := 0.01;
-						gDefinitive_sterility[11] := 0.01;
-						gDefinitive_sterility[12] := 0.01;
-						gDefinitive_sterility[13] := 0.01;
-						gDefinitive_sterility[14] := 0.01;
-						gDefinitive_sterility[15] := 0.01;
-						gDefinitive_sterility[16] := 0.01;
-						gDefinitive_sterility[17] := 0.01;
-						gDefinitive_sterility[18] := 0.01;
-						gDefinitive_sterility[19] := 0.01;
-						gDefinitive_sterility[20] := 0.01;
-						gDefinitive_sterility[21] := 0.01;
-						gDefinitive_sterility[22] := 0.01;
-						gDefinitive_sterility[23] := 0.01;
-						gDefinitive_sterility[24] := 0.01;
-						gDefinitive_sterility[25] := 0.01;
-						gDefinitive_sterility[26] := 0.011;
-						gDefinitive_sterility[27] := 0.012;
-						gDefinitive_sterility[28] := 0.014;
-						gDefinitive_sterility[29] := 0.017;
-						gDefinitive_sterility[30] := 0.02;
-						gDefinitive_sterility[31] := 0.024;
-						gDefinitive_sterility[32] := 0.029;
-						gDefinitive_sterility[33] := 0.035;
-						gDefinitive_sterility[34] := 0.042;
-						gDefinitive_sterility[35] := 0.051;
-						gDefinitive_sterility[36] := 0.064;
-						gDefinitive_sterility[37] := 0.082;
-						gDefinitive_sterility[38] := 0.105;
-						gDefinitive_sterility[39] := 0.133;
-						gDefinitive_sterility[40] := 0.166;
-						gDefinitive_sterility[41] := 0.204;
-						gDefinitive_sterility[42] := 0.249;
-						gDefinitive_sterility[43] := 0.306;
-						gDefinitive_sterility[44] := 0.401;
-						gDefinitive_sterility[45] := 0.546;
-						gDefinitive_sterility[46] := 0.685;
-						gDefinitive_sterility[47] := 0.785;
-						gDefinitive_sterility[48] := 0.855;
-						gDefinitive_sterility[49] := 0.895;
-						gDefinitive_sterility[50] := 0.919;
-						gDefinitive_sterility[51] := 0.937;
-						gDefinitive_sterility[52] := 0.952;
-						gDefinitive_sterility[53] := 0.965;
-						gDefinitive_sterility[54] := 0.976;
-						gDefinitive_sterility[55] := 0.985;
-						gDefinitive_sterility[56] := 0.991;
-						gDefinitive_sterility[57] := 0.996;
-						gDefinitive_sterility[58] := 0.999;
-						gDefinitive_sterility[59] := 1;
+						gDefinitive_sterility := copy (gDefinitive_sterility_Leridon);
 					end;
 				normaldistributionfecundability:
 					begin
@@ -947,12 +1569,7 @@ implementation
 		for ind := low(arrayChildren) to high(arrayChildren) do begin
 			pChild := arrayChildren[ind];
 			if pChild^.arrayChildren <> nil then begin
-				if gRunFromIDE then
-{$IFNDEF ARM}
-					asm int 3 end;
-{$ELSE}
-					assert(false);
-{$ENDIF}
+				breakOnFailure;
 				pChild^.arrayChildren := nil;
 			end;
 			disposePtr(ptr(pChild), 'pInfoChildType');
@@ -965,12 +1582,7 @@ implementation
 	procedure newChild_AC (var pChild: pInfoChildType; const arrayChildren: arrayOfInfoChild = nil);
 	begin
 		if arrayChildren = nil then begin
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false);
-{$ENDIF}
+			breakOnFailure;
 			writeAndWaitConst (['===> ERROR: wrong call to newChild. Very bad']);
 			exit;
 		end;
@@ -988,12 +1600,7 @@ implementation
 		end;
 		if pChild^.next <> nil then begin
 			// we are not at the tail, and we have found an empty child record
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false);
-{$ENDIF}
+			breakOnFailure;
 		end;
 		// we are at the tail of the list
 		if pChild^.posInArray >= (length (pChild^.arrayChildren) - 1) then begin
@@ -1041,11 +1648,7 @@ implementation
         if (length (arrayChildren) = 0) then
 			if gRunFromIDE then begin
 				writeAndWaitConst (['===> ERROR: Bad: arrayChildren should have a positive size']);
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false);
-{$ENDIF}
+				breakOnFailure;
 			end;
 		newChild_AC (pChild_dup, arrayChildren);
 		duplicateChildrenList_AC := pChild_dup;
@@ -1089,12 +1692,7 @@ implementation
 		end;
 		if pChild^.next <> nil then begin
 			// we are not at the tail, and we have found an empty child record
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false);
-{$ENDIF}
+			breakOnFailure;
 		end;
 		// we are at the tail of the list
 		if pChild^.next = nil then
@@ -1107,12 +1705,7 @@ implementation
 			pChild := pChild^.next;
 		end else
 			// if this not the case, we have a problem
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false);
-{$ENDIF}
+			breakOnFailure;
 	end;
 
     procedure disposeChild ( var pChild: pInfoChildType );
@@ -1149,12 +1742,7 @@ implementation
 		if pChild^.posInArray <> kNotDefined then
 		begin
 			writeAndWaitConst (['===> ERROR: should have been a call to duplicateChildrenList_AC']);
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false);
-{$ENDIF}
+			breakOnFailure;
 		end;
 		copyChild (pChild, pChild_dup);
 		duplicateChildrenList := pChild_dup;
@@ -1195,6 +1783,7 @@ implementation
 			i := 1;
 			while (i < kMaxDistribFecundability) and (dummy > gDistrib_fecundability[i]) do
 				i := i + 1;
+			InterLockedIncrement (gCount_fecundability_draws [i]);
 			fecundabilityLevel := (i / (gMean_fecundability * kMaxDistribFecundability));
 		end;
 	end;
@@ -1377,15 +1966,15 @@ implementation
 		if (fecundLife.ageSterile < kMinAgeFert) or (fecundLife.ageSterile > kMaxAgeFert) then
 			writeAndWait ('===> ERROR: fecundLife.ageSterile bad in initFecundLife'); {DEBUG}
 
-		{interpolation of exact age}
 		if (fecundLife.ageSterile > kMinAgeFert) and (fecundLife.ageSterile < kMaxAgeFert) then begin
-			valInf := gDefinitive_sterility[trunc (fecundLife.ageSterile)];
-			valSup := gDefinitive_sterility[trunc (fecundLife.ageSterile + 1.0)];
+			valInf := gDefinitive_sterility[trunc (fecundLife.ageSterile) - 1];
+			valSup := gDefinitive_sterility[trunc (fecundLife.ageSterile)];
 			if (valSup > valInf) then
-				fecundLife.ageSterile := fecundLife.ageSterile + (dummy - valInf) / (valSup - valInf)
+				fecundLife.ageSterile := fecundLife.ageSterile - 1.0 + (dummy - valInf) / (valSup - valInf)
 			else
-				fecundLife.ageSterile := fecundLife.ageSterile + randomGenerator.alea(0, 0.99999999999);
-		end else
+				fecundLife.ageSterile := fecundLife.ageSterile - 1.0 + randomGenerator.alea(0, 0.99999999999);
+		end;
+		if (fecundLife.ageSterile < kMinAgeFert) then
 			fecundLife.ageSterile := kMinAgeFert;
 {If the age at sterility is less than 33 years old, the period of falling fecundability must be modified, otherwise there is a risk 
 that the woman be sterile before this decrease}
@@ -1399,6 +1988,7 @@ that the woman be sterile before this decrease}
 		end;
 			
 		ageOfLoweringFecundability := max (kMinAgeFert, trunc (fecundLife.ageSterile - periodOfLowFecundability)); {Léridon 2004}
+		InterLockedIncrement (gCount_ageSterile [max (kMinAgeFert, min (kMaxAgeFert, ceil (fecundLife.ageSterile)))]);
 {Woman's level of fecundability}
 		fecundLife.relativeFecundabilityLevel := fecundabilityLevel (randomGenerator);
 		for age := kMinAgeFert to kMaxAgeFert do

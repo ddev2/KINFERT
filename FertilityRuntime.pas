@@ -1,4 +1,5 @@
 {$I Defines.pas}
+{$I Defines.pas}
 unit FertilityRuntime;
 
 
@@ -8,9 +9,13 @@ uses
 	cthreads,
 	{$ENDIF}
 	Declarations, DemographicRegime, Mortality, Fertility, StablePop, Parenthood, Nuptiality, Utilities, RandomNumbers, StringResources, StringOfLib,
+	Verification,
 	{$IFDEF VerboseProfiler}Profiler,{$ENDIF} Math, SysUtils;
 
 	procedure writeGeneralTables (objOutputFert: TOutputFertility);
+	procedure resetFertilityCounts;
+	procedure resetFertilityCountsThisSetting;
+	procedure reportFertilityChecks (pDemReg: pStructDemographicRegimeSettings);
 	function outputFileNameHeader (
 							bootstrap_ind : longint;
 							pDemReg: pStructDemographicRegimeSettings;
@@ -47,7 +52,18 @@ uses
 								isInitFertility: boolean = false);
 
 implementation
-		
+
+// >>> Claude 2026-09-12 start
+const
+	{The parity progression adjustment of computeGenFert. Four passes was the fixed count before
+	 N7 was fixed and is kept as the ceiling; the loop now leaves as soon as the cohort total
+	 fertility the adjusted ratios produce is within the tolerance of the one asked for.
+	 One hundredth of a child is below what the model can distinguish, since computeTFRfromPPRs
+	 rounds its result to three decimals.}
+	kMaxIterationsPPR = 4;
+	kPPRTargetTolerance = 0.01;
+// <<< Claude 2026-09-12 end
+
 	function compute_aprioriDF(pDemReg: pStructDemographicRegimeSettings): double;
 	var
 		DF_apriori, DF_rang: double;
@@ -65,6 +81,229 @@ implementation
 		compute_aprioriDF := DF_apriori;
 	end;
 	
+{ ----------------------------------------------------------------------------------
+  Does the simulation give back the distributions it was given?
+
+  Each of these compares what was drawn during the run with the input that governs the
+  draw. A sampler reading the wrong table, or a table built wrongly, shows here and
+  nowhere else: the aggregate output of the model can look reasonable while a schedule is
+  read one cell out.
+
+  Each observed curve is also stored in the same form as its input, cumulative against a
+  cumulative input and survival against a survival schedule, so that the graph window can
+  draw the two on one chart.
+  ---------------------------------------------------------------------------------- }
+	procedure resetFertilityCounts;
+	{once at the start of a run, for everything}
+	var
+		i: longint;
+	begin
+		for i := kMinAgeFert to kMaxAgeFert do gCount_ageSterile [i] := 0;
+		for i := 0 to kMaxAgeFert do begin
+			gCount_conceptions [i] := 0;
+			gCount_intrauterine_byAge [i] := 0;
+			gCount_stillbirth_byAge [i] := 0;
+		end;
+		gHasObserved_definitive_sterility := false;
+		gHasObserved_intrauterine_risk := false;
+		gHasObserved_stillbirth_risk := false;
+		gCountSimulationSettings := 0;
+		resetFertilityCountsThisSetting;
+		gCountSimulationSettings := 0;			{the first setting counts itself when it starts}
+	end;
+
+	procedure resetFertilityCountsThisSetting;
+	{At the start of each simulation setting, for the quantities the demographic regime defines:
+	 the amenorrhea schedule, the distribution of the month a pregnancy is lost, the waiting time
+	 of the spacing contraception and the proportion female at birth. A sweep and a run of several
+	 cohorts simulate several settings, and a histogram pooled over settings that were given
+	 different inputs cannot be read against any one of them. The other counters are left alone:
+	 the tables behind them are the same in every setting, so pooling makes them more precise.}
+	var
+		i, k: longint;
+		aSex: Sex;
+	begin
+		for i := 0 to kMaxMonthTemporarySterility do gCount_amenorrhea [i] := 0;
+		for i := 0 to 8 do gCount_intrauterine_month [i] := 0;
+		for i := 0 to kMaxIndBirthIntervals do
+			for k := 0 to kMaxDurationContraceptionInBirthIntervals do gCount_spacing [i, k] := 0;
+		for aSex := low (Sex) to high (Sex) do gCount_birthsBySex [aSex] := 0;
+		gHasObserved_temporary_sterility := false;
+		gHasObserved_distrib_intrauterine := false;
+		Inc (gCountSimulationSettings);
+	end;
+
+	procedure reportFertilityChecks (pDemReg: pStructDemographicRegimeSettings);
+	var
+		i, k, k2, parity, n: longint;
+		theoretical: array [0..kMaxDurationContraceptionInBirthIntervals] of double;
+		counts: array [0..kMaxDurationContraceptionInBirthIntervals] of longint;
+		total, running, propWomen, expected, standardError: double;
+		nConceptions, nAbortions, nStillbirths: double;
+		expectedAbortion, expectedStillbirth: double;
+	begin
+		{what the run actually drew, so that a check with nothing to compare says why}
+		n := 0;
+		for i := kMinAgeFert to kMaxAgeFert do n := n + gCount_ageSterile [i];
+		k := 0;
+		for i := 0 to kMaxMonthTemporarySterility do k := k + gCount_amenorrhea [i];
+		parity := 0;
+		for i := 0 to 8 do parity := parity + gCount_intrauterine_month [i];
+		total := 0;
+		for i := 1 to kMaxIndBirthIntervals do
+			for k2 := 0 to kMaxDurationContraceptionInBirthIntervals do
+				total := total + gCount_spacing [i, k2];
+		memoWriteLn (['Draws counted this run: ', n, ' ages at sterility, ', k, ' amenorrhea, ',
+					parity, ' pregnancy losses, ', round (total), ' spacing spells, ',
+					gCount_birthsBySex [woman] + gCount_birthsBySex [man], ' live births']);
+		if (gCountSimulationSettings > 1) then
+			memoWriteLn ([gCountSimulationSettings, ' simulation settings ran. The amenorrhea, the month ',
+						'a pregnancy is lost, the spacing and the sex ratio are counted for the last of them ',
+						'alone, since the regime defines them and they differ between settings. The age at ',
+						'sterility, the fecundability, the intrauterine risk and the stillbirth risk are ',
+						'counted over the whole run, their inputs being the same in every setting.']);
+
+		{Age at onset of sterility, against the cumulative risk the draw reads}
+		n := 0;
+		for i := kMinAgeFert to kMaxAgeFert do begin
+			counts [i - kMinAgeFert] := gCount_ageSterile [i];
+			n := n + gCount_ageSterile [i];
+			if (i = kMinAgeFert) then
+				theoretical [0] := gDefinitive_sterility [i]
+			else
+				theoretical [i - kMinAgeFert] := gDefinitive_sterility [i] - gDefinitive_sterility [i-1];
+		end;
+		if (n > 0) then begin
+			checkDistribution (chk_fer_ageAtSterility, slice (counts, kMaxAgeFert - kMinAgeFert + 1),
+					slice (theoretical, kMaxAgeFert - kMinAgeFert + 1));
+			running := 0.0;
+			for i := 0 to kMinAgeFert - 1 do gObserved_definitive_sterility [i] := 0.0;
+			for i := kMinAgeFert to kMaxAgeFert do begin
+				running := running + gCount_ageSterile [i] / n;
+				gObserved_definitive_sterility [i] := running;
+			end;
+			gHasObserved_definitive_sterility := true;
+		end;
+
+		{Amenorrhea after a live birth, against the schedule of temporary sterility}
+		n := 0;
+		for i := 0 to kMaxMonthTemporarySterility do begin
+			counts [i] := gCount_amenorrhea [i];
+			n := n + gCount_amenorrhea [i];
+			if (i = 0) then
+				theoretical [0] := 1.0 - pDemReg^.temporary_sterility [0]
+			else
+				theoretical [i] := pDemReg^.temporary_sterility [i-1] - pDemReg^.temporary_sterility [i];
+		end;
+		if (n > 0) then begin
+			checkDistribution (chk_fer_amenorrhea, slice (counts, kMaxMonthTemporarySterility + 1),
+					slice (theoretical, kMaxMonthTemporarySterility + 1));
+			running := 1.0;
+			for i := 0 to kMaxMonthTemporarySterility do begin
+				running := running - gCount_amenorrhea [i] / n;
+				gObserved_temporary_sterility [i] := max (0.0, running);
+			end;
+			gHasObserved_temporary_sterility := true;
+		end;
+
+		{Month at which a pregnancy is lost, against Barrett's distribution}
+		n := 0;
+		for i := 0 to 8 do begin
+			counts [i] := gCount_intrauterine_month [i];
+			n := n + gCount_intrauterine_month [i];
+			if (i <= 1) then
+				theoretical [i] := gDistrib_intrauterine_mortality_risk [i]
+			else
+				theoretical [i] := gDistrib_intrauterine_mortality_risk [i] - gDistrib_intrauterine_mortality_risk [i-1];
+		end;
+		if (n > 0) then begin
+			checkDistribution (chk_fer_intrauterineMonth, slice (counts, 9), slice (theoretical, 9));
+			running := 0.0;
+			for i := 0 to 8 do begin
+				running := running + gCount_intrauterine_month [i] / n;
+				gObserved_distrib_intrauterine [i] := running;
+			end;
+			gHasObserved_distrib_intrauterine := true;
+		end;
+
+		{The outcome of a conception, against the two risk schedules it is drawn from. Both are
+		 read on one uniform draw, the abortion below gIntrauterine_mortality_risk and the
+		 stillbirth in the band above it, so each age carries the risk its schedule states. The
+		 curves are risks by age, for the chart; the check is on the two pooled proportions,
+		 against the risk expected from the ages at which the conceptions actually occurred,
+		 which is what makes one number out of fifty.}
+		nConceptions := 0.0; nAbortions := 0.0; nStillbirths := 0.0;
+		for i := 0 to kMaxAgeFert do begin
+			nConceptions := nConceptions + gCount_conceptions [i];
+			nAbortions := nAbortions + gCount_intrauterine_byAge [i];
+			nStillbirths := nStillbirths + gCount_stillbirth_byAge [i];
+		end;
+		if (nConceptions > 0) then begin
+			expectedAbortion := 0.0;
+			expectedStillbirth := 0.0;
+			for i := 0 to kMaxAgeFert do begin
+				if (gCount_conceptions [i] > 0) then begin
+					gObserved_intrauterine_risk [i] := gCount_intrauterine_byAge [i] / gCount_conceptions [i];
+					gObserved_stillbirth_risk [i] := gCount_stillbirth_byAge [i] / gCount_conceptions [i];
+				end else begin
+					gObserved_intrauterine_risk [i] := 0.0;
+					gObserved_stillbirth_risk [i] := 0.0;
+				end;
+				expectedAbortion := expectedAbortion + gCount_conceptions [i] * gIntrauterine_mortality_risk [i];
+				expectedStillbirth := expectedStillbirth + gCount_conceptions [i] * gStillbirth_mortality_risk [i];
+			end;
+			expectedAbortion := expectedAbortion / nConceptions;
+			expectedStillbirth := expectedStillbirth / nConceptions;
+			gHasObserved_intrauterine_risk := true;
+			gHasObserved_stillbirth_risk := true;
+
+			standardError := sqrt (max (1e-12, expectedAbortion * (1.0 - expectedAbortion) / nConceptions));
+			checkValue (chk_fer_intrauterineRisk, nAbortions / nConceptions, expectedAbortion, 4.0 * standardError);
+
+			standardError := sqrt (max (1e-12, expectedStillbirth * (1.0 - expectedStillbirth) / nConceptions));
+			checkValue (chk_fer_stillbirthRisk, nStillbirths / nConceptions, expectedStillbirth, 4.0 * standardError);
+
+			memoWriteLn (['Conceptions: ', round (nConceptions), ', of which ', round (nAbortions),
+						' ended in a spontaneous abortion and ', round (nStillbirths), ' in a stillbirth']);
+		end;
+
+		{Spacing contraception, one distribution per birth interval. Parity 0 is left out: the
+		 two calls made before the first birth read two different inputs and would be pooled.}
+		for parity := 1 to kMaxIndBirthIntervals do begin
+			n := 0;
+			for k := 0 to kMaxDurationContraceptionInBirthIntervals do begin
+				counts [k] := gCount_spacing [parity, k];
+				n := n + counts [k];
+				if (k = 0) then
+					theoretical [0] := pDemReg^.AccDurationWaitingTime [parity] [0]
+				else
+					theoretical [k] := pDemReg^.AccDurationWaitingTime [parity] [k] -
+										pDemReg^.AccDurationWaitingTime [parity] [k-1];
+			end;
+			if (n > 0) then begin
+				checkDistribution (chk_fer_spacingContraception,
+						slice (counts, kMaxDurationContraceptionInBirthIntervals + 1),
+						slice (theoretical, kMaxDurationContraceptionInBirthIntervals + 1));
+				running := 0.0;
+				for k := 0 to kMaxDurationContraceptionInBirthIntervals do begin
+					running := running + counts [k] / n;
+					gObserved_spacing [parity, k] := running;
+				end;
+			end;
+		end;
+
+		{Sex ratio at birth, against the proportion female the regime was given}
+		total := gCount_birthsBySex [woman] + gCount_birthsBySex [man];
+		if (total > 0) then begin
+			propWomen := gCount_birthsBySex [woman] / total;
+			expected := pDemReg^.dp[propWomenAtBirth].value;
+			standardError := sqrt (expected * (1.0 - expected) / total);
+			checkValue (chk_fer_sexRatioAtBirth, propWomen, expected, 4.0 * standardError);
+			memoWriteLn (['Proportion female at birth: simulated ', propWomen, ', asked for ', expected,
+						', over ', round (total), ' births']);
+		end;
+	end;
+
 	procedure writeGeneralTables (objOutputFert: TOutputFertility);
 	var
 		ageAtUnion: ageQuinq;
@@ -422,7 +661,7 @@ if gRunFromIDE then
 			{Year of death of man}
 			cohort_man := pDemReg^.yearOfBirth.value - trunc (ageDurationEvents.ages[le_union, man] - ageDurationEvents.ages[le_union, woman]);
 			ageDurationEvents.ages[le_death, man] := max (ageDurationEvents.ages[le_union, man] + 0.1,
-					calc_ageDeath(randomGenerator, trunc (ageDurationEvents.ages[le_union, man]), getCohort_p(cohort_man)^.mortalityInfo.survival_men)
+					calc_ageDeath(randomGenerator, trunc (ageDurationEvents.ages[le_union, man]), getCohort_p(cohort_man)^.mortalityInfo.survival_men, man)
 				);
 			if g_GENPARAM.FIXED_FERTILITY.value and (ageDurationEvents.ages[le_death, man] < 40) then
 				ageDurationEvents.ages[le_death, man] := 40;
@@ -434,7 +673,7 @@ if gRunFromIDE then
 			{age at death of the woman}
 			if ageDurationEvents.ages[le_death, woman] = kNotDefined then begin
 				ageDurationEvents.ages[le_death, woman] := max (ageDurationEvents.ages[le_union, woman] + 0.1,
-						calc_ageDeath(randomGenerator, trunc (ageDurationEvents.ages[le_union, woman]), pDemReg^.mortalityInfo.survival_women)
+						calc_ageDeath(randomGenerator, trunc (ageDurationEvents.ages[le_union, woman]), pDemReg^.mortalityInfo.survival_women, woman)
 					);
 			if g_GENPARAM.FIXED_FERTILITY.value and (ageDurationEvents.ages[le_death, woman] < 40) then
 				ageDurationEvents.ages[le_death, woman] := 40;
@@ -482,12 +721,7 @@ if gRunFromIDE then
 except // 1
 on E: Exception do begin
 		writeAndWaitConst(['===> ERROR: ', E.Message]);
-if gRunFromIDE then
-{$IFNDEF ARM}
-	asm int 3 end;
-{$ELSE}
-	assert(false,E.Message)
-{$ENDIF}
+breakOnFailure;
 	end;
 end;
 
@@ -512,11 +746,22 @@ end;
 			result := monthStart;
 	end;
 
+// BUG  **N49**  addChild declares its table as out and then accumulates into it
+// An out parameter promises that the routine writes the whole thing and reads nothing of what
+// was there. This one does the opposite: both lines read the current value and add to it. It
+// works only because Free Pascal does not clear a plain array passed as out, which is an
+// implementation detail and not a promise. The compiler is entitled to clear it, and a future
+// version that does would silently reset the whole table of children by age at every birth.
+// The same declaration appears on fixedNumChildren and calcCompleteFertilityWoman, which pass
+// the table down to here.
+// Proposed fix: declare the parameter var in all three, since the routine accumulates. No
+// behaviour changes today; what changes is that the declaration stops lying.
 	procedure addChild (age: FecundAges; order: DistribChildrenCalc; number: longint; out ageChildren: TabCompFertAge);
 	begin
 		ageChildren[age, 0] := ageChildren[age, 0] + number;
 		ageChildren[age, order] := ageChildren[age, order] + number;
 	end;
+// END BUG
 				
 	function fixedNumChildren (
 							randomGenerator: TRandomNumberGenerator;							
@@ -558,9 +803,9 @@ end;
 				ageMotherAtChildbirth := g_FIXED_FERTILITY_DATA.ageFert [indChild-1];
 				ageFatherAtChildbirth := calcAgeFatherAtChildbirth (ageMotherAtChildbirth, 1, unionStates);
 				if sex = man then
-					ageDeath := calc_ageDeath(randomGenerator, 0, pDemReg^.mortalityInfo.survival_men)
+					ageDeath := calc_ageDeath(randomGenerator, 0, pDemReg^.mortalityInfo.survival_men, man)
 				else
-					ageDeath := calc_ageDeath(randomGenerator, 0, pDemReg^.mortalityInfo.survival_women);
+					ageDeath := calc_ageDeath(randomGenerator, 0, pDemReg^.mortalityInfo.survival_women, woman);
 
 				{date ---}
 				monthStart := trunc (unionStates.Unions [0].ages[le_union, woman] * 12);
@@ -630,13 +875,13 @@ which will prevent some things, like the use of the time profiler as well as wri
 			testStopping: boolean;
 			endUnion: boolean;
 
-			procedure paramSeparation;
+			procedure paramSeparation (monthOfSeparation: longint);
 			var
 				durationUnionWoman: double;
 			begin
 			{DEBUG: CHECK CURRMONTH COUNT SINCE BIRTH}
 				endUnion := true;
-				ageDurationEvents.ages[le_endUnion, woman] := lunarMonthsToAge (currMonth);
+				ageDurationEvents.ages[le_endUnion, woman] := lunarMonthsToAge (monthOfSeparation);
 				currPartnershipStatus := separated;
 				// age at end of union for man is computed adding the duration of union
 				durationUnionWoman := (ageDurationEvents.ages[le_endUnion, woman] - ageDurationEvents.ages[le_union, woman]);
@@ -655,54 +900,64 @@ which will prevent some things, like the use of the time profiler as well as wri
 				) then begin
 					ageDurationEvents.ages[le_endUnion, woman] := ageDurationEvents.ages[le_death, woman];
 				end;
-				ageDurationEvents.durations.durationUnionInMonthsWithSeparation := currMonth - monthStart + 1;
+				ageDurationEvents.durations.durationUnionInMonthsWithSeparation := monthOfSeparation - monthStart + 1;
 				if (ageDurationEvents.durations.durationUnionInMonthsWithSeparation < ageDurationEvents.durations.durationUnionInMonths) then
 					ageDurationEvents.durations.durationUnionInMonths := ageDurationEvents.durations.durationUnionInMonthsWithSeparation;
-				if
-					((ageDurationEvents.ages[le_death, woman] > 0) and
-					(ageDurationEvents.ages[le_death, woman] < ageDurationEvents.ages[le_endUnion, woman])) or
-					((ageDurationEvents.ages[le_death, man] > 0) and
-					(ageDurationEvents.ages[le_death, man] < ageDurationEvents.ages[le_endUnion, man])) then begin
-if gRunFromIDE then
-{$IFNDEF ARM}
-	asm int 3 end;
-{$ELSE}
-	assert(false);
-{$ENDIF}
-					writeAndWaitConst(['===> ERROR: age at death inferior to age at end union for one of the partners']);
-				end;
 			end;
 
 			function waiting_time_contraception (
 							pDemReg: pStructDemographicRegimeSettings;
 							const AccDurationContr: array of double;
 							propContraception: double;
-				 			monthEnd: longint): longint;
+							monthEnd: longint;
+							monthSpacingStarts: longint;
+							testSeparationHere: boolean): longint;
+			{Draws the length of a spell of contraceptive waiting and returns it as a count of
+			 months. It does not move currMonth: the caller decides how the woman's clock
+			 advances, which is what keeps the wait from being applied twice.
+			 monthSpacingStarts is the month at which the waiting begins, on the same clock as
+			 currMonth, so that the separation tests below fall on the right dates.
+
+			 testSeparationHere says whether this routine is the one that applies the risk of
+			 separation to the months it walks}
 			var
 				monthsOfContraception: longint;	{months of contraceptive waiting drawn in this call}
+				intendedMonths: longint;		{the length before any interruption, for the check}
+				monthNow: longint;				{running month inside the waiting, counted like currMonth}
 				aleaContraception: double;
 			begin
 				waiting_time_contraception := 0;
 				aleaContraception := randomGenerator.alea0;
-				if ( AccDurationContr [0] < 1.0 ) and ( aleaContraception < propContraception) and (currMonth <= monthEnd) then
+				monthNow := monthSpacingStarts;
+				if ( AccDurationContr [0] < 1.0 ) and ( aleaContraception < propContraception) and (monthNow <= monthEnd) then
 				begin
 					aleaContraception := randomGenerator.alea0;
 					monthsOfContraception := 0;
-					while	(currMonth <= monthEnd) and
+					{The length this spell would have had if nothing interrupted it, which is what
+					 the input distribution describes. The loop below stops early when the union
+					 ends, when the woman stops, or when the fertile life is over, so the spells
+					 actually lived are censored and cannot be read against the input directly.}
+					intendedMonths := 0;
+					while (intendedMonths < high (AccDurationContr)) and
+							(aleaContraception > AccDurationContr [intendedMonths]) do
+						Inc (intendedMonths);
+					InterLockedIncrement (gCount_spacing [min (kMaxIndBirthIntervals, nbChildren),
+							min (kMaxDurationContraceptionInBirthIntervals, intendedMonths)]);
+					while	(monthNow <= monthEnd) and
 							(aleaContraception > AccDurationContr [monthsOfContraception]) and
 							(not endUnion) and
 							( effectivenessContraceptionStopping(pDemReg, nbChildren) >= randomGenerator.alea0 ) do
 					begin
-						if pDemReg^.separationInfo.separationPossible and
-							endBySeparation (randomGenerator, monthStart, currMonth, nbPregnanciesInCurrentUnion,
+						if testSeparationHere and pDemReg^.separationInfo.separationPossible and
+							endBySeparation (randomGenerator, monthStart, monthNow, nbPregnanciesInCurrentUnion,
 								pCurrChild, pDemReg^.separationInfo, pDemReg^.dp, unionStates)
 						then begin
-							paramSeparation;
-							ageDurationEvents.monthStop := min (currMonth, ageDurationEvents.monthStop);
+							paramSeparation (monthNow);
+							ageDurationEvents.monthStop := min (monthNow, ageDurationEvents.monthStop);
 							ageDurationEvents.monthStopIsStopping := false;
 						end else begin
 							Inc ( monthsOfContraception );
-							Inc ( currMonth );
+							Inc ( monthNow );
 						end;
 					end;
 					waiting_time_contraception := monthsOfContraception;
@@ -716,6 +971,8 @@ if gRunFromIDE then
 				dummy: double;
 				currAge: FecundAges;
 				durationPregnancyInMonths: longint;
+				nonSusceptibleLiveBirth: longint;	{gestation and amenorrhea, counted from conception}
+				monthsSpacing: longint;				{months of spacing contraception after the birth}
 				
 				function AbortionOrStillBorn (nonSusceptiblePeriod: longint): longint;
 				begin
@@ -764,25 +1021,22 @@ if gRunFromIDE then
 					monthsNonSusceptible := kLivingBirth_durationPregnancyInMonths;
 					while dummy < pDemReg^.temporary_sterility[monthsNonSusceptible - kLivingBirth_durationPregnancyInMonths] do
 						Inc ( monthsNonSusceptible );
+					{counted for the comparison with the amenorrhea schedule at the end of the run}
+					InterLockedIncrement (gCount_amenorrhea [min (kMaxMonthTemporarySterility,
+							monthsNonSusceptible - kLivingBirth_durationPregnancyInMonths)]);
 					
 					{Case of the possible early death of the newborn, before weaning,
 					which may shorten the temporary sterility period}
 					maxMonthDeathChild := 0;
 					for indBirthInDelivery := 1 to nbBirthsInDelivery do begin // we take care of multiple births
 						sexNewBorn := sexAtBirth (randomGenerator, pDemReg, 0);
+						InterLockedIncrement (gCount_birthsBySex [sexNewBorn]);	{for the sex ratio at birth}
 						if sexNewBorn = woman then
-						begin
-							ageDeathChild := calc_ageDeath (randomGenerator, 0, pDemReg^.mortalityInfo.survival_women);
-							if ageDeathChild < 4 then
-								ageDeathChild := calc_ageDeath0_3years ( randomGenerator,
-														trunc (ageDeathChild),
-														pDemReg^.mortalityInfo.survival_women );
-						end else
-						begin
-							ageDeathChild := calc_ageDeath (randomGenerator, 0, pDemReg^.mortalityInfo.survival_men);
-							if ageDeathChild < 4 then
-								ageDeathChild := calc_ageDeath0_3years (randomGenerator, trunc (ageDeathChild), pDemReg^.mortalityInfo.survival_men );
-						end;
+							ageDeathChild := calc_ageDeath (randomGenerator, 0,
+													pDemReg^.mortalityInfo.survival_women, woman)
+						else
+							ageDeathChild := calc_ageDeath (randomGenerator, 0,
+													pDemReg^.mortalityInfo.survival_men, man);
 						if ageDeathChild < 4 then
 							monthDeathChild [indBirthInDelivery] := ageToLunarMonths (ageDeathChild)
 						else
@@ -829,33 +1083,70 @@ if gRunFromIDE then
 				dummy := randomGenerator.alea0;
 				currAge := trunc ( lunarMonthsToAge (currMonth) ); {Age at conception} {DEBUG check whether currMonth start from birth}
 				
+				{the outcome of this conception, by the mother's age, for the two risk schedules}
+				InterLockedIncrement (gCount_conceptions [max (0, min (kMaxAgeFert, currAge))]);
 				if (dummy < gIntrauterine_mortality_risk[currAge] + gStillbirth_mortality_risk[currAge]) then
 				begin
 					if (dummy < gIntrauterine_mortality_risk[currAge]) then
 					begin
 						{spontaneous abortion}
+						InterLockedIncrement (gCount_intrauterine_byAge [max (0, min (kMaxAgeFert, currAge))]);
 						dummy := randomGenerator.alea0;
-						durationPregnancyInMonths := 1;
+						{Barrett's schedule runs from the SECOND month of gestation: losses in the
+						 first month are absorbed into fecundability, not drawn here. See the note
+						 on gDistrib_intrauterine_mortality_risk in Fertility.pas.}
+						durationPregnancyInMonths := 2;
 						while dummy > gDistrib_intrauterine_mortality_risk[durationPregnancyInMonths] do
 							Inc ( durationPregnancyInMonths );
+						{counted for the comparison with Barrett's distribution at the end of the run}
+						InterLockedIncrement (gCount_intrauterine_month [min (8, durationPregnancyInMonths)]);
 						
 						pregnancy := AbortionOrStillBorn (kIntrauterineMort_NonSusceptPeriod_minInMonths + durationPregnancyInMonths);
 					end else
 					begin
 						{stillbirth}
+						InterLockedIncrement (gCount_stillbirth_byAge [max (0, min (kMaxAgeFert, currAge))]);
 						pregnancy := AbortionOrStillBorn (kStillBirth_durationPregnancyInMonths);
 					end;
 				end else
 				begin
-					{Live birth}
-					pregnancy := LivingBirth (pDemReg) +
-								waiting_time_contraception (
-											pDemReg, 
+					{Live birth. Two spells run from the same conception: the gestation followed by
+					 the amenorrhea, and, one month after the birth, any spacing contraception. The
+					 couple is exposed again when the later of the two ends, so the interval takes
+					 the larger of the two and not their sum. The calls are written as two
+					 statements because both have side effects and Pascal does not define the order
+					 in which the operands of + are evaluated: LivingBirth increments nbChildren,
+					 which decides the spacing distribution read below.}
+					nonSusceptibleLiveBirth := LivingBirth (pDemReg);
+					monthsSpacing := waiting_time_contraception (
+											pDemReg,
 											pDemReg^.AccDurationWaitingTime [min(nbChildren, kMaxIndBirthIntervals)],
 											effectivenessContraceptionSpacing(pDemReg, nbChildren),
-											monthEnd);
+											monthEnd,
+											currMonth + kLivingBirth_durationPregnancyInMonths + 1,
+											false);	{the advance loop of calcNbChildren walks these months so we don't test for separation here}
+					if (monthsSpacing > 0) then
+						pregnancy := max (nonSusceptibleLiveBirth,
+										kLivingBirth_durationPregnancyInMonths + 1 + monthsSpacing)
+					else
+						pregnancy := nonSusceptibleLiveBirth;
 				end;
 				
+// BUG  **N4c**  the redraw after each birth discards the woman's own age schedule
+// With RESHUFFLED_FECUNDABILITY on, this rebuilds levelFecundabilityAge for every age from
+// gFecundability, the plain age schedule. That throws away what initFecundLife had put
+// there: the Leridon taper, which lowers fecundability linearly over the 12.5 years before
+// the woman's own age at sterility, and the adjustment made when that age falls below 33.
+// After the first birth the woman is back on the untapered schedule and stays fecund at
+// ages where the model says she should not be.
+// It is also a different model of heterogeneity. Drawing a new level at every interval
+// turns variation BETWEEN women into variation WITHIN a woman, so the between-woman
+// variance the Leridon parameterisation asks for is lost, and the check on the
+// heterogeneity distribution still passes because the draws themselves are correct.
+// Proposed fix: redraw the level only, then rebuild the schedule the way initFecundLife
+// does, taper included, or leave the routine alone and state in the manual that this
+// switch means within-woman variation and is not Leridon's model. **Decide which**, since
+// the two answers are different models rather than a right and a wrong version.
 				if g_GENPARAM.fixedParameters [reshuffledFecundability].state.value then begin
 				// Relative level of fecundability changes for each interval
 					fecundLife.relativeFecundabilityLevel := fecundabilityLevel (randomGenerator);
@@ -864,6 +1155,7 @@ if gRunFromIDE then
 						fecundLife.levelFecundabilityAge[currAge] :=  fecundLife.relativeFecundabilityLevel * gFecundability[currAge];
 					end;
 				end;
+// END BUG
 			end; {pregnancy}
 			
 			var
@@ -883,15 +1175,6 @@ if gRunFromIDE then
 			
 			monthEnd := min (monthEnd, monthOfEndOfFecundLife);
 
-if (monthOfEndOfFecundLife < monthEnd) then begin
-	if gRunFromIDE then
-{$IFNDEF ARM}
-		asm int 3 end;
-{$ELSE}
-		assert(false);
-{$ENDIF}
-	writeAndWaitConst(['===> ERROR: monthOfEndOfFecundLife < monthEnd']);
-end;
 			ageDurationEvents.nBirths := 0;
 			{Provisional values - may change, depending on contraception use and separation}
 			ageDurationEvents.monthStart := monthStart;
@@ -910,24 +1193,30 @@ try // 1
 					pDemReg,
 					pDemReg^.AccDurationContrAfterUnion,
 					pDemReg^.propContraceptionAfterUnion_var,
-					monthEnd);
+					monthEnd,
+					currMonth,
+					true);	{nothing else walks these months, so the risk of separation is applied here}
+				{the function no longer moves the clock, so the wait is applied here}
+				currMonth := currMonth + monthWaitingTime;
 				waiting_time_firstUnion := (monthWaitingTime > 0);
 			end;
 			
 			{Birth control any union, before first birth (only if the previous waiting time is zero)}
 			if not waiting_time_firstUnion and (nbChildren = 0) then begin
-				monthWaitingTime := waiting_time_contraception (pDemReg, pDemReg^.AccDurationWaitingTime [0], effectivenessContraceptionSpacing(pDemReg, 0), monthEnd);
+				monthWaitingTime := waiting_time_contraception (
+					pDemReg,
+					pDemReg^.AccDurationWaitingTime [0],
+					effectivenessContraceptionSpacing(pDemReg, 0),
+					monthEnd,
+					currMonth,
+					true); {again nothing else walks these months, so the risk of separation is applied here}
+				currMonth := currMonth + monthWaitingTime;
 			end;
 except // 1
 	on E: Exception do begin
 		if not isThreaded then begin
 			writeAndWaitConst(['===> ERROR: ', E.Message]);
-if gRunFromIDE then
-{$IFNDEF ARM}
-	asm int 3 end;
-{$ELSE}
-	assert(false,E.Message)
-{$ENDIF}
+breakOnFailure;
 		end;
 	end;
 end;
@@ -936,9 +1225,15 @@ try // 2
 			ageDurationEvents.monthStart := currMonth;
 			while (currMonth <= monthEnd) and (not endUnion) do
 			begin
-if (lunarMonthsToAge (currMonth) < kMinAgeFert) or (lunarMonthsToAge (currMonth) > kMaxAgeFert) then
-	writeAndWait ('===> ERROR: currMonth bad value in calcNbChildren');
 				currAge := trunc ( lunarMonthsToAge (currMonth) );
+				{on currAge, which is the index used below, and not on the fractional age: the last
+				 month of the fertile life is 719, whose fractional age is 59.92, above kMaxAgeFert,
+				 so a test on the fraction would report a failure for every woman still in a union
+				 at that age. What has to hold is that the index into the fecundability tables is
+				 inside their bounds.}
+				if checkFalse (chk_currAgeInFecundRange,
+					(currAge < kMinAgeFert) or (currAge > kMaxAgeFert),
+					['month ', currMonth, ', age ', currAge]) then breakOnFailure;
 				aleaFecundability := randomGenerator.alea0 ();
 try // 2-1
 				if fecundLife.levelFecundabilityAge [currAge] >= aleaFecundability then
@@ -977,12 +1272,7 @@ except // 2-1
 	on E: Exception do begin
 		if not isThreaded then begin
 			writeAndWaitConst(['===> ERROR: ', E.Message]);
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false,E.Message)
-{$ENDIF}
+			breakOnFailure;
 		end;
 	end;
 end;
@@ -993,25 +1283,32 @@ try // 2-2
 					with pCurrChild^ do begin
 						monthFecundation := currMonth;
 						
-						if (monthEndPregnancy > monthFecundation + 11) then begin
-if gRunFromIDE then
-{$IFNDEF ARM}
-	asm int 3 end;
-{$ELSE}
-	assert(false);
-{$ENDIF}
-							writeAndWaitConst (['===> ERROR: monthEndPregnancy > monthFecundation + 11']);
-						end;
+						{the second half is the one that can fail: a pregnancy that ends before it
+						 begins is what N6 produced, the clock having moved between the two records}
+						if checkFalse (chk_pregnancyLength,
+							(monthEndPregnancy > monthFecundation + 11) or (monthEndPregnancy < monthFecundation),
+							['conception ', monthFecundation, ', end of pregnancy ', monthEndPregnancy]) then breakOnFailure;
 						ageMotherAtFecundation := lunarMonthsToAge (currMonth);
 						monthNewOvulation := currMonth + monthIncrement;
 					end;
 				end;
 
-				{There is a problem with current civil status: it cannot change during pregnancy}
-				{or the amenorrhoea period. This means that the birth will be registered with civil status}
-				{of the woman at the time of conception}
+				{Separation over the non-susceptible period that follows this conception.
 
-				{separation after fecundation}
+				 The risk is applied to every month of that period, so the union can end during the
+				 pregnancy and during the amenorrhea. What cannot change is the union the child
+				 belongs to: motherUnionNumber is written inside pregnancy, that is at conception,
+				 before this loop runs, so the birth is recorded under the union in force when the
+				 child was conceived, and with the civil status the woman had then. A child born
+				 more than nine months after the end of that union, or after the mother's death, is
+				 dropped further down, where the test reads 9/12 of a year although the comment
+				 beside it says ten months.
+
+				 Since the N6 fix, monthIncrement also covers the months of any spacing
+				 contraception drawn for this interval, because the interval takes the later of the
+				 two spells rather than their sum. This loop therefore walks those months too, which
+				 is why waiting_time_contraception no longer tests separation on them (N6b): every
+				 month of the interval is walked here, exactly once.}
 				monthsElapsed := 0;
 				while (monthsElapsed < monthIncrement) and (currMonth <= monthEnd) do
 				begin
@@ -1020,7 +1317,7 @@ if gRunFromIDE then
 						endBySeparation (randomGenerator, monthStart, currMonth, nbPregnanciesInCurrentUnion, pCurrChild, pDemReg^.separationInfo, pDemReg^.dp, unionStates)
 						then
 					begin
-						paramSeparation;
+						paramSeparation (currMonth);
 						ageDurationEvents.monthStop := min (currMonth, ageDurationEvents.monthStop);
 						ageDurationEvents.monthStopIsStopping := false;
 						monthsElapsed := monthIncrement;
@@ -1031,12 +1328,7 @@ except // 2-2
 	on E: Exception do begin
 		if not isThreaded then begin
 			writeAndWaitConst(['===> ERROR: ', E.Message]);
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false,E.Message)
-{$ENDIF}
+			breakOnFailure;
 		end;
 	end;
 end;
@@ -1046,12 +1338,7 @@ except // 2
 	on E: Exception do begin
 		if not isThreaded then begin
 			writeAndWaitConst(['===> ERROR: ', E.Message]);
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false,E.Message)
-{$ENDIF}
+			breakOnFailure;
 		end;
 	end;
 end;
@@ -1063,29 +1350,20 @@ try // 3
 except // 3
 	on E: Exception do begin
 		writeAndWaitConst(['===> ERROR: ', E.Message]);
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false,E.Message)
-{$ENDIF}
+		breakOnFailure;
 	end;
 end;
 try // 4
 			{for debugging purposes only. We should never have (monthStop = kMaxAgeLifeInMonths) and (currMonth < monthEnd)}
-			if (ageDurationEvents.monthStop = kMaxAgeLifeInMonths) and (currMonth < monthEnd ) then begin
+			if checkFalse (chk_monthStopSet,
+				(ageDurationEvents.monthStop = kMaxAgeLifeInMonths) and (currMonth < monthEnd),
+				['month ', currMonth, ', end of union ', monthEnd]) then breakOnFailure;
+			if (ageDurationEvents.monthStop = kMaxAgeLifeInMonths) and (currMonth < monthEnd ) then
 				ageDurationEvents.monthStop := currMonth - 1;
-				writeAndWait ('===> ERROR: ageDurationEvents.monthStop bad in calcNbChildren');
-			end;
 except // 4
 	on E: Exception do begin
 		writeAndWaitConst(['===> ERROR: ', E.Message]);
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false,E.Message)
-{$ENDIF}
+		breakOnFailure;
 	end;
 end;
 			
@@ -1103,12 +1381,7 @@ try // 5
 except // 5
 	on E: Exception do begin
 		writeAndWaitConst(['===> ERROR: ', E.Message]);
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false,E.Message)
-{$ENDIF}
+		breakOnFailure;
 	end;
 end;
 try // 6
@@ -1118,7 +1391,7 @@ try // 6
 					endBySeparation (randomGenerator, monthStart, currMonth, nbPregnanciesInCurrentUnion,
 							pCurrChild, pDemReg^.separationInfo, pDemReg^.dp, unionStates) then
 					begin
-						paramSeparation;
+						paramSeparation (currMonth);
 						ageDurationEvents.monthStop := min (currMonth, ageDurationEvents.monthStop);
 						ageDurationEvents.monthStopIsStopping := false;
 					end else
@@ -1126,12 +1399,7 @@ try // 6
 				end;
 except // 6
 	on E: Exception do begin
-		if gRunFromIDE then
-{$IFNDEF ARM}
-			asm int 3 end;
-{$ELSE}
-			assert(false,E.Message)
-{$ENDIF}
+		breakOnFailure;
 	end;
 end;
 			end;
@@ -1256,12 +1524,7 @@ end;
 	on E: Exception do begin
 		if not isThreaded then begin
 			writeAndWaitConst(['===> ERROR: ', E.Message]);
-			if gRunFromIDE then
-{$IFNDEF ARM}
-				asm int 3 end;
-{$ELSE}
-				assert(false,E.Message)
-{$ENDIF}
+			breakOnFailure;
 		end;
 	end;
 end;}
@@ -1279,33 +1542,37 @@ end;}
 
 		calcCompleteFertilityWoman := nbChildren;
 
-		if gRunFromIDE then begin
-			// check ages
-			for indUnion := mem_param_currentUnionNumber to unionStates.nbUnions do begin
-				if (unionStates.Unions [indUnion-1].ages[le_union, man] >
-					unionStates.Unions [indUnion-1].ages[le_endUnion, man]) and
-					(unionStates.Unions [indUnion-1].ages[le_endUnion, man] <> kNotDefined) then
-					writeAndWaitConst(['===> ERROR: Bad man: age union superior to age end']);
-				if (unionStates.Unions [indUnion-1].ages[le_union, woman] >
-					unionStates.Unions [indUnion-1].ages[le_endUnion, woman]) and
-					(unionStates.Unions [indUnion-1].ages[le_endUnion, woman] <> kNotDefined) then
-					writeAndWaitConst(['===> ERROR: Bad woman: age union superior to age end']);
-				if param_deathWoman then begin
-					if unionStates.Unions [indUnion-1].ages[le_union, woman] >
-						unionStates.Unions [indUnion-1].ages[le_death, woman] then
-						writeAndWaitConst(['===> ERROR: Bad woman: age union superior to age death']);
-					if unionStates.Unions [indUnion-1].ages[le_endUnion, woman] >
-						unionStates.Unions [indUnion-1].ages[le_death, woman] then
-						writeAndWaitConst(['===> ERROR: Bad woman: age end union superior to age death']);
-				end;
-				if param_deathMan then begin
-					if unionStates.Unions [indUnion-1].ages[le_union, man] >
-						unionStates.Unions [indUnion-1].ages[le_death, man] then
-						writeAndWaitConst(['===> ERROR: Bad man: age union superior to age death']);
-					if unionStates.Unions [indUnion-1].ages[le_endUnion, man] >
-						unionStates.Unions [indUnion-1].ages[le_death, man] then
-						writeAndWaitConst(['===> ERROR: Bad man: age end union superior to age death']);
-				end;
+		{We verify ages at start and end of union and age at death are in correct sequences}
+		for indUnion := mem_param_currentUnionNumber to unionStates.nbUnions do begin
+			if checkFalse (chk_manUnionBeforeEnd,
+				(unionStates.Unions [indUnion-1].ages[le_union, man] >
+				unionStates.Unions [indUnion-1].ages[le_endUnion, man]) and
+				(unionStates.Unions [indUnion-1].ages[le_endUnion, man] <> kNotDefined),
+				['union ', indUnion]) then breakOnFailure;
+			if checkFalse (chk_womanUnionBeforeEnd,
+				(unionStates.Unions [indUnion-1].ages[le_union, woman] >
+				unionStates.Unions [indUnion-1].ages[le_endUnion, woman]) and
+				(unionStates.Unions [indUnion-1].ages[le_endUnion, woman] <> kNotDefined),
+				['union ', indUnion]) then breakOnFailure;
+			if param_deathWoman then begin
+				if checkFalse (chk_womanUnionBeforeDeath,
+					unionStates.Unions [indUnion-1].ages[le_union, woman] >
+					unionStates.Unions [indUnion-1].ages[le_death, woman],
+					['union ', indUnion]) then breakOnFailure;
+				if checkFalse (chk_womanEndUnionBeforeDeath,
+					unionStates.Unions [indUnion-1].ages[le_endUnion, woman] >
+					unionStates.Unions [indUnion-1].ages[le_death, woman],
+					['union ', indUnion]) then breakOnFailure;
+			end;
+			if param_deathMan then begin
+				if checkFalse (chk_manUnionBeforeDeath,
+					unionStates.Unions [indUnion-1].ages[le_union, man] >
+					unionStates.Unions [indUnion-1].ages[le_death, man],
+					['union ', indUnion]) then breakOnFailure;
+				if checkFalse (chk_manEndUnionBeforeDeath,
+					unionStates.Unions [indUnion-1].ages[le_endUnion, man] >
+					unionStates.Unions [indUnion-1].ages[le_death, man],
+					['union ', indUnion]) then breakOnFailure;
 			end;
 		end;
 
@@ -1578,8 +1845,8 @@ end;}
 					Inc ( nAbortions );
 				pCurrChild := pCurrChild^.next;
 			end;
-			if unionStates_copy.nbChildren <> ( nChildrenAlive ) then
-				writeAndWait ('===> ERROR: nbChildren snafus, woman: ' + IntToStr (idWoman));
+			if checkFalse (chk_childrenCounted, unionStates_copy.nbChildren <> nChildrenAlive,
+				['woman ', idWoman, ', counted ', unionStates_copy.nbChildren, ', in the list ', nChildrenAlive]) then breakOnFailure;
 				
 			if RP.wKey then
 				bWrite (gOutFileIndivFec, [RP.key, sep]);
@@ -1754,11 +2021,7 @@ end;}
 			child := pChild^.birthOrder;
 			child := min (kMaxNbChildrenCalc, child); 
 			duration := min (kMaxDurationIntervalsInMonth, monthNext-monthPrev);
-			if (duration < 0) then begin
-				if (duration < -2) then
-				   writeAndWait ('===> ERROR: duration bad in incrementIntervConc');
-				duration := 0; {debug}
-			end;
+			if checkFalse (chk_conceptionInterval, duration < -2, ['interval ', duration]) then breakOnFailure;
 			intervals_between_conceptions [g_nRuns-1, child-1, kMaxDurationIntervalsInMonth+1] :=
 				intervals_between_conceptions [g_nRuns-1, child-1, kMaxDurationIntervalsInMonth+1] + 1;
 			intervals_between_conceptions [g_nRuns-1, child-1, duration] :=
@@ -1876,8 +2139,8 @@ end;}
 			ageUnion := trunc (unionStates.Unions [nUnion - 1].ages[le_union, woman]);
 			ageEndUnion := trunc (ageWomenEndUnion (unionStates.Unions [nUnion - 1].ages, statutEndUnion)) + 1; {you can have a child up to a year after the end of the union}
 			duration := trunc (pChild^.ageMotherAtChildbirth - unionStates.Unions [nUnion - 1].ages[le_union, woman]);
-			if (duration > ageEndUnion - ageUnion + 1) then
-				writeAndWait('===> ERROR: birth more than one year after the end of current union');
+			if checkFalse (chk_birthWithinUnion, duration > ageEndUnion - ageUnion + 1,
+				['union at ', ageUnion, ', ended at ', ageEndUnion, ', birth after ', duration]) then breakOnFailure;
 			durationMin := min (kMaxShownDurationUnion, duration);
 			Inc ( objOutputFert.pBirthDuration^ [ageUnion, durationMin, 0] );
 			Inc ( objOutputFert.pBirthDuration^ [ageUnion, durationMin, nUnionMin] );
@@ -2428,12 +2691,8 @@ on E: Exception do begin
 myHalt([E.Message])
 end;
 end; // try 2
-					if (nbChildren <> numChildrenInUnion (pChildrenList, 0)) then
-					begin
-						{debug}
-						writeAndWait ('===> ERROR: nbChildren not equal to numChildrenInUnion (pChildrenList)');
-						nbChildren := nbChildren;
-					end;
+					if checkFalse (chk_childrenInUnion, nbChildren <> numChildrenInUnion (pChildrenList, 0),
+						['counted ', nbChildren, ', in the list ', numChildrenInUnion (pChildrenList, 0)]) then breakOnFailure;
 			
 					pData^.varianceCompFert := pData^.varianceCompFert + nbChildren * nbChildren;
 
@@ -2720,6 +2979,12 @@ temp : double;
 	idWomanTemp: longint = 1;
 	factHighOrder: double;
 	iterFec: longint;
+// >>> Claude 2026-09-12 start
+	targetCTFR, distanceCTFR, bestDistance: double;
+	bestIteration, nParityNotReached: longint;
+	bestPPR: array of double;
+	keptDiffers: boolean;
+// <<< Claude 2026-09-12 end
 
 	begin {computeGenFert}
 try
@@ -2746,21 +3011,64 @@ end;
 		// adjust a priori PPR in order to get them closer to the input values
 		// we do it only in a few passes but do not iterate until converging, like we do for separation risk
 			
-			for iterFec := 1 to 4 do begin
+// >>> Claude 2026-09-12 start
+			{**N7 fixed here.** The adjustment nudges the a priori parity progression ratios so
+			 that the ratios the simulation produces come closer to the ones asked for. Three
+			 faults are corrected.
+
+			 (a) A parity no woman reached. b is the ratio the simulation produced, and it is
+			 zero when the parity was never reached, which is the normal state of the higher
+			 parities. The old line replaced that zero by 0.00001, so the factor c / b became c
+			 times one hundred thousand and the clamp turned the adjusted ratio into 0.99999:
+			 the model was told that progression at that parity is all but certain, on the
+			 evidence of nobody. Such a parity is now skipped and its adjusted value left as it
+			 was, since a simulation that reached nobody says nothing about progression from
+			 there.
+
+			 (b) The higher parities. The second loop reused whatever factHighOrder the first
+			 loop happened to leave behind, that is the factor of the LAST parity it touched,
+			 reached or not. With (a) in place that would now be the factor of the last parity
+			 that was actually reached, but relying on the leftover value of a loop variable is
+			 what made the fault possible, so the factor is kept explicitly. When no parity at
+			 all was reached the factor is 1, which leaves the higher parities alone.
+
+			 (c) No convergence test. The loop ran four times whatever happened, kept the last
+			 iterate whether or not it was the best, and set adjustedValues inside itself, so a
+			 later run took the adjusted values as settled even when the last pass was the worst
+			 of the four. The distance between the cohort total fertility the adjusted ratios
+			 produce and the one asked for is now measured at each pass, the best pass is kept,
+			 and the loop stops as soon as the distance is within kPPRTargetTolerance. If the
+			 best pass is not the last, the tables are rebuilt from it before the routine
+			 returns, so what the run uses is what the report names.
+
+			 The memo line at the end says which pass was kept, how far it landed from the
+			 target, and how many parities were skipped for want of anyone reaching them.}
+			targetCTFR := computeTFRfromPPRs (pDemReg^.aPrioriPPR);
+			bestDistance := kNotDefined;
+			bestIteration := 0;
+			nParityNotReached := 0;
+			SetLength (bestPPR{%H-}, kMaxNbChildren + 1);
+			for iterFec := 1 to kMaxIterationsPPR do begin
 				if g_GENPARAM.TALKATIVE.value then
 					memoWriteLn (['Iteration CTFR: ', iterFec, ', cohort: ', pDemReg^.yearOfBirth.value]);
+				factHighOrder := 1.0;	{the factor of the last parity actually reached}
 				for ind := 0 to kMaxNbChildrenCalc do begin
 					c := pDemReg^.aPrioriPPR.value[ind];
 					a := pDemReg^.aPrioriPPR_adjusted.value[ind];
 					// This are the values computed in a previous step
 					// First parityProgressionRatio value is for transition to union, so we add 1 to index
 					b := pDemReg^.parityProgressionRatio[ind+1, everInUnion];
-					
-					if (b = 0) then b := 0.00001;
+
 					ind1 := ind + 1;
 					if g_GENPARAM.TALKATIVE.value then
 						memoWriteLn (['p', ind, '->', ind1, ' Tgt: ', c, ' adj: ', a, ' res: ', b]);
-				
+
+					if (b <= 0.0) then begin
+						{nobody reached this parity: nothing to learn, so nothing to adjust}
+						Inc (nParityNotReached);
+						continue;
+					end;
+
 					if (useOdds) then begin
 						// one option is to use odds in order to limit to [0, 1]
 						// first a sanity check
@@ -2778,10 +3086,10 @@ end;
 						// sanity check at the end..
 						if a > 1 then a := 0.99999;
 					end;
-				
+
 					pDemReg^.aPrioriPPR_adjusted.value[ind] := a;
 				end;
-				// last value for the factHighOrder term is extended to higher parities
+				// the factor of the last parity that was reached is extended to higher parities
 				for ind := kMaxNbChildrenCalc+1 to kMaxNbChildren do begin
 					c := pDemReg^.aPrioriPPR.value[ind];
 					a := pDemReg^.aPrioriPPR_adjusted.value[ind];
@@ -2799,9 +3107,40 @@ end;
 				pDemReg^.DF_apriori := compute_aprioriDF(pDemReg);
 				init_fecGen (randomGenerator, g_silentMode, pDemReg, @computeGenFertData, objUnionTable, objOutputFert, idWomanTemp, arrayChildren);
 				compute_fecGen_tables(pDemReg, @computeGenFertData, objUnionTable);
-				pDemReg^.adjustedValues := true;
 
+				{how far this pass landed from the target, and keep it if it is the best so far}
+				distanceCTFR := abs (computeTFRfromPPRs (pDemReg^.aPrioriPPR_result) - targetCTFR);
+				if (bestIteration = 0) or (distanceCTFR < bestDistance) then begin
+					bestDistance := distanceCTFR;
+					bestIteration := iterFec;
+					for ind := 0 to kMaxNbChildren do
+						bestPPR[ind] := pDemReg^.aPrioriPPR_adjusted.value[ind];
+				end;
+				if (distanceCTFR <= kPPRTargetTolerance) then break;
  			end; {for iterFec}
+
+			{rebuild from the best pass when the last one was not it}
+			if (bestIteration > 0) then begin
+				keptDiffers := false;
+				for ind := 0 to kMaxNbChildren do
+					if (pDemReg^.aPrioriPPR_adjusted.value[ind] <> bestPPR[ind]) then
+						keptDiffers := true;
+				if keptDiffers then begin
+					for ind := 0 to kMaxNbChildren do
+						pDemReg^.aPrioriPPR_adjusted.value[ind] := bestPPR[ind];
+					adjustContraception (pDemReg);
+					pDemReg^.DF_apriori := compute_aprioriDF(pDemReg);
+					init_fecGen (randomGenerator, g_silentMode, pDemReg, @computeGenFertData, objUnionTable, objOutputFert, idWomanTemp, arrayChildren);
+					compute_fecGen_tables(pDemReg, @computeGenFertData, objUnionTable);
+				end;
+				pDemReg^.adjustedValues := true;
+				memoWriteLn (['PPR adjustment, cohort ', pDemReg^.yearOfBirth.value,
+						': pass ', bestIteration, ' of ', iterFec, ' kept, cohort total fertility ',
+						str_float (bestDistance), ' from the target of ', str_float (targetCTFR),
+						'. Parities skipped for want of anyone reaching them: ', nParityNotReached]);
+			end;
+			SetLength (bestPPR, 0);
+// <<< Claude 2026-09-12 end
  
  			pDemReg^.CTFR.value := computeTFRfromPPRs (pDemReg^.aPrioriPPR);
  			pDemReg^.CTFR_adjusted.value := computeTFRfromPPRs (pDemReg^.aPrioriPPR_adjusted);
@@ -2845,7 +3184,18 @@ end;
 		for ageWomen := kMinAgeFert to kMaxAgeFert do
 			begin
 				Total_NetFertility := objUnionTable.pGenFert^[0, any, endedAge50, ageWomen] * pDemReg^.mortalityInfo.survivalAdult_women[ageWomen];
+// BUG  **N10**  the net reproduction rate hardcodes the sex ratio at birth
+// 0.488 is the DEFAULT value of PROP_WOMEN_AT_BIRTH, created in DemographicRegime with
+// exactly that number. A user who changes the parameter changes the sex of the children
+// simulated, since sexAtBirth reads pDemReg^.dp[propWomenAtBirth], but not this line, so
+// the reported net reproduction rate keeps describing a population the run did not
+// simulate. Mortality.pas has the same constant as a documented default and does read the
+// parameter where it matters.
+// Proposed fix:
+//     tnr := tnr + Total_NetFertility * pDemReg^.dp[propWomenAtBirth].value;
+// The same parameter is what N9 says is missing from the intrinsic rate itself.
 				tnr := tnr + Total_NetFertility * 0.488;
+// END BUG
 				screenFileWriteLn(cStringOf([ageWomen, tab, Total_NetFertility]));
 				pDemReg^.distribStableFert^[ageWomen] := Total_NetFertility * exp(-pDemReg^.r * (ageWomen + 0.5));
 				sum := sum + pDemReg^.distribStableFert^[ageWomen];

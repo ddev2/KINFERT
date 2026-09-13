@@ -18,6 +18,9 @@ type
 	TLowLevelForm = class(TForm)
 		AGE_FIXED_DEFINITIVE_STERILITY_: TEdit;
 		BaseNumberLab: TLabel;
+                INTRA_LERIDON_MAGNUS: TCheckBox;
+                STILLBIRTH_BARRETT_US2023: TCheckBox;
+                GroupBox1: TGroupBox;
 		OPTIMAL_TREES: TEdit;
 		FORCE_SEP_ITER: TCheckBox;
 		optimalTreesLab: TLabel;
@@ -116,6 +119,12 @@ begin
 	currentComponentChange.ActivateDisabling (FindComponent ('KINFERT_STERILITY'));
 	currentComponentChange.ChangeDisablingState (FindComponent ('KINFERT_STERILITY'), TRUE);
 	myComponentHelper.CreateComponentChange(FindComponent ('KINFERT_STERILITY'), g_GENPARAM.fixedParameters [KinFertDefinitiveSterility].state, currentComponentChange, onChangeHandler);
+	{Ticked selects the OLDER schedule: Léridon over Magnus, Barrett over United States 2023.
+	 Both default to unticked, that is to the newer schedules.
+	 These two lines were lost once already when LazLowlevel.pas was rewritten by saving the
+	 form in Lazarus; if the two check boxes stop responding, look here first.}
+	myComponentHelper.CreateComponentChange(FindComponent ('INTRA_LERIDON_MAGNUS'), g_GENPARAM.fixedParameters [LeridonOverMagnusIntrauterine].state, currentComponentChange, onChangeHandler);
+	myComponentHelper.CreateComponentChange(FindComponent ('STILLBIRTH_BARRETT_US2023'), g_GENPARAM.fixedParameters [BarrettOverUS2023Stillbirth].state, currentComponentChange, onChangeHandler);
 	currentComponentChange.ActivateDisabling (FindComponent ('LERIDON_STERILITY'));
 	currentComponentChange.ChangeDisablingState (FindComponent ('LERIDON_STERILITY'), TRUE);
 	myComponentHelper.CreateComponentChange(FindComponent ('NO_INITIAL_STERILITY'), g_GENPARAM.fixedParameters [noInitialSterility].state, currentComponentChange, onChangeHandler);

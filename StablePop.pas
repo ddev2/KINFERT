@@ -116,6 +116,9 @@ begin
 	Survival := Copy (pDemReg^.mortalityInfo.survival_women);
 	SetLength(Fertility, length (Survival));
 	Move(objUnionTable.pGenFert^[0, any, endedAge50, kMinAgeFert], Fertility[kMinAgeFert], Length(objUnionTable.pGenFert^[0, any, endedAge50]) * SizeOf(Double));
+	// we need female fertility only
+    for ageWomen := kMinAgeFert to kMaxAgeFert do
+    	Fertility [ageWomen] := Fertility [ageWomen] * pDemReg^.dp[propWomenAtBirth].value;
 	intrinsicRate := SolveForR (Fertility, Survival);
 end;
 
