@@ -160,24 +160,48 @@ type
 		chk_fer_sexRatioAtBirth,
 		chk_fer_intrauterineRisk,
 		chk_fer_stillbirthRisk,
-// >>> Claude 2026-09-12 start
 		chk_fer_waitingTimeMean,
-// <<< Claude 2026-09-12 end
 		{Mortality: an input the run was given}
 		chk_mor_e0OutOfRange,
 		{Kinship: the cohort ranges the groom index is built on}
 		chk_kin_groomCohortRange,
 		chk_kin_noBrideAvailable,
-// >>> Claude 2026-09-11 start
 		{Nuptiality and Kinship: the union records of a person, see N28. A setter of Nuptiality
 		 is given an index that names no union of that person, and the reciprocal link between
 		 two partners that produces such an index}
 		chk_nup_unionIndexInSetter,
 		chk_kin_noReciprocalUnion,
-// >>> Claude 2026-09-12 start
 		chk_nup_unionHasNoEnd,
-// <<< Claude 2026-09-12 end
-// <<< Claude 2026-09-11 end
+		{The alternate mother searches, reached only when one of gBACKFOR_mode,
+		 gBACKFOR_mode_pure, gCAMSIM_1987 or gCAMSIM_1993 is set. None of them runs in a
+		 normal KINFERT run, so all three of these appear in the report as failure points
+		 that recorded nothing.}
+		chk_kin_backforAgeChildbearing,
+		chk_kin_backforAgeDrawnAgain,
+		chk_kin_backforNoMother,
+		chk_kin_camsimParityIndexEmpty,
+		chk_nup_separationIndex,
+		chk_nup_scaleFactorTooLow,
+		chk_nup_meanAgeUnionRange,
+		chk_nup_meanAgeUnionDiff,
+		{N51}
+		chk_nup_stdNuptTooLow,
+		chk_nup_everInUnionZero,
+		{EducationalLevel}
+		chk_edu_rowSumsToOne,
+		chk_edu_levelName,
+		chk_edu_relativeMissing,
+		chk_edu_cohortNotAssigned,
+		chk_edu_parentStatusMissing,
+// >>> Claude 2026-09-30 start
+		{Inheritance: what the two algorithms of the module agree about, N26}
+		chk_inh_partnerTestsDiffer,
+		chk_inh_heirsFoundByOneOnly,
+		chk_inh_heirKinTypes,
+		chk_inh_heirNotConfirmed,
+		chk_inh_ascendantsSameDegree,
+		chk_inh_noCommonAncestor,
+// <<< Claude 2026-09-30 end
 		{everything reported through writeAndWait, which has no check id of its own}
 		chk_reportedProblem
 	);
@@ -304,19 +328,36 @@ const
 		'sexRatioAtBirth',
 		'intrauterineRisk',
 		'stillbirthRisk',
-// >>> Claude 2026-09-12 start
 		'waitingTimeMean',
-// <<< Claude 2026-09-12 end
 		'e0OutOfRange',
 		'groomCohortRange',
 		'noBrideAvailable',
-// >>> Claude 2026-09-11 start
 		'unionIndexInSetter',
 		'noReciprocalUnion',
-// >>> Claude 2026-09-12 start
 		'unionHasNoEnd',
-// <<< Claude 2026-09-12 end
-// <<< Claude 2026-09-11 end
+		'backforAgeChildbearing',
+		'backforAgeDrawnAgain',
+		'backforNoMother',
+		'camsimParityIndexEmpty',
+		'separationIndex',
+		'scaleFactorTooLow',
+		'meanAgeUnionRange',
+		'meanAgeUnionDiff',
+		'stdNuptTooLow',
+		'everInUnionZero',
+		'eduRowSumsToOne',
+		'eduLevelName',
+		'eduRelativeMissing',
+		'eduCohortNotAssigned',
+		'eduParentStatusMissing',
+// >>> Claude 2026-09-30 start
+		'inhPartnerTestsDiffer',
+		'inhHeirsFoundByOneOnly',
+		'inhHeirKinTypes',
+		'inhHeirNotConfirmed',
+		'inhAscendantsSameDegree',
+		'inhNoCommonAncestor',
+// <<< Claude 2026-09-30 end
 		'reportedProblem'
 	);
 
@@ -399,19 +440,36 @@ const
 		'the proportion female at birth is the one the regime was given',
 		'conceptions end in a spontaneous abortion at the risk gIntrauterine_mortality_risk gives for the age',
 		'conceptions end in a stillbirth at the risk gStillbirth_mortality_risk gives for the age',
-// >>> Claude 2026-09-12 start
 		'every waiting time distribution built delivers the mean it was asked for',
-// <<< Claude 2026-09-12 end
 		'the life expectancy asked for lies inside the model life table, 20 to 112 years',
 		'every union of a woman implies a groom born inside the groom cohort range',
 		'a bride can be found for the cohort and age at union asked for, or near them',
-// >>> Claude 2026-09-11 start
 		'the union index handed to a setter names a union that person has, or the next one',
 		'the partner of a union has the same union recorded on his or her own side',
-// >>> Claude 2026-09-12 start
 		'a union ends by a death or a separation, so it has an age at end of union',
-// <<< Claude 2026-09-12 end
-// <<< Claude 2026-09-11 end
+		'the age at childbearing drawn for a mother in BACKFOR or CAMSIM mode lies inside the fertile ages',
+		'a mother is found at the first age at childbearing drawn, without drawing another one',
+		'a mother is found for every reference child in BACKFOR or CAMSIM mode',
+		'the CAMSIM parity index holds at least one mother for the cohort and the parity asked for',
+		'the duration of a union and the age of its youngest child lie inside the tables of separation risks',
+		'the scale factor of the standard nuptiality schedule is positive, so the schedule it builds has positive densities',
+		'each mean age at first union lies inside the range a nuptiality schedule can be built from',
+		'the mean age at first union of men is high enough with respect to that of women for their schedule of ages at union to be built',
+		'the standard deviation of the schedule of ages at first union is positive, so the schedule it builds has positive densities',
+		'the proportion ever in union is above zero, so somebody enters a union and the schedule has a mean',
+		'each row of the three education distributions sums to one',
+		'the education status of a person is B, M or A',
+		'the person, the partner or the parent whose education level is needed is in the network',
+		'the cohort of a person whose education level is drawn is assigned',
+		'a status conditional on the parents, or on the partner, is drawn only once they have one',
+// >>> Claude 2026-09-30 start
+		'the two algorithms that look for the heirs of a relative make the same test on the surviving partner',
+		'the two algorithms that look for the heirs of a relative either both find heirs or both find none',
+		'the kin types of the heirs found by the second algorithm lie in the branch of the tree named by the first',
+		'every heir found by the first algorithm is also found by the second',
+		'the ascendants who inherit all belong to the same generation, so that the nearest degree excludes the rest',
+		'ego and a lateral relative of ego have at least one ancestor in common on one of the two sides of ego''s family',
+// <<< Claude 2026-09-30 end
 		'no problem was reported through writeAndWait anywhere in the program'
 	);
 
@@ -443,17 +501,35 @@ const
 		{Fertility: the parameters the simulation was given must come back}
 		ck_distribution, ck_distribution, ck_distribution, ck_distribution,
 		ck_value, ck_value, ck_value,
-// >>> Claude 2026-09-12 start
 		ck_value,
-// <<< Claude 2026-09-12 end
 		{e0 is tested on every call, so it is an invariant; a reported problem only ever
 		 appears when something went wrong, so it is a failure point}
 		ck_invariant, ck_invariant, ck_failurePoint,
-// >>> Claude 2026-09-11 start
 		{the two of N28 and the one of N31: all three are reached only when something is
 		 already wrong}
 		ck_failurePoint, ck_failurePoint, ck_failurePoint,
-// <<< Claude 2026-09-11 end
+		{the three of the alternate mother searches}
+		ck_failurePoint, ck_failurePoint, ck_failurePoint,
+		{the CAMSIM parity index}
+		ck_failurePoint,
+		{the two indices of the separation tables, N32}
+		ck_failurePoint,
+		{the scale factor of the nuptiality schedule, N29}
+		ck_failurePoint,
+		{the two mean ages at first union and the difference between them, N53, then the standard
+		 deviation of the schedule and the proportion ever in union, N51}
+		ck_failurePoint, ck_failurePoint,
+		ck_failurePoint, ck_failurePoint,
+		{education: the sum of each row is a value against a target, the other four are failure
+		 points, N20, N18 and the five writeAndWait sites of EducationalLevel}
+		ck_value,
+		ck_failurePoint, ck_failurePoint, ck_failurePoint, ck_failurePoint,
+// >>> Claude 2026-09-30 start
+		{inheritance: the four comparisons between the two algorithms, N26, the one degree of
+		 the ascendant heirs, N22, and the ancestor shared with a lateral relative, N24}
+		ck_failurePoint, ck_failurePoint, ck_failurePoint, ck_failurePoint,
+		ck_failurePoint, ck_failurePoint,
+// <<< Claude 2026-09-30 end
 		ck_failurePoint
 	);
 
@@ -675,7 +751,6 @@ var
 			result := result + nFailed [id];
 	end;
 
-// >>> Claude 2026-09-11 start
 	function padRight (s: string; n: longint): string;
 	{a fixed width column, so that the report reads as a table in a plain text editor. A name
 	 longer than the column pushes its line out rather than being cut: a truncated check name
@@ -884,7 +959,6 @@ var
 
 		if (res = 0) then f.Destroy;
 	end;
-// <<< Claude 2026-09-11 end
 
 initialization
 	InitCriticalSection (verificationLock);

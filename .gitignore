@@ -61,3 +61,10 @@ references/
 # --- Working folders kept out of the repository ---------------
 _to_delete/
 backup/
+
+# --- Working folders, not part of the program -----------------
+# Papers and annexes, run outputs, and audit notes. Remove a line
+# here if one of them should be published after all.
+JASS/
+KINFERT_runs/
+chatgpt/

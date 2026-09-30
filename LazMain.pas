@@ -704,6 +704,13 @@ var
     countDots: longint = 1;
 begin
 	s := myLine + s;
+	myLine := '';
+	{myLine holds the part of a line written without a line feed, and it has to be cleared
+	 once it has been prepended. Left standing, every later line carried the same prefix, so
+	 the test below could never match kEndThreadMessage: memoWriting stayed true and the
+	 worker thread spun for ever in the wait at the end of the run, with no output file
+	 closed and every button dead. memoWrite without a line feed happens on an ordinary
+	 path, from Kinship.pas, so this was reachable in a normal run.}
 	myBufferStr.Add (s);
 	myUpdateCount := myUpdateCount + length(s);
 	if (s = kEndThreadMessage) then begin

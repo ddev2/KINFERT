@@ -130,7 +130,7 @@ begin
 	myComponentHelper.CreateComponentChange(FindComponent ('NO_INITIAL_STERILITY'), g_GENPARAM.fixedParameters [noInitialSterility].state, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('FIXED_DEFINITIVE_STERILITY'), g_GENPARAM.fixedParameters [fixedDefinitiveSterility].state, currentComponentChange, onChangeHandler);
 	currentComponentChange.ActivateDisabling (FindComponent ('AGE_FIXED_DEFINITIVE_STERILITY_'));
-	myComponentHelper.CreateComponentChange(FindComponent ('AGE_FIXED_DEFINITIVE_STERILITY_'), g_GENPARAM.fixedParameters [fixedDefinitiveSterility].param, currentComponentChange, onChangeHandler, kIsDouble, 26, 59);
+	myComponentHelper.CreateComponentChange(FindComponent ('AGE_FIXED_DEFINITIVE_STERILITY_'), g_GENPARAM.fixedParameters [fixedDefinitiveSterility].param, currentComponentChange, onChangeHandler, kIsDouble, kMinAgeFixedSterility, kMaxAgeFixedSterility);
 	myComponentHelper.CreateComponentChange(FindComponent ('FORCE_PPR_TARGET'), g_GENPARAM.FORCE_PPR_TARGET, currentComponentChange, onChangeHandler, kIsInteger);
 	myComponentHelper.CreateComponentChange(FindComponent ('FORCE_SEP_ITER'), g_GENPARAM.FORCE_SEP_ITER, currentComponentChange, onChangeHandler, kIsInteger);
 	myComponentHelper.CreateComponentChange(FindComponent ('USE_ARRAY_CHILDREN'), g_GENPARAM.USE_ARRAY_CHILDREN, currentComponentChange, onChangeHandler, kIsInteger);

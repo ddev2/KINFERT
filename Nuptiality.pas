@@ -98,6 +98,147 @@ implementation
 
 uses Memory;
 
+	{ ----------------------------------------------------------------------------------------
+	  THE SCHEDULE OF AGES AT FIRST UNION
+
+	  Everything in this section builds one object: a table that gives, for each whole age, the
+	  probability that a person who has never been in a union enters one at that age. The
+	  simulation draws an age at first union from it. Three quantities describe such a table:
+	  the age at which unions begin, how spread out the entries into union are, and the
+	  proportion of the cohort that ever enters a union at all.
+
+	  The family of curves is the one Coale and McNeil proposed in 1971 for first marriage, and
+	  KinFert holds it in two equivalent parameterisations. Both are in this unit, both build
+	  the same family of curves, and which one is used depends on what the caller has to hand.
+
+	  1. CoaleFirstUnion (startingAge, 1 - everInUnion, scaleFactor)
+
+	  The standard curve, stretched. The standard has its mean 11.37 years above the age at
+	  which it starts, which is kCoaleStandardMean below, so a curve whose mean lies m years
+	  above its starting age has a scale factor of m / 11.37. A factor of 1 reproduces the
+	  standard, a factor of 0.5 halves every interval, and the mean moves in proportion:
+
+	      factor   mean above the starting age
+	         2.0        22.74 years
+	         1.0        11.37
+	         0.5         5.69
+	         0.2         2.27
+	      1/11.37        1.00
+
+	  This is the form used for the two way table of ages at union, where for each age at which
+	  a woman enters a union the schedule of her partner's age has to be built from the
+	  difference between the two mean ages at union. The scale factor is the natural parameter
+	  there, since that difference is what is known.
+
+	  2. RodTrussFirstUnion (firstAge, lastAge, 1 - everInUnion, mean, standardDeviation)
+
+	  The same family written with the mean and the standard deviation of the age at union as
+	  its two parameters, which is the form Rodriguez and Trussell gave in 1980. It is the form
+	  used for the schedules of women and of men themselves, where the mean age at union is a
+	  parameter of the demographic regime, and for repartnering.
+
+	  The two forms meet at the standard: RodTrussFirstUnion with a mean of 21.36 years and a
+	  standard deviation of 6.583312236 builds the same curve as CoaleFirstUnion with a starting
+	  age of 10 and a scale factor of 1. A scale factor of one is therefore a standard deviation
+	  of 6.583312236 years, and the two are proportional, which is where kMinStdNuptSchedule
+	  below comes from. Worth knowing when reading that equivalence: at the mean of the standard,
+	  21.36 years, std_Coale_Rodriguez_Trussel returns 5.43 rather than 6.58, so the regression
+	  that turns a mean into a standard deviation and the standard deviation of the standard
+	  curve itself do not quite agree. Nothing in the program depends on their agreeing, but the
+	  20 per cent between them is unexplained.
+
+	  WHERE THE THREE QUANTITIES COME FROM, AND WHAT EACH OF THEM HAS TO SATISFY
+
+	  The mean age at first union is a parameter of the demographic regime, one for women and
+	  one for men. initStandardNuptiality holds each of them inside
+	  kMinMeanAgeUnionSchedule to kMaxMeanAgeUnionSchedule as it arrives, before anything is
+	  computed from it, and reports a value it has to move. A mean cannot take the whole range
+	  of an individual age at union, which is what the dialog applies to it.
+
+	  The standard deviation reaches RodTrussFirstUnion by three routes. It can be computed from
+	  the mean, by one of the four functions at the end of this unit; it can be given directly,
+	  as STD_DEV_AGE_UNION; or a stepped run can build it, in SpecialRuns, which takes it from
+	  std_Logistic_Dani_2004 or std_Campbell_Wood_1988 according to the fixed parameter
+	  stdUnionDanielOrCampbellWood and writes it into the regime without passing through the
+	  range the dialog and the configuration reader apply. It has to be positive, because the
+	  schedule divides by it twice, and that third route is the one that can still deliver a
+	  zero: std_Campbell_Wood_1988 is exactly zero for every mean at or below 15.32 years, which
+	  is inside the range of means the schedule accepts.
+
+	  The proportion ever in union lies between zero and one, and both callers pass it in as its
+	  complement, which the two routines undo on entry. Zero is a legal value, and it describes
+	  a population in which nobody ever enters a union and therefore nobody has children, so it
+	  is reported when it arrives.
+
+	  The scale factor has to be positive, for the same reason: CoaleFirstUnion divides by it
+	  three times. It is derived from the difference between the two mean ages at union, men
+	  less women, and is zero when men enter unions on average five years younger than women.
+	  The derivation is written out where that difference is computed, in
+	  initStandardNuptiality.
+
+	  THE THREE GUARDS, AND WHY THEY SIT WHERE THEY DO
+
+	  Each one sits at the arithmetic it protects rather than at the places the value comes
+	  from, so that a single test covers every route to it. They report through the verification
+	  unit and substitute a usable value rather than stopping the run, because in each case the
+	  cause is something the user asked for and not corrupt internal state:
+
+	      meanAgeUnionRange    in initStandardNuptiality, on each mean as it arrives
+	      scaleFactorTooLow    in CoaleFirstUnion, on the scale factor
+	      stdNuptTooLow        in RodTrussFirstUnion, on the standard deviation
+
+	  A fourth, everInUnionZero, is a notice rather than a guard: it reports a proportion ever
+	  in union of zero, which is legal, and the arithmetic that would divide by it is skipped.
+
+	  THE FOUR FUNCTIONS THAT TURN A MEAN INTO A STANDARD DEVIATION
+
+	  Each has a domain of its own, so no single limit on the mean age at union covers them all.
+	  The zeros are what matter, since the schedule divides by what they return:
+
+	      std_Coale_Rodriguez_Trussel   zero at a mean of kZeroStd_Coale_Rodriguez_Trussel, and
+	                                    mirrored below it by its absolute value, so a mean of 12
+	                                    returns the standard deviation of a mean of 15.28. This
+	                                    is the function in force for the schedules of women and
+	                                    of men.
+	      std_Campbell_Wood_1988        zero at and below kZeroStd_Campbell_Wood_1988, about
+	                                    15.32 years, and bounded inside itself below that, so it
+	                                    returns zero rather than the square root of a negative
+	                                    number. Reached from a stepped run.
+	      std_Logistic_Dani_2004        no zero in the mean, since its denominator is always
+	                                    above one, but zero when its final level is zero.
+	                                    Reached from a stepped run.
+	      std_unionLinear               whatever the two standard deviations the user gives
+	                                    interpolate to, zero included. No caller today.
+	  ---------------------------------------------------------------------------------------- }
+	const
+		{the mean of the standard curve, in years above the age at which it starts}
+		kCoaleStandardMean = 11.37;
+		{the scale factor CoaleFirstUnion uses in place of one that is zero or negative: the
+		 factor of a curve whose mean lies exactly one year above its starting age}
+		kMinNuptScaleFactor = 1 / kCoaleStandardMean;
+		{the mean at which std_Coale_Rodriguez_Trussel returns zero}
+		kZeroStd_Coale_Rodriguez_Trussel = 13.64;
+		{the range each mean age at first union is held inside. The lower end is one year above
+		 the zero of the standard deviation function in force, which gives a standard deviation
+		 of 1.95 years. The upper end is a modelling judgement: 40 years is well above any mean
+		 age at first union that has been observed, and it keeps the two fixed age paths inside
+		 the arrays they index with trunc (mean).}
+		kMinMeanAgeUnionSchedule = kZeroStd_Coale_Rodriguez_Trussel + 1.0;
+		kMaxMeanAgeUnionSchedule = 40.0;
+		{the difference between the two mean ages at union, men less women, at and below which
+		 the schedule of ages at union of men cannot be built. The 5 is the five years by which
+		 that schedule is allowed to start below the woman's own age at union.}
+		kMinMeanDiffSexUnion = -5.0;
+		{the standard deviation of the standard curve, which a scale factor of one corresponds
+		 to, and the floor RodTrussFirstUnion uses in place of one that is zero or negative. The
+		 floor is that standard deviation taken at kMinNuptScaleFactor, about 0.58 years, which
+		 is the same curve the scale factor falls back on.}
+		kStdNuptOfScaleFactorOne = 6.583312236;
+		kMinStdNuptSchedule = kStdNuptOfScaleFactorOne * kMinNuptScaleFactor;
+		{the mean at and below which std_Campbell_Wood_1988 returns zero, which is exp (292/107)
+		 written out because a constant expression cannot call exp}
+		kZeroStd_Campbell_Wood_1988 = 15.3171;
+
 	function newUnionInfo(): pUnionInfoType;
 	begin
 		new (result);
@@ -171,12 +312,8 @@ uses Memory;
 			result := UInfo^.yearUnion;
 	end;
 
-// >>> Claude 2026-09-11 start
 	function unionRecordForSetter (pRelative: pRelativeType; indUnion: longint; whichSetter: string): pUnionInfoType;
-	{**N28 fixed here.** The record a setter should write into, or nil when the index names no
-	 union and no union may be created for it.
-
-	 getUnionInfoByIndex returns nil both for an index that is simply the next one, which is how
+	{getUnionInfoByIndex returns nil both for an index that is simply the next one, which is how
 	 a person's first and later unions have always been created, and for an index that means
 	 nothing at all. The six setters used to treat the two alike and append in either case, so a
 	 caller passing kNotDefined added a phantom union and put its value there. The caller that
@@ -228,7 +365,6 @@ uses Memory;
 			breakOnFailure;
 		result := nil;
 	end;
-// <<< Claude 2026-09-11 end
 
 	procedure setAgeUnion (pRelative: pRelativeType; indUnion: longint; age: double);
 	var
@@ -237,10 +373,8 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		pRelative^.ageUnion [indUnion] := age;
 {$ENDIF}
-// >>> Claude 2026-09-11 start
 		UInfo := unionRecordForSetter (pRelative, indUnion, 'setAgeUnion');
 		if (UInfo = nil) then exit;
-// <<< Claude 2026-09-11 end
 		UInfo^.ageUnion := age;
 {$IFDEF addOldUnionType}
 		if pRelative^.ageUnion [indUnion] <> getUnionInfoByIndex (pRelative, indUnion)^.ageUnion then
@@ -252,10 +386,8 @@ uses Memory;
 	var
 		UInfo: pUnionInfoType = nil;
 	begin
-// >>> Claude 2026-09-11 start
 		UInfo := unionRecordForSetter (pRelative, indUnion, 'setYearUnion');
 		if (UInfo = nil) then exit;
-// <<< Claude 2026-09-11 end
 		UInfo^.yearUnion := year;
 	end;
 	
@@ -298,10 +430,8 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		pRelative^.ageEndUnion [indUnion] := age;
 {$ENDIF}
-// >>> Claude 2026-09-11 start
 		UInfo := unionRecordForSetter (pRelative, indUnion, 'setAgeEndUnion');
 		if (UInfo = nil) then exit;
-// <<< Claude 2026-09-11 end
 		UInfo^.ageEndUnion := age;
 {$IFDEF addOldUnionType}
 		if pRelative^.ageEndUnion [indUnion] <> getUnionInfoByIndex (pRelative, indUnion)^.ageEndUnion then
@@ -313,10 +443,8 @@ uses Memory;
 	var
 		UInfo: pUnionInfoType = nil;
 	begin
-// >>> Claude 2026-09-11 start
 		UInfo := unionRecordForSetter (pRelative, indUnion, 'setYearEndUnion');
 		if (UInfo = nil) then exit;
-// <<< Claude 2026-09-11 end
 		UInfo^.yearEndUnion := year;
 	end;
 	
@@ -370,10 +498,8 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		pRelative^.partners [indUnion] := pPartner;
 {$ENDIF}
-// >>> Claude 2026-09-11 start
 		UInfo := unionRecordForSetter (pRelative, indUnion, 'setPartner');
 		if (UInfo = nil) then exit;
-// <<< Claude 2026-09-11 end
 		UInfo^.partner := pPartner;
 {$IFDEF addOldUnionType}
 		if pRelative^.partners [indUnion] <> getUnionInfoByIndex (pRelative, indUnion)^.partner then
@@ -413,10 +539,8 @@ uses Memory;
 {$IFDEF addOldUnionType}
 		pRelative^.endOfPartnership [indUnion] := cause;
 {$ENDIF}
-// >>> Claude 2026-09-11 start
 		UInfo := unionRecordForSetter (pRelative, indUnion, 'setCauseEndUnion');
 		if (UInfo = nil) then exit;
-// <<< Claude 2026-09-11 end
 		UInfo^.endOfPartnership := cause;
 	end;
 	
@@ -579,15 +703,39 @@ uses Memory;
 		ageWomenInit, ageMenInit: agesUnion;
 		freq_union_def: double;
 		ageMarAll: longint;
+		{Holds one mean age at first union inside the range a schedule can be built from,
+		 kMinMeanAgeUnionSchedule to kMaxMeanAgeUnionSchedule, and reports a value it has to move.
+		 Called at each of the four places below where a mean is set, before anything is computed
+		 from it. The dialog applies the range of an individual age at union to these two
+		 parameters, 10 to 59 for women and 10 to 69 for men, which is deliberate and is not what
+		 a mean can take.}
+		procedure boundMeanAgeUnion (sexPerson: Sex; const sexLabel: string);
+		var
+			meanHeld: double;
+		begin
+			meanHeld := n.unionParam [sexPerson, meanUnion];
+			if (meanHeld < kMinMeanAgeUnionSchedule) or (meanHeld > kMaxMeanAgeUnionSchedule) then begin
+				reportFailure (chk_nup_meanAgeUnionRange,
+						['mean age at first union of ', sexLabel, ' ', meanHeld,
+						 ', range accepted ', kMinMeanAgeUnionSchedule,
+						 ' to ', kMaxMeanAgeUnionSchedule]);
+				if (meanHeld < kMinMeanAgeUnionSchedule) then
+					n.unionParam [sexPerson, meanUnion] := kMinMeanAgeUnionSchedule
+				else
+					n.unionParam [sexPerson, meanUnion] := kMaxMeanAgeUnionSchedule;
+			end;
+		end;
 	begin
 		// First union for women
 		if g_GENPARAM.FIXED_FERTILITY.value then begin
 			n.unionParam [woman, freqFinUnion] := 1;
 			n.unionParam [woman, meanUnion] := g_FIXED_FERTILITY_DATA.ageUnionWoman;
+			boundMeanAgeUnion (woman, 'women');
 			n.unionParam [woman, stdUnion] := 0;
 		end else begin
 			n.unionParam [woman, freqFinUnion] := p^.dp[propFinalCelibacyLow].value;
 			n.unionParam [woman, meanUnion] := p^.dp[meanAgeUnionWomenLow].value;
+			boundMeanAgeUnion (woman, 'women');	{before the standard deviation is taken from it}
 			if (p^.dp[stdnupt].value < 0) then begin
 					n.unionParam [woman, stdUnion] := std_Coale_Rodriguez_Trussel (n.unionParam [woman, meanUnion]);
 			end else
@@ -610,10 +758,12 @@ uses Memory;
 		if g_GENPARAM.FIXED_FERTILITY.value then begin
 			n.unionParam [man, freqFinUnion] := 1;
 			n.unionParam [man, meanUnion] := g_FIXED_FERTILITY_DATA.ageUnionMan;
+			boundMeanAgeUnion (man, 'men');
 			n.unionParam [man, stdUnion] := 0;
 		end else begin
 			n.unionParam [man, freqFinUnion] := p^.dp[propFinalCelibacyMen].value;
 			n.unionParam [man, meanUnion] := p^.dp[meanAgeUnionMen].value;
+			boundMeanAgeUnion (man, 'men');	{before the standard deviation is taken from it}
 			n.unionParam [man, stdUnion] := std_Coale_Rodriguez_Trussel (n.unionParam [man, meanUnion]);
 		end;
 		
@@ -630,7 +780,32 @@ uses Memory;
 		end;
 
 		meanDiffSex := n.unionParam [man, meanUnion] - n.unionParam [woman, meanUnion];
-		
+		{The difference between the two mean ages at union, men less women. It is not a parameter
+		 of its own, but it is what decides the two way table of ages at union built in the loop
+		 below, and it is worth seeing why.
+
+		 For each age at which a woman enters a union, the schedule of her partner's age is built
+		 with a scale factor of (mean - ageMin) / kCoaleStandardMean. For every age at union of
+		 women above 19, mean is ageWomen + meanDiffSex and ageMin is ageWomen - 5, so the two
+		 ages cancel: the factor is (meanDiffSex + 5) / kCoaleStandardMean and depends on the
+		 difference alone. At a difference of -4 years it is 0.088, a schedule so compressed that
+		 13 per cent of its mass falls between the whole years. At -5 it is exactly zero, and
+		 below that negative, which is why kMinMeanDiffSexUnion is -5.
+
+		 Zero and below are caught by the guard in CoaleFirstUnion, which puts
+		 kMinNuptScaleFactor in place of the factor so that the run continues. What that builds
+		 is a table in which every man enters his first union at the youngest age the model
+		 allows. That is a configuration worth reporting rather than an arithmetic fault to
+		 repair twice, so the difference is left as the two parameters make it and the schedule
+		 is built from it.}
+		if (meanDiffSex <= kMinMeanDiffSexUnion) then
+			reportFailure (chk_nup_meanAgeUnionDiff,
+					['mean age at first union of men ', n.unionParam [man, meanUnion],
+					 ', of women ', n.unionParam [woman, meanUnion],
+					 ', difference ', meanDiffSex,
+					 ', lowest difference the schedule of men can be built from ',
+					 kMinMeanDiffSexUnion]);
+
 		for ageWomenInit := kMinAgeUnion to kMaxAgeUnion do
 		begin
 			for ageMenInit := kMinAgeUnion to kMaxAgeUnion do
@@ -648,21 +823,14 @@ uses Memory;
 			mean := min (kMaxAgeUnion_men - 1, ageWomen + meanDiffSex);
 			mean := max (mean, kMinAgeUnion_men + 1);
 			ageMin := max (kMinAgeUnion_men, ageWomen - 5);
-// BUG  **N29**  the scale factor of the standard nuptiality schedule can be zero or negative
-// scaleFactor is (mean - ageMin) / 11.37 and nothing keeps mean above ageMin. When the mean age
-// at union is at or below the minimum age of the schedule, the factor is zero or negative:
-// calcNuptScaleFactor then divides by it, or builds a schedule with negative densities that the
-// normalisation turns into probabilities of the wrong sign.
-// The dialog lets the mean go down to 10 while kMinMeanAgeUnion is 15, so the range that
-// reaches this line is wider than the model allows.
-// Proposed fix: clamp the mean to kMinMeanAgeUnion here and report the clamp, and give
-// MEAN_AGE_UNION that same minimum in LazConfig so the two agree.
-			scaleFactor := (mean - ageMin) / 11.37;
+			{nothing keeps mean above ageMin, so this factor can be zero or
+			 negative. The guard is in CoaleFirstUnion, which is where the division happens and
+			 which every route to it passes through.}
+			scaleFactor := (mean - ageMin) / kCoaleStandardMean;
 			calcNuptScaleFactor (ageMin, scaleFactor, n.union_women_men[ageWomen, normal]);
 			mean_calc := calcSmamFromAgeProb (kMaxAgeUnion_women, n.union_women_men[ageWomen, normal]);
-// END BUG
 			if (abs (mean - mean_calc) > 0.01) then begin
-					scaleFactor := ((mean + (mean - mean_calc) * (1+ ageWomen / (2 * kMaxAgeUnion_women))) - ageMin) / 11.37;
+					scaleFactor := ((mean + (mean - mean_calc) * (1+ ageWomen / (2 * kMaxAgeUnion_women))) - ageMin) / kCoaleStandardMean;
 					calcNuptScaleFactor (ageMin, scaleFactor, n.union_women_men[ageWomen, normal]);
  					mean_calc := calcSmamFromAgeProb (kMaxAgeUnion_women, n.union_women_men[ageWomen, normal]);
  					
@@ -680,11 +848,11 @@ if gRunFromIDE then
 			mean := max (kMinAgeUnion_women + 1, ageMen - meanDiffSex);
 			mean := min (kMaxAgeUnion_women - 1, mean);
 			ageMin := kMinAgeUnion_women + trunc ( (ageMen - kMinAgeUnion_men) / 5 );
-			scaleFactor := (mean - ageMin) / 11.37;
+			scaleFactor := (mean - ageMin) / kCoaleStandardMean;
 			calcNuptScaleFactor (ageMin, scaleFactor, n.union_men_women[ageMen, normal]);
 			mean_calc := calcSmamFromAgeProb (kMaxAgeUnion_men, n.union_men_women[ageMen, normal]);
 			if (abs (mean - mean_calc) > 0.01) then begin
-			  scaleFactor := ((mean + (mean - mean_calc) * (1+ ageMen / (kMaxAgeUnion_men))) - ageMin) / 11.37;
+			  scaleFactor := ((mean + (mean - mean_calc) * (1+ ageMen / (kMaxAgeUnion_men))) - ageMin) / kCoaleStandardMean;
 			  calcNuptScaleFactor (ageMin, scaleFactor, n.union_men_women[ageMen, normal]);
  				  mean_calc := calcSmamFromAgeProb (kMaxAgeUnion_men, n.union_men_women[ageMen, normal]);
 
@@ -807,6 +975,40 @@ pnupt <- function(age, mean, stdev, pem=1) {%H-}{
 			age: agesUnion;
 			mean: double;
 	begin
+		{The loop below divides by scaleFactor three times, so the factor has to be positive. The
+		 overview at the top of this unit says where it comes from and why it can fail to be.
+
+		 Why the test is worth having, rather than trusting the callers. At a factor of zero the
+		 division raised EZeroDivide, which at least announced itself. Below zero the failure is
+		 quiet and worse: every density comes out negative, since the factor divides freqFin and
+		 the exponential is always positive, and adjustTabNupt then divides the total wanted by
+		 that negative sum and multiplies every cell by the result. Two negatives give a table
+		 that is entirely non negative and sums to exactly the total asked for, so it passes every
+		 test that could be made of it. Only its shape is nonsense: all of the mass sits on the
+		 first age. At a factor of -1/kCoaleStandardMean the table comes out as 1.0 at
+		 kMinAgeUnion and zero everywhere else, which says that every woman enters a union at the
+		 youngest age the model allows. Nothing downstream can tell that from a real schedule.
+
+		 The test is on zero and below and on nothing else. A small positive factor builds a
+		 schedule that is heavily compressed but perfectly computable, and it is what two mean
+		 ages at union close together ask for, so refusing it is not this routine's business. It
+		 is worth knowing that such a schedule is distorted by being read at whole years: at a
+		 factor of 1/kCoaleStandardMean, a mean one year above the start, the densities at the
+		 integer ages sum to 0.87 rather than 1, and at half that to 0.29, the rest of the mass
+		 falling between the years. adjustTabNupt rescales what is left, so what results is a
+		 near spike at the first age rather than the Coale curve that was asked for. That is what
+		 holding the two mean ages inside kMinMeanAgeUnionSchedule and kMaxMeanAgeUnionSchedule
+		 is for, and it is a separate matter from this test: this one keeps the division safe on
+		 every route to it, the other keeps the parameters inside the range a schedule can be
+		 built from.
+
+		 scaleFactor is a value parameter, so the substitution is local to this call.}
+		if (scaleFactor <= 0.0) then begin
+			reportFailure (chk_nup_scaleFactorTooLow,
+					['factor ', scaleFactor, ', schedule starting at age ', kMinAgeUnion,
+					 ', factor used instead ', kMinNuptScaleFactor]);
+			scaleFactor := kMinNuptScaleFactor;
+		end;
 		freqFin := 1 - freqFin;
 		mean := 0;
 		for age := kMinAgeUnion to kMaxAgeUnion do begin
@@ -823,7 +1025,37 @@ This corresponds to values of the mean and variance of Coale age standard as giv
 		age: longint;
 		temp, meanCalc: double;
 	begin
+		{The loop below divides by std twice, so the standard deviation has to be positive. The
+		 overview at the top of this unit lists the three routes by which it arrives and says
+		 which of them can still deliver a zero, which is a stepped run using Campbell and Wood
+		 at a mean at or below 15.32 years. A zero divisor raises EInvalidOp under the range
+		 checks of Defines.pas, and without them it builds a schedule with no meaning.
+
+		 The guard sits here, at the division, rather than at the places the value comes from,
+		 because this is the one routine every route passes through: initStandardNuptiality by
+		 way of calcCelibacy_RT_woman and calcCelibacy_RT_man, calcRepartnering, and
+		 calcNuptScaleFactorRT.
+
+		 A small positive standard deviation is left as asked for. It builds a schedule
+		 concentrated on a few ages, which adjustTabNupt then rescales, and the note above
+		 CoaleFirstUnion warns that such a value should be treated as a minimum. std is a value
+		 parameter, so the substitution is local to this call.}
+		if (std <= 0.0) then begin
+			reportFailure (chk_nup_stdNuptTooLow,
+					['standard deviation ', std, ', mean age asked for ', mean,
+					 ', value used instead ', kMinStdNuptSchedule]);
+			std := kMinStdNuptSchedule;
+		end;
 		freqFin := 1 - freqFin;
+		{freqFin now holds the proportion ever in union, restored from the complement the caller
+		 passed. At zero every density built below is zero, and the recomputation of the mean
+		 that follows the loop would then evaluate 0.0/0.0. A population in which nobody ever
+		 enters a union has no births either, so the case is reported, the division is skipped,
+		 and the two callers that rescale the table afterwards skip theirs for the same reason.
+		 Zero is a legal value of the parameter and this is a notice rather than a correction.}
+		if (freqFin <= 0.0) then
+			reportFailure (chk_nup_everInUnionZero,
+					['proportion ever in union ', freqFin, ', mean age asked for ', mean]);
 		meanCalc := 0;
 		for age := minAgeUnion_calc to maxAgeUnion_calc do
 		begin
@@ -831,8 +1063,11 @@ This corresponds to values of the mean and variance of Coale age standard as giv
 			firstUnion[age] := (freqFin * 1.2813 / std) * exp( -1.145 * temp - exp (-1.896 * temp) );
 			meanCalc := meanCalc + firstUnion[age] * (age);
 		end;
-				// for checking...
-				meanCalc := meanCalc / freqFin;
+		{the mean age at union of the schedule just built, read back from its own densities.
+		 Nothing uses it: it is here to be compared in the debugger with the mean that was asked
+		 for.}
+		if (freqFin > 0.0) then
+			meanCalc := meanCalc / freqFin;
 
 		adjustTabNupt (freqFin, firstUnion);
 	end;
@@ -1130,6 +1365,30 @@ end;
 		durationUnion := currMonth - monthStart;
 		nbChildren_Alive := 0;
 		ageOfYoungerInMonths := 0;
+		{Both variables that decide the outcome are given a value here, before anything can
+		 go wrong, and that value is the one that means the union does not end: a risk of zero
+		 against a draw of one. Before, they were assigned inside the try below, and if anything
+		 raised an exception before or during those two assignments the handler reported it and
+		 then let execution continue past the end of the try, where the two are compared. They
+		 held whatever was on the stack, so the union ended, or did not, at random.
+
+		 The duration is also bounded to the table it indexes. monthly_risk_separation runs from
+		 0 to kMaxDurationUnionInMonths, that is 1452 lunar months, which is a union lasting from
+		 kMinAgeUnion to kMaxAgeLife, so a duration outside it means the month the union started
+		 or the current month is wrong rather than that the union is very long. The value used is
+		 the nearest the table holds, and the case is reported.}
+		endBySeparation := false;
+		aleaSeparation := 1.0;
+		separationRisk := 0.0;
+		if (durationUnion < 0) or (durationUnion > kMaxDurationUnionInMonths) then begin
+			reportFailure (chk_nup_separationIndex,
+					['duration of the union in months ', durationUnion,
+					 ', month it started ', monthStart, ', current month ', currMonth]);
+			if (durationUnion < 0) then
+				durationUnion := 0
+			else
+				durationUnion := kMaxDurationUnionInMonths;
+		end;
 try // 1
 		if nbPregnanciesInCurrentUnion > 0 then
 		begin
@@ -1149,33 +1408,39 @@ try // 1
 			end;
 		end;
 
-// BUG  **N32**  the exception handler falls through, and the separation is then decided by two
-//                undefined values
-// The two lines below are inside the try that ends a few lines further down. Its handler writes
-// the message and stops the debugger, and then execution CONTINUES after the end of the try
-// block, where aleaSeparation and separationRisk are read and compared to decide whether the
-// union ends. If the exception happened before or during these two assignments, both hold
-// whatever was on the stack.
-// The most likely fault is the index on the second line: monthly_risk_separation is dimensioned
-// for a duration in months and durationUnion is not bounded here, so a union longer than the
-// table raises a range error, which is exactly the case that then decides the separation at
-// random.
-// Proposed fix: bound durationUnion to the table, which is the real correction, and make the
-// handler leave the function with endBySeparation false rather than falling through.
 		aleaSeparation := randomGenerator.alea0;
 		separationRisk := d.monthly_risk_separation [durationUnion];
 
 		if (nbChildren_Alive > 0) and ( g_GENPARAM.fixedParameters [homogeneousSeparation].state.value = false ) then
 		begin
 			nbChildren := oneChild;
-			if nbChildren_Alive > 2 then
+			if nbChildren_Alive >= 2 then
 				nbChildren := twoChildrenMore;
+			{the second index. The age of the youngest child is the duration of the union
+			 less the duration at which that child was born, so it is negative for a child
+			 conceived before the union, which is why the table starts at -11 months. A value
+			 outside the table means the child is dated outside the union it is recorded in. The
+			 nearest cell is used and the case reported.}
+			if (ageOfYoungerInMonths < low (d.relRisk_separation_children_duration [nbChildren]))
+				or (ageOfYoungerInMonths > high (d.relRisk_separation_children_duration [nbChildren])) then begin
+				reportFailure (chk_nup_separationIndex,
+						['age of the youngest child in months ', ageOfYoungerInMonths,
+						 ', duration of the union ', durationUnion]);
+				if (ageOfYoungerInMonths < low (d.relRisk_separation_children_duration [nbChildren])) then
+					ageOfYoungerInMonths := low (d.relRisk_separation_children_duration [nbChildren])
+				else
+					ageOfYoungerInMonths := high (d.relRisk_separation_children_duration [nbChildren]);
+			end;
 			separationRisk := separationRisk * d.relRisk_separation_children_duration [nbChildren, ageOfYoungerInMonths];
 		end;
 except // 1
 	on E: Exception do begin
     	writeAndWaitConst(['===> ERROR: ', E.Message]);
 		breakOnFailure;
+		{leave the function rather than falling through to the comparison below, which is what
+		 let an exception decide the fate of a union. The union does not end.}
+		endBySeparation := false;
+		exit;
 	end;
 end;
 
@@ -1188,7 +1453,6 @@ end;
 			unionStates.breakdownBySeparation := true;
 		end else
 			endBySeparation := false;
-// END BUG  **N32**
 	end;
 
 	procedure calcNuptScaleFactor (minAge: longint; scaleFactor: double; var n: tabNuptVar);
@@ -1229,8 +1493,13 @@ end;
 		adjust := 0;
 		for ageWomen := kMinAgeUnion_women to kMaxAgeUnion_women do
 			adjust := adjust + n.union_women[ageWomen];
-		for ageWomen := kMinAgeUnion_women to kMaxAgeUnion_women do
-			n.union_women[ageWomen] := values [woman, freqFinUnion] * n.union_women[ageWomen] / adjust;
+		{adjust is the sum of the densities RodTrussFirstUnion has just built. It is zero only
+		 when the proportion ever in union is zero, which that routine has already reported. The
+		 table is then all zeros and is already what it should be, so there is nothing to
+		 rescale.}
+		if (adjust > 0.0) then
+			for ageWomen := kMinAgeUnion_women to kMaxAgeUnion_women do
+				n.union_women[ageWomen] := values [woman, freqFinUnion] * n.union_women[ageWomen] / adjust;
 			
 		propCelFromRates (kMinAgeSingle, kMaxAgeSingle_women, n.union_women, n.prop_cel_women);
 		
@@ -1250,8 +1519,11 @@ end;
 		adjust := 0;
 		for ageMen := kMinAgeUnion_men to kMaxAgeUnion_men do
 			adjust := adjust + n.nupt_men[ageMen];
-		for ageMen := kMinAgeUnion_men to kMaxAgeUnion_men do
-			n.nupt_men[ageMen] := values [man, freqFinUnion] * n.nupt_men[ageMen] / adjust;
+		{as for the women above, a sum of zero means the proportion ever in union is zero, the
+		 table is all zeros already, and there is nothing to rescale.}
+		if (adjust > 0.0) then
+			for ageMen := kMinAgeUnion_men to kMaxAgeUnion_men do
+				n.nupt_men[ageMen] := values [man, freqFinUnion] * n.nupt_men[ageMen] / adjust;
 			
 		propCelFromRates (kMinAgeSingle, kMaxAgeSingle_men, n.nupt_men, n.prop_cel_men);
 	end;
@@ -1306,6 +1578,11 @@ end;
 		
 	function std_Campbell_Wood_1988 (mean: double): double;
 	{adaptation equation Campbell & Wood [1988]}
+	{Zero at and below kZeroStd_Campbell_Wood_1988, about 15.32 years, and bounded inside itself
+	 below that, so it returns zero rather than the square root of a negative number. SpecialRuns
+	 calls it for a stepped run over the mean age at union, and the means the schedule accepts
+	 start at 14.64, so a step between 14.64 and 15.32 returns a zero. The floor that keeps it
+	 out of the division is kMinStdNuptSchedule, applied in RodTrussFirstUnion.}
 	var
 		std : double;
 	begin
@@ -1316,20 +1593,40 @@ end;
 	end;
 	
 	function std_Logistic_Dani_2004 (mean, final_level: double): double;
+	{kCentringMeanLogistic is the mean at which the logistic
+	 is centred and not a limit on anything, and Declarations now carries a kMinMeanAgeUnion that
+	 is the lowest mean age at union the dialog and a configuration file accept. Two different
+	 quantities under one name, the inner one hiding the outer, is worth avoiding even where the
+	 compiler is content.}
+	const
+		kCentringMeanLogistic = 15.0;
 	var
 		std : double;
+
 	begin
+		{No zero in the mean, since the denominator is always above one, but zero when
+		 final_level is zero. SpecialRuns calls it with a final level of 6.708204, so the zero
+		 cannot arise from there.}
 		std := final_level * final_level;
-		std := std / ( 1.0 + 500.0 * exp (-2.5 - ( mean - kMinMeanAgeUnion ) / 2.0));
+		std := std / ( 1.0 + 500.0 * exp (-2.5 - ( mean - kCentringMeanLogistic ) / 2.0));
 		std_Logistic_Dani_2004 := sqrt (std);
 	end;
 
 	function std_Coale_Rodriguez_Trussel (mean: double): double;
+	{returns exactly zero at a mean of 13.64}
+	{Zero at a mean of kZeroStd_Coale_Rodriguez_Trussel, and mirrored below it by the absolute
+	 value, so a mean of 12 returns the standard deviation of a mean of 15.28. The range the two
+	 mean ages at union are held inside starts one year above that zero, and kMinStdNuptSchedule
+	 catches whatever else reaches the division. This is the function in force for the schedules
+	 of women and of men.}
 	begin
-		std_Coale_Rodriguez_Trussel := sqrt (43.34 * abs ( mean - 13.64 ) / 11.36);
+		std_Coale_Rodriguez_Trussel := sqrt (43.34 * abs ( mean - kZeroStd_Coale_Rodriguez_Trussel ) / 11.36);
 	end;
 	
 	function std_unionLinear (meanAgeUnionWomenLow, meanAgeUnionWomenHigh, stddevBasUnion, stddevHautUnion, mean: double): double;
+	{Returns whatever the two standard deviations the user gives interpolate to, zero included,
+	 and returns stddevBasUnion unchanged when the two mean ages are equal. It is the one of the
+	 four with no caller today.}
 	var
 		std : double;
 	begin
@@ -1585,11 +1882,8 @@ end;
 			causesEndUnion := no_union;
 	end;
 
-// >>> Claude 2026-09-12 start
 	function ageWomenEndUnion (ages: TabAgeEvents; out statutEndUnion: PartnershipStatusesType): double;
-	{**N31 finished here**, on the guard you added.
-
-	 A union ends at the earliest of three events: the woman's own death, the death of her
+	{A union ends at the earliest of three events: the woman's own death, the death of her
 	 partner expressed on her age scale, and a separation. Any of the three can be kNotDefined,
 	 which is a sentinel and not an age, so each one is tested before it is used and the earliest
 	 of those that are defined wins. The status follows from which one won.
@@ -1648,7 +1942,6 @@ end;
 					 'has no age at death either, and with no separation recorded']) then
 				breakOnFailure;
 	end;
-// <<< Claude 2026-09-12 end
 
 	function numChildrenInUnion (pChild: pInfoChildType; nUnion: longint): longint;
 	var

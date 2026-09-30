@@ -332,6 +332,15 @@ implementation
 			g_created := true;
 		end;
 		initValueExtended2D_value (0, iv2D);
+		{The ranges the table in Declarations states are given to the parameters here, at the
+		 end of the routine every path calls before a configuration file is read, so that a run
+		 started from a file is held to the same limits as the dialog. The call is cheap and may be
+		 repeated: setRange only stores. The cohorts a cohort file creates later are covered where
+		 their parameters are created, in DemographicRegimeSettings_initialState.}
+		forgetParameterRangesFound;
+		applyParameterRanges (g_GENPARAM.listOfParams);
+		applyParameterRanges (p^.listOfParams);
+		reportParameterRangesNotFound;
 	end;
 
 	procedure assignTab (inp: variant; iv: initType);
@@ -791,7 +800,11 @@ implementation
 		bWriteLn (outFile, [kEndDoc]);
 	end;
 	
-	procedure DumpCmdFile ( path, filename: string; var outFile: TFileType; closeFile: boolean = true );
+// >>> Claude 2026-09-30 start
+	{outFile is out and not var: the routine opens the file itself and never reads the
+	 handle it was given. The three callers each declare a local and pass it unset.}
+	procedure DumpCmdFile ( path, filename: string; out outFile: TFileType; closeFile: boolean = true );
+// <<< Claude 2026-09-30 end
 	var
 		pd: paramDemReg_double;
 		pl: runtimeParam_longint;
@@ -881,6 +894,11 @@ implementation
 		writeON_OFF (outFile, g_GENPARAM.SEP_TARGET);
 		writeON_OFF (outFile, g_GENPARAM.FORCE_SEP_ITER);
 		writeON_OFF (outFile, g_GENPARAM.INIT_RANDOM_NUMBERS);
+		writeComment (outFile, g_GENPARAM.motherAlgorithm.comment);
+		if not (g_GENPARAM.WRITE_ONLY_CHANGES.value and not g_GENPARAM.motherAlgorithm.changed) then
+			bWriteLn (outFile, [g_GENPARAM.motherAlgorithm.name, '=',
+					str_motherAlgorithm [g_GENPARAM.motherAlgorithm.value]]);
+		writeON_OFF (outFile, g_GENPARAM.CAMSIM_1993_ANY_AGE_UNION);
 		writeON_OFF (outFile, g_GENPARAM.DEBUG);
 		writeON_OFF (outFile, g_GENPARAM.NEW_INIT_MOTHERHOOD);
 		writeLongintValue (outFile, g_GENPARAM.MODEGO);
@@ -1136,6 +1154,10 @@ implementation
 			code := g_GENPARAM.countryInheritance.readValue (aState);
 			ProcessCommand := checkCode ( aCommand, code );
 			exit;
+		end else if ( aCommand = 'MOTHER_ALGORITHM') then begin
+			code := g_GENPARAM.motherAlgorithm.readValue (aState);
+			ProcessCommand := checkCode ( aCommand, code );
+			exit;
 		end else if ( aCommand = 'HEIRS_KINTYPES') then begin
 			g_GENPARAM.HEIRS_KINTYPES.value := readKinSet ( aState_NotProcessed, code );
 			ProcessCommand := checkCode ( aCommand, code );
@@ -1272,6 +1294,8 @@ implementation
 			g_GENPARAM.OPTIMAL_TREES.readValue (aState_NotProcessed)
 		else if ( aCommand = 'INIT_RANDOM_NUMBERS' ) then
 			g_GENPARAM.INIT_RANDOM_NUMBERS.readValue (aBooleanState)
+		else if ( aCommand = 'CAMSIM_1993_ANY_AGE_UNION' ) then
+			g_GENPARAM.CAMSIM_1993_ANY_AGE_UNION.readValue (aBooleanState)
 		else if ( aCommand = 'OUTPUT_INDIVIDUAL_FERTILITY_INFO' ) then
 			g_GENPARAM.OUTPUT_INDIVIDUAL_FERTILITY_INFO.readValue (aBooleanState)
 		else if ( aCommand = 'OUTPUT_INDIVIDUAL_FERTILITY_INFO_EXTENDED' ) then

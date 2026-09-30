@@ -457,17 +457,17 @@ begin
 	myComponentHelper.CreateComponentChange(FindComponent ('STEP_COHORT'), g_GENPARAM.RUNTIME[cmd_stepCohort], currentComponentChange, onChangeHandler, kIsInteger);
 
 	myComponentHelper.CreateComponentChange(FindComponent ('FERTILITY'), g_GENPARAM.FERTILITY, currentComponentChange, onChangeHandler);
-	myComponentHelper.CreateComponentChange(FindComponent ('CTFR'), g_pDEM_REG^.CTFR, currentComponentChange, onChangeHandler, kIsDouble, 0, 100);
+	myComponentHelper.CreateComponentChange(FindComponent ('CTFR'), g_pDEM_REG^.CTFR, currentComponentChange, onChangeHandler, kIsDouble, kMinCTFR, kMaxCTFR);
 	lastComponentChange := currentComponentChange;
 	TEdit (FindComponent ('CTFR') ).ReadOnly := true;
-	myComponentHelper.CreateComponentChange(FindComponent ('APRIORI_PPR'), g_pDEM_REG^.aPrioriPPR, currentComponentChange, TNotifyEvent(onValidateHandler), kIsInteger, 0, 1, kMaxParityInput, kMaxNbChildren);
+	myComponentHelper.CreateComponentChange(FindComponent ('APRIORI_PPR'), g_pDEM_REG^.aPrioriPPR, currentComponentChange, TNotifyEvent(onValidateHandler), kIsInteger, kMinPPR, kMaxPPR, kMaxParityInput, kMaxNbChildren);
 	currentComponentChange.UpdateOtherOnChange(lastComponentChange);
-	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_CONTRACEPTION'), g_GENPARAM.RUNTIME[nStepsContrFert], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
-	myComponentHelper.CreateComponentChange(FindComponent ('NWOMEN'), g_pDEM_REG^.lp[nWomenPar], currentComponentChange, onChangeHandler, kIsInteger, 100, 1000000);
+	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_CONTRACEPTION'), g_GENPARAM.RUNTIME[nStepsContrFert], currentComponentChange, onChangeHandler, kIsInteger, kMinNStepInterpolation, kMaxNStepInterpolation);
+	myComponentHelper.CreateComponentChange(FindComponent ('NWOMEN'), g_pDEM_REG^.lp[nWomenPar], currentComponentChange, onChangeHandler, kIsInteger, kMinPopulationSize, kMaxPopulationSize);
 	myComponentHelper.CreateComponentChange(FindComponent ('KINSHIP'), g_GENPARAM.KINSHIP, currentComponentChange, onChangeHandler);
-	myComponentHelper.CreateComponentChange(FindComponent ('NEGO'), g_pDEM_REG^.lp[nEgoPar], currentComponentChange, onChangeHandler, kIsInteger, 100, 1000000);
-	myComponentHelper.CreateComponentChange(FindComponent ('LIFE_EXPECTANCY_AT_BIRTH_WOMEN'), g_pDEM_REG^.dp[e0_women], currentComponentChange, onChangeHandler, kIsDouble, 20, 112);
-	myComponentHelper.CreateComponentChange(FindComponent ('LIFE_EXPECTANCY_AT_BIRTH_MEN'), g_pDEM_REG^.dp[e0_men], currentComponentChange, onChangeHandler, kIsDouble, 20, 112);
+	myComponentHelper.CreateComponentChange(FindComponent ('NEGO'), g_pDEM_REG^.lp[nEgoPar], currentComponentChange, onChangeHandler, kIsInteger, kMinPopulationSize, kMaxPopulationSize);
+	myComponentHelper.CreateComponentChange(FindComponent ('LIFE_EXPECTANCY_AT_BIRTH_WOMEN'), g_pDEM_REG^.dp[e0_women], currentComponentChange, onChangeHandler, kIsDouble, kMinLifeExpectancy, kMaxLifeExpectancy);
+	myComponentHelper.CreateComponentChange(FindComponent ('LIFE_EXPECTANCY_AT_BIRTH_MEN'), g_pDEM_REG^.dp[e0_men], currentComponentChange, onChangeHandler, kIsDouble, kMinLifeExpectancy, kMaxLifeExpectancy);
 	myComponentHelper.CreateComponentChange(FindComponent ('PPR_TARGET'), g_GENPARAM.PPR_TARGET, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('SEP_TARGET'), g_GENPARAM.SEP_TARGET, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('INIT_RANDOM_NUMBERS'), g_GENPARAM.INIT_RANDOM_NUMBERS, currentComponentChange, onChangeHandler);
@@ -486,49 +486,49 @@ begin
 		INIT_RANDOM_NUMBERS.Enabled := true;
 		INIT_RANDOM_NUMBERS.Caption := kCaption_sameRandomSequence;
 	end;
-	myComponentHelper.CreateComponentChange(FindComponent ('MEAN_AGE_UNION'), g_pDEM_REG^.dp[meanAgeUnionWomenLow], currentComponentChange, onChangeHandler, kIsDouble, 10, 59);
-	myComponentHelper.CreateComponentChange(FindComponent ('MEAN_AGE_UNION_HIGH'), g_pDEM_REG^.dp[meanAgeUnionWomenHigh], currentComponentChange, onChangeHandler, kIsDouble, 10, 59);
-	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_UNION_MEAN'), g_GENPARAM.RUNTIME[nStepsUnion_mean], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
+	myComponentHelper.CreateComponentChange(FindComponent ('MEAN_AGE_UNION'), g_pDEM_REG^.dp[meanAgeUnionWomenLow], currentComponentChange, onChangeHandler, kIsDouble, kMinMeanAgeUnion, kMaxMeanAgeUnion);
+	myComponentHelper.CreateComponentChange(FindComponent ('MEAN_AGE_UNION_HIGH'), g_pDEM_REG^.dp[meanAgeUnionWomenHigh], currentComponentChange, onChangeHandler, kIsDouble, kMinMeanAgeUnion, kMaxMeanAgeUnion);
+	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_UNION_MEAN'), g_GENPARAM.RUNTIME[nStepsUnion_mean], currentComponentChange, onChangeHandler, kIsInteger, kMinNStepInterpolation, kMaxNStepInterpolation);
 // BEWARE: ActivateDisabling is associated to the component which is in charge of enabling/disabling the other one
 // So we should put it just AFTER the line in which the first one is created
 // In this case, if NSTEP_UNION_MEAN is changed to a value higher than 1, then MEAN_AGE_UNION_HIGH will be enabled
 // NSTEP_UNION_MEAN controls the activation of MEAN_AGE_UNION_HIGH
 	if StablePopulation() then currentComponentChange.ActivateDisabling (FindComponent ('MEAN_AGE_UNION_HIGH'), 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('EVER_INUNION_PROP'), g_pDEM_REG^.dp[propFinalCelibacyLow], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('EVER_INUNION_PROP_HIGH'), g_pDEM_REG^.dp[propFinalCelibacyHigh], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_UNION_PROP'), g_GENPARAM.RUNTIME[nStepsUnion_prop], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
+	myComponentHelper.CreateComponentChange(FindComponent ('EVER_INUNION_PROP'), g_pDEM_REG^.dp[propFinalCelibacyLow], currentComponentChange, onChangeHandler, kIsDouble, kMinEverInUnionProp, kMaxEverInUnionProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('EVER_INUNION_PROP_HIGH'), g_pDEM_REG^.dp[propFinalCelibacyHigh], currentComponentChange, onChangeHandler, kIsDouble, kMinEverInUnionProp, kMaxEverInUnionProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_UNION_PROP'), g_GENPARAM.RUNTIME[nStepsUnion_prop], currentComponentChange, onChangeHandler, kIsInteger, kMinNStepInterpolation, kMaxNStepInterpolation);
 	if StablePopulation() then currentComponentChange.ActivateDisabling (FindComponent ('EVER_INUNION_PROP_HIGH'), 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('STD_DEV_AGE_UNION'), g_pDEM_REG^.dp[stdnupt], currentComponentChange, onChangeHandler, kIsDouble, 1, 100);
+	myComponentHelper.CreateComponentChange(FindComponent ('STD_DEV_AGE_UNION'), g_pDEM_REG^.dp[stdnupt], currentComponentChange, onChangeHandler, kIsDouble, kMinStdDevAgeUnion, kMaxStdDevAgeUnion);
 // Here if STD_DEV_AGE_UNION value is superior to 0, then this will enable NSTEP_UNION_STDDEV
 	if StablePopulation() then currentComponentChange.ActivateDisabling (FindComponent ('NSTEP_UNION_STDDEV'), 0, 1000000000);
-	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_UNION_STDDEV'), g_GENPARAM.RUNTIME[nStepsUnion_Dev], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
-	myComponentHelper.CreateComponentChange(FindComponent ('FIXED_AGE_UNION'), g_GENPARAM.fixedParameters [fixedUnionAge].state, currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
-	myComponentHelper.CreateComponentChange(FindComponent ('MEAN_AGE_UNION_MEN'), g_pDEM_REG^.dp[meanAgeUnionMen], currentComponentChange, onChangeHandler, kIsDouble, 10, 69);
-	myComponentHelper.CreateComponentChange(FindComponent ('EVER_INUNION_PROP_MEN'), g_pDEM_REG^.dp[propFinalCelibacyMen], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('SEPARATION'), g_pDEM_REG^.dp[freqSeparation], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
+	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_UNION_STDDEV'), g_GENPARAM.RUNTIME[nStepsUnion_Dev], currentComponentChange, onChangeHandler, kIsInteger, kMinNStepInterpolation, kMaxNStepInterpolation);
+	myComponentHelper.CreateComponentChange(FindComponent ('FIXED_AGE_UNION'), g_GENPARAM.fixedParameters [fixedUnionAge].state, currentComponentChange, onChangeHandler, kIsInteger, kMinFixedAgeUnion, kMaxFixedAgeUnion);
+	myComponentHelper.CreateComponentChange(FindComponent ('MEAN_AGE_UNION_MEN'), g_pDEM_REG^.dp[meanAgeUnionMen], currentComponentChange, onChangeHandler, kIsDouble, kMinMeanAgeUnionMen, kMaxMeanAgeUnionMen);
+	myComponentHelper.CreateComponentChange(FindComponent ('EVER_INUNION_PROP_MEN'), g_pDEM_REG^.dp[propFinalCelibacyMen], currentComponentChange, onChangeHandler, kIsDouble, kMinEverInUnionProp, kMaxEverInUnionProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('SEPARATION'), g_pDEM_REG^.dp[freqSeparation], currentComponentChange, onChangeHandler, kIsDouble, kMinSeparationProp, kMaxSeparationProp);
 	if StablePopulation() then currentComponentChange.ActivateDisabling (FindComponent ('NSTEP_SEPARATION'), 0, 1000000000);
-	myComponentHelper.CreateComponentChange(FindComponent ('SEPARATION_ADJUSTED'), g_pDEM_REG^.dp[freqSeparationFirstIteration], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_SEPARATION'), g_GENPARAM.RUNTIME[nStepsSeparation], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
-	myComponentHelper.CreateComponentChange(FindComponent ('SECOND_SEPARATION_REL_RISK'), g_pDEM_REG^.dp[rel_risk_2Separation], currentComponentChange, onChangeHandler, kIsDouble, 0, 10);
-	myComponentHelper.CreateComponentChange(FindComponent ('REPARTNERING_WOMEN'), g_pDEM_REG^.dp[repartnering_women_par], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('REPARTNERING_MEN'), g_pDEM_REG^.dp[repartnering_men_par], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('REPARTNERING_WID_WOMEN'), g_pDEM_REG^.dp[repartnering_wid_women_par], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('REPARTNERING_WID_MEN'), g_pDEM_REG^.dp[repartnering_wid_men_par], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('AMENO_ALPHA'), g_pDEM_REG^.dp[amenorrhea_alpha], currentComponentChange, onChangeHandler, kIsDouble, -100, 100);
-	myComponentHelper.CreateComponentChange(FindComponent ('AMENO_BETA'), g_pDEM_REG^.dp[amenorrhea_beta], currentComponentChange, onChangeHandler, kIsDouble, -100, 100);
-	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_AMENORRHEA'), g_GENPARAM.RUNTIME[NStepsAmeno], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
+	myComponentHelper.CreateComponentChange(FindComponent ('SEPARATION_ADJUSTED'), g_pDEM_REG^.dp[freqSeparationFirstIteration], currentComponentChange, onChangeHandler, kIsDouble, kMinSeparationProp, kMaxSeparationProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_SEPARATION'), g_GENPARAM.RUNTIME[nStepsSeparation], currentComponentChange, onChangeHandler, kIsInteger, kMinNStepInterpolation, kMaxNStepInterpolation);
+	myComponentHelper.CreateComponentChange(FindComponent ('SECOND_SEPARATION_REL_RISK'), g_pDEM_REG^.dp[rel_risk_2Separation], currentComponentChange, onChangeHandler, kIsDouble, kMinSecondSeparationRelRisk, kMaxSecondSeparationRelRisk);
+	myComponentHelper.CreateComponentChange(FindComponent ('REPARTNERING_WOMEN'), g_pDEM_REG^.dp[repartnering_women_par], currentComponentChange, onChangeHandler, kIsDouble, kMinRepartneringProp, kMaxRepartneringProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('REPARTNERING_MEN'), g_pDEM_REG^.dp[repartnering_men_par], currentComponentChange, onChangeHandler, kIsDouble, kMinRepartneringProp, kMaxRepartneringProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('REPARTNERING_WID_WOMEN'), g_pDEM_REG^.dp[repartnering_wid_women_par], currentComponentChange, onChangeHandler, kIsDouble, kMinRepartneringProp, kMaxRepartneringProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('REPARTNERING_WID_MEN'), g_pDEM_REG^.dp[repartnering_wid_men_par], currentComponentChange, onChangeHandler, kIsDouble, kMinRepartneringProp, kMaxRepartneringProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('AMENO_ALPHA'), g_pDEM_REG^.dp[amenorrhea_alpha], currentComponentChange, onChangeHandler, kIsDouble, kMinAmenorrheaParam, kMaxAmenorrheaParam);
+	myComponentHelper.CreateComponentChange(FindComponent ('AMENO_BETA'), g_pDEM_REG^.dp[amenorrhea_beta], currentComponentChange, onChangeHandler, kIsDouble, kMinAmenorrheaParam, kMaxAmenorrheaParam);
+	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_AMENORRHEA'), g_GENPARAM.RUNTIME[NStepsAmeno], currentComponentChange, onChangeHandler, kIsInteger, kMinNStepInterpolation, kMaxNStepInterpolation);
 	myComponentHelper.CreateComponentChange(FindComponent ('FIXED_AMENORRHEA'), g_GENPARAM.fixedParameters [fixedAmenorrhea].state, currentComponentChange, onChangeHandler);
 	if StablePopulation() then currentComponentChange.ActivateDisabling (FindComponent ('ZERO_FIXED_AMENORRHEA_'));
-	myComponentHelper.CreateComponentChange(FindComponent ('ZERO_FIXED_AMENORRHEA_'), g_GENPARAM.fixedParameters [fixedAmenorrhea].param, currentComponentChange, onChangeHandler, kIsDouble, 0, 100);
-	myComponentHelper.CreateComponentChange(FindComponent ('EFF_CONTRACEP_BEFORE_UNION'), g_pDEM_REG^.dp[effContBeforeUnion], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('CONTRACEP_TIME_AFTER_FIRST_UNION'), g_pDEM_REG^.dp[meanTimeContraceptionAfterUnionHigh], currentComponentChange, onChangeHandler, kIsDouble, 0, 8);
+	myComponentHelper.CreateComponentChange(FindComponent ('ZERO_FIXED_AMENORRHEA_'), g_GENPARAM.fixedParameters [fixedAmenorrhea].param, currentComponentChange, onChangeHandler, kIsDouble, kMinFixedAmenorrheaMonths, kMaxFixedAmenorrheaMonths);
+	myComponentHelper.CreateComponentChange(FindComponent ('EFF_CONTRACEP_BEFORE_UNION'), g_pDEM_REG^.dp[effContBeforeUnion], currentComponentChange, onChangeHandler, kIsDouble, kMinContraceptionProp, kMaxContraceptionProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('CONTRACEP_TIME_AFTER_FIRST_UNION'), g_pDEM_REG^.dp[meanTimeContraceptionAfterUnionHigh], currentComponentChange, onChangeHandler, kIsDouble, kMinWaitingTimeYears, kMaxWaitingTimeYears);
 	if StablePopulation() then currentComponentChange.ActivateDisabling (FindComponent ('NSTEP_CONTRACEP_BEFORE_FIRST_CHILD'), 0, 1000000000);
-	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_CONTRACEP_BEFORE_FIRST_CHILD'), g_GENPARAM.RUNTIME[nStepsContrUseAfterUnion], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
-	myComponentHelper.CreateComponentChange(FindComponent ('PROP_CONTRACEP_AFTER_FIRST_UNION'), g_pDEM_REG^.dp[propContraceptionAfterUnion], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
-	myComponentHelper.CreateComponentChange(FindComponent ('EFF_STOPPING_CONTRACEP'), g_pDEM_REG^.effStopping, currentComponentChange, TNotifyEvent(onValidateHandler), kIsInteger, 0, 1, kMaxIndBirthIntervals, kMaxIndBirthIntervals);
-	myComponentHelper.CreateComponentChange(FindComponent ('PROP_USING_SPACING'), g_pDEM_REG^.effSpacing, currentComponentChange, TNotifyEvent(onValidateHandler), kIsInteger, 0, 1, kMaxIndBirthIntervals, kMaxIndBirthIntervals);
-	myComponentHelper.CreateComponentChange(FindComponent ('WAITING_TIME_SPACING'), g_pDEM_REG^.meanTimeSpacing, currentComponentChange, TNotifyEvent(onValidateHandler), kIsInteger, 0, 8, kMaxIndBirthIntervals, kMaxIndBirthIntervals);
-	myComponentHelper.CreateComponentChange(FindComponent ('PROP_WOMEN_AT_BIRTH'), g_pDEM_REG^.dp[propWomenAtBirth], currentComponentChange, onChangeHandler, kIsDouble, 0, 1);
+	myComponentHelper.CreateComponentChange(FindComponent ('NSTEP_CONTRACEP_BEFORE_FIRST_CHILD'), g_GENPARAM.RUNTIME[nStepsContrUseAfterUnion], currentComponentChange, onChangeHandler, kIsInteger, kMinNStepInterpolation, kMaxNStepInterpolation);
+	myComponentHelper.CreateComponentChange(FindComponent ('PROP_CONTRACEP_AFTER_FIRST_UNION'), g_pDEM_REG^.dp[propContraceptionAfterUnion], currentComponentChange, onChangeHandler, kIsDouble, kMinContraceptionProp, kMaxContraceptionProp);
+	myComponentHelper.CreateComponentChange(FindComponent ('EFF_STOPPING_CONTRACEP'), g_pDEM_REG^.effStopping, currentComponentChange, TNotifyEvent(onValidateHandler), kIsInteger, kMinContraceptionProp, kMaxContraceptionProp, kMaxIndBirthIntervals, kMaxIndBirthIntervals);
+	myComponentHelper.CreateComponentChange(FindComponent ('PROP_USING_SPACING'), g_pDEM_REG^.effSpacing, currentComponentChange, TNotifyEvent(onValidateHandler), kIsInteger, kMinContraceptionProp, kMaxContraceptionProp, kMaxIndBirthIntervals, kMaxIndBirthIntervals);
+	myComponentHelper.CreateComponentChange(FindComponent ('WAITING_TIME_SPACING'), g_pDEM_REG^.meanTimeSpacing, currentComponentChange, TNotifyEvent(onValidateHandler), kIsInteger, kMinWaitingTimeYears, kMaxWaitingTimeYears, kMaxIndBirthIntervals, kMaxIndBirthIntervals);
+	myComponentHelper.CreateComponentChange(FindComponent ('PROP_WOMEN_AT_BIRTH'), g_pDEM_REG^.dp[propWomenAtBirth], currentComponentChange, onChangeHandler, kIsDouble, kMinPropWomenAtBirth, kMaxPropWomenAtBirth);
 
 	//myComponentHelper.CreateComponentChange(FindComponent ('DUMP'), g_GENPARAM.DUMP, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('DUMPALL'), g_GENPARAM.DUMPALL, currentComponentChange, onChangeHandler);
@@ -581,7 +581,7 @@ begin
 	myComponentHelper.CreateComponentChange(FindComponent ('EDUCATION'), g_GENPARAM.eduKind, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('FILENAME'), g_FileName, currentComponentChange, onChangeHandler, kIsString);
 	myComponentHelper.CreateComponentChange(FindComponent ('DEM_REG_FILENAME'), g_FileName_DemographicRegime, currentComponentChange, onChangeHandler, kIsString);
-	myComponentHelper.CreateComponentChange(FindComponent ('BOOTSTRAP_NRUNS'), g_GENPARAM.RUNTIME[gBootstrap_nRuns], currentComponentChange, onChangeHandler, kIsInteger, 1, 1000000);
+	myComponentHelper.CreateComponentChange(FindComponent ('BOOTSTRAP_NRUNS'), g_GENPARAM.RUNTIME[gBootstrap_nRuns], currentComponentChange, onChangeHandler, kIsInteger, kMinBootstrapRuns, kMaxBootstrapRuns);
 	myComponentHelper.CreateComponentChange(FindComponent ('OUTPUT_BOOTSTRAP_MULTIPLE_INDIV_FILES'), g_GENPARAM.OUTPUT_BOOTSTRAP_MULTIPLE_INDIV_FILES, currentComponentChange, onChangeHandler);
 
 	EnableControl (self, 'NSTEP_UNION_MEAN', StablePopulation());

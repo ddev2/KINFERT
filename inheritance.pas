@@ -46,11 +46,15 @@ uses
 	function checkHeirs (pRelative: pRelativeType): integer;
 
 implementation
-	uses Kinship, Nuptiality;
+	uses Kinship, Nuptiality, Verification;
 	
 	const
 		k_isHeir = true;
 		k_isNotHeir = false;
+		{the number of generations of ascendants the second algorithm can reach, which is
+		 the length of the two lists of kin types in AscendantHeirs_2: parents, grandparents,
+		 great-grandparents}
+		kNbGenerationsAscendantHeirs = 3;
 
 	var
 		gRelDebug: pRelativeType = nil;
@@ -221,22 +225,50 @@ implementation
 		result := lookForAscendantHeir (pRelative, upLevel);
 	end;
 	
-	function partnerHeir (pRelative: pRelativeType): boolean;
+// >>> Claude 2026-09-30 start
+	{N26: the partner test of the first algorithm, taken out of partnerHeir so that it can be
+	 recorded for every relative and not only for the relatives whose chain of branches reaches
+	 the partner. The test itself is unchanged: the last union ended at the relative's own
+	 death, and the partner of that union was alive at that moment.}
+	function partnerCanBeHeir_1 (pRelative: pRelativeType): boolean;
 	var
 		pPartner: pRelativeType;
 		ageEndUnion: double;
 	begin
 		result := false;
 		ageEndUnion := getAgeEndUnion (pRelative, pRelative^.nUnions);
-		if (ageEndUnion = pRelative^.ageDeath) then begin
-			pPartner := getPartner (pRelative, pRelative^.nUnions);
-			if possible_heirFound (pRelative, pPartner) then begin
-				pRelative^.typeHeir := th_partner;
-				exit (true);
-			end else // debug (normally cases where both partners die in the same month)
-				pRelative := pRelative;
-		end;
+		if (ageEndUnion <> pRelative^.ageDeath) then
+			exit;
+		pPartner := getPartner (pRelative, pRelative^.nUnions);
+		{a partner who is not a possible heir here is normally a partner who died in the same
+		 month as the relative}
+		result := possible_heirFound (pRelative, pPartner);
 	end;
+
+	{N26: the partner test of the second algorithm, taken out of partnerIsHeir_2 unchanged, so
+	 that lookForHeirs and checkHeirs can ask the question without adding an heir.}
+	function partnerCanBeHeir_2 (pDecedent: pRelativeType): boolean;
+	var
+		pPartner: pRelativeType;
+	begin
+		result := false;
+		pPartner := getLastPartner (pDecedent);
+		if (pPartner = nil) then
+			exit;
+		if (getCauseEndLastUnion (pDecedent) <> end_by_death) then
+			exit;
+		result := possible_heirFound (pDecedent, pPartner);
+	end;
+
+	function partnerHeir (pRelative: pRelativeType): boolean;
+	{the partner branch of the first algorithm. The answer is the field that lookForHeirs filled
+	 before it entered the chain of branches, so the test is made once for each relative.}
+	begin
+		result := pRelative^.partnerCanInherit;
+		if result then
+			pRelative^.typeHeir := th_partner;
+	end;
+// <<< Claude 2026-09-30 end
 	
 	function siblingsHeirTree (pRelative: pRelativeType): boolean;
 	// siblings and descendance of siblings as heirs
@@ -357,6 +389,11 @@ implementation
 			// in case we have a partner: we consider only ego's partner
 			// other relatives's partners have typeOfKin sets on these relatives
 			if ((pRelative^.typeOfKin = kt_ego) or (pRelative^.typeOfKin in gPossibleHeirs)) and (pRelative^.kinOf^.typeOfKin = kt_ego) then begin
+				pRelative^.partnerCanInherit := partnerCanBeHeir_1 (pRelative);
+				if (pRelative^.partnerCanInherit <> partnerCanBeHeir_2 (pRelative)) then
+					if reportFailure (chk_inh_partnerTestsDiffer,
+							['relative ', pRelative^.indNumber, ', unions ', pRelative^.nUnions]) then
+						breakOnFailure;
 				if not childHeirTree (pRelative) then
 					if not ascendantsHeirTree (pRelative) then
 						if not partnerHeir (pRelative) then
@@ -740,6 +777,9 @@ implementation
 		numOfPossibleHeirs: longint = 0;
 		indSibling: longint;
 		pSibling, pAncestor: pRelativeType;
+// >>> Claude 2026-09-30 start
+		foundCommonAncestor: boolean;	{N24}
+// <<< Claude 2026-09-30 end
 		degree: longint; // ego's degree with the died relative
 		SIBLINGS: arrayOfRelatives;
 		nSiblings: longint;
@@ -892,24 +932,42 @@ implementation
 					nSiblings := 0;
 					setLength (SIBLINGS, 0);
 					// children of all the common ancestors, including ego
-// BUG  **N24**  commonAncestor is computed and then discarded
-// pAncestor is assigned and never read, here and at three other call sites in this file.
-// getSiblings is then called on the parent whatever the answer was, so it returns every
-// sibling of that parent, including the half-siblings who descend from the OTHER parent of
-// that generation and therefore share no blood with the dead niece or nephew. They enter
-// the heir list on the same footing as the full siblings and take an equal share.
-// Proposed fix: keep the result and use it. Either pass pAncestor to getSiblings so that it
-// returns only the children of that ancestor, or filter SIBLINGS afterwards on descent from
-// pAncestor. If a nil pAncestor means there is no blood relation, that branch should add
-// nobody at all. The other call sites to check are in the aunt or uncle, the cousin and the
-// great-grand-niece blocks, all in this file.
-// **Blocked on Q3**, since the degree at which the Spanish rules stop competing per capita
-// decides how far this list should reach.
+// >>> Claude 2026-09-30 start
+					{N24: the aunts and uncles of the dead niece or nephew are the children of its
+					 grandparents, and ego is one of them, so one of ego's own parents is a
+					 grandparent of the dead relative. Not necessarily both: if ego is a half-sibling
+					 of the dead relative's father, sharing only the father, then ego's mother is no
+					 relation of the dead relative at all, and her children by another man share no
+					 blood with it. commonAncestor answers which of ego's two parents is a
+					 grandparent of the dead relative, and its answer used to be assigned and then
+					 ignored, getSiblings being called on both of ego's parents whatever the answer
+					 was. The children of the unrelated parent then entered the heir list on the
+					 same footing as the true aunts and uncles and took an equal share of the
+					 estate. The answer is now used, as it already was in the first cousins block
+					 below: a side of ego's family with no ancestor in common with the dead relative
+					 contributes nobody. A nil parent of ego is refused by the same test, since
+					 commonAncestor then finds no match, or matches nil against nil and answers
+					 nil.}
+					foundCommonAncestor := false;
 					pAncestor := commonAncestor ([pEgo^.father], [getAscendant (pDeadRelative, [man, man]), getAscendant (pDeadRelative, [woman, man])]);
-					getSiblings (pEgo^.father, nSiblings, SIBLINGS);
+					if (pAncestor <> nil) then begin
+						foundCommonAncestor := true;
+						getSiblings (pAncestor, nSiblings, SIBLINGS);
+					end;
 					pAncestor := commonAncestor ([pEgo^.mother], [getAscendant (pDeadRelative, [man, woman]), getAscendant (pDeadRelative, [woman,woman])]);
-					getSiblings (pEgo^.mother, nSiblings, SIBLINGS);
-// END BUG  **N24**
+					if (pAncestor <> nil) then begin
+						foundCommonAncestor := true;
+						getSiblings (pAncestor, nSiblings, SIBLINGS);
+					end;
+					{ego is a sibling of one of the dead relative's parents, so at least one side
+					 must have answered}
+					if not foundCommonAncestor then
+						if reportFailure (chk_inh_noCommonAncestor,
+								['decedent ', pDeadRelative^.indNumber,
+								', kin type ', str_kinship [pDeadRelative^.typeOfKin],
+								', ego ', pEgo^.indNumber]) then
+							breakOnFailure;
+// <<< Claude 2026-09-30 end
 					findHeir_siblings (pDeadRelative, nSiblings, SIBLINGS, 6, degree, numOfPossibleHeirs);
  					setLength (SIBLINGS, 0);
 				end;
@@ -924,16 +982,35 @@ implementation
 			nSiblings := 0;
 			setLength (SIBLINGS, 0);
 			// children of all the great grand parents, including ego
+// >>> Claude 2026-09-30 start
+			{N24, the same fault and the same repair as in the nieces and nephews block above. Ego
+			 is a grand aunt or grand uncle of the dead relative, so one of ego's parents is one of
+			 its great-grandparents, and the other side of ego's family may be no relation of it.
+			 Only the side that has an ancestor in common contributes its children.}
+			foundCommonAncestor := false;
 			pAncestor := commonAncestor ([pEgo^.father], [	getAscendant (pDeadRelative, [man, man, man]),
 															getAscendant (pDeadRelative, [man, woman, man]),
 															getAscendant (pDeadRelative, [woman, man, man]),
 															getAscendant (pDeadRelative, [woman, woman, man])]);
-			getSiblings (pEgo^.father, nSiblings, SIBLINGS);
+			if (pAncestor <> nil) then begin
+				foundCommonAncestor := true;
+				getSiblings (pAncestor, nSiblings, SIBLINGS);
+			end;
 			pAncestor := commonAncestor ([pEgo^.mother], [	getAscendant (pDeadRelative, [man, man, woman]),
 															getAscendant (pDeadRelative, [man, woman, woman]),
 															getAscendant (pDeadRelative, [woman, man, woman]),
 															getAscendant (pDeadRelative, [woman, woman, woman])]);
-			getSiblings (pEgo^.mother, nSiblings, SIBLINGS);
+			if (pAncestor <> nil) then begin
+				foundCommonAncestor := true;
+				getSiblings (pAncestor, nSiblings, SIBLINGS);
+			end;
+			if not foundCommonAncestor then
+				if reportFailure (chk_inh_noCommonAncestor,
+						['decedent ', pDeadRelative^.indNumber,
+						', kin type ', str_kinship [pDeadRelative^.typeOfKin],
+						', ego ', pEgo^.indNumber]) then
+					breakOnFailure;
+// <<< Claude 2026-09-30 end
 			findHeir_siblings (pDeadRelative, nSiblings, SIBLINGS, 7, degree, numOfPossibleHeirs);				
 				
 			numOfPossibleHeirs := 0; // we block the computation of inheritance share below and compute it here...
@@ -966,12 +1043,18 @@ implementation
 
 			nSiblings := 0;
 			setLength (SIBLINGS, 0);
-			pAncestor := commonAncestor ([pDeadRelative^.father], [	pEgo^.father^.father,
-																	pEgo^.mother^.father]);
+// >>> Claude 2026-09-30 start
+			{N24: the two calls to commonAncestor that stood here were assigned and never read, and
+			 unlike the nieces and nephews block they were not needed. What is collected here are
+			 the heirs of the dead aunt or uncle, and those are the children of the dead relative's
+			 own parents: every one of them shares a parent with the dead relative, so every one of
+			 them is a blood sibling of it, the half-siblings included. No side has to be excluded,
+			 and the useless assignments are gone so that the two blocks are not read as the same
+			 case. Ego reaches this estate through its own parent, who is one of these siblings,
+			 and the share is computed below.}
 			getSiblings (pDeadRelative^.father, nSiblings, SIBLINGS, pDeadRelative);
-			pAncestor := commonAncestor ([pDeadRelative^.mother], [	pEgo^.father^.mother,
-																	pEgo^.mother^.mother]);
 			getSiblings (pDeadRelative^.mother, nSiblings, SIBLINGS, pDeadRelative);
+// <<< Claude 2026-09-30 end
 			numOfPossibleHeirs := 0;
 			degree := 2;
 			findHeir_siblings (pDeadRelative, nSiblings, SIBLINGS, 5, degree, numOfPossibleHeirs);
@@ -993,6 +1076,10 @@ implementation
 			
 			nSiblings := 0;
 			setLength (SIBLINGS, 0);
+// >>> Claude 2026-09-30 start
+			{N24: this block is the one that always used the answer of commonAncestor, and it is
+			 the model the two blocks above were brought into line with. Left as it was.}
+// <<< Claude 2026-09-30 end
 			pAncestor := commonAncestor ([pEgo^.father^.father, pEgo^.mother^.father],
 										[getAscendant (pDeadRelative, [man, man]), getAscendant (pDeadRelative, [woman, man])]);
 			if (pAncestor <> nil) then begin
@@ -1046,14 +1133,14 @@ implementation
 
 			nSiblings := 0;
 			setLength (SIBLINGS, 0);
-			pAncestor := commonAncestor ([pDeadRelative^.father],
-										[getAscendant (pEgo, [man, man, man]), getAscendant (pEgo, [man, woman, man]),
-										getAscendant (pEgo, [woman, man, man]), getAscendant (pEgo, [woman, woman, man])]);
+// >>> Claude 2026-09-30 start
+			{N24: as in the aunts and uncles block, the two answers of commonAncestor were assigned
+			 and never read and are not needed. These are the heirs of the dead grand aunt or grand
+			 uncle, and they are the children of the dead relative's own parents, so every one of
+			 them is a blood sibling of it.}
 			getSiblings (pDeadRelative^.father, nSiblings, SIBLINGS, pDeadRelative);
-			pAncestor := commonAncestor ([pDeadRelative^.mother],
-										[getAscendant (pEgo, [man, man, woman]), getAscendant (pEgo, [man, woman, woman]),
-										getAscendant (pEgo, [woman, man, woman]), getAscendant (pEgo, [woman, woman, woman])]);
 			getSiblings (pDeadRelative^.mother, nSiblings, SIBLINGS, pDeadRelative);
+// <<< Claude 2026-09-30 end
 
 			numOfPossibleHeirs := 0;
 			degree := 2;
@@ -1135,7 +1222,13 @@ type
 		lineage: arrayOfSex;	// if [], then we have a father or a mother
 								// if ['woman'], then a grandparent is parent of the mother
 								// if ['man','man'] we have a great-grandparent who is parent of a grandfather, who on turn is parent of the father
-		nParentsInLineage: integer; // can be either 1 or 2
+// >>> Claude 2026-09-30 start
+		nParentsInLineage: integer;	// N22b: the number of ascendant heirs on the same side of the
+									// family as this one, which is what the share is divided by. It
+									// used to be the number of heirs in the same line of descent,
+									// either 1 or 2. Written by allocateShareAscendantsHeirs_2 and
+									// read by nothing, so it is there to be looked at in the debugger
+// <<< Claude 2026-09-30 end
 	end;
 	arrayAscendants = array of AscendantHeir;
 
@@ -1302,15 +1395,16 @@ type
 	function partnerIsHeir_2 (pDecedent: pRelativeType; aShare: double; addShare: boolean = false): boolean;
 	var
 		pPartner: pRelativeType;
-		share: double;
 	begin
-		result := false;
+// >>> Claude 2026-09-30 start
+		{N26: the test is now partnerCanBeHeir_2, whose three conditions are the ones this
+		 routine used to make itself, so that checkHeirs can ask the same question without
+		 adding an heir}
 		pPartner := getLastPartner (pDecedent);
-		if (pPartner = nil) then exit;
-		if getCauseEndLastUnion(pDecedent) <> end_by_death then exit;
-		result := possible_heirFound (pDecedent, pPartner);
+		result := partnerCanBeHeir_2 (pDecedent);
 		if not result then
 			exit;
+// <<< Claude 2026-09-30 end
 		addHeir_2 (pDecedent, pPartner, kt_partner, aShare, addShare);
 	end;
 
@@ -1452,19 +1546,16 @@ type
 			exit;
 		fatherHeir := possible_heirFound (pDecedent, pFather);
 		motherHeir := possible_heirFound (pDecedent, pMother);
-// BUG  **N22**  a nearer ascendant does not exclude a remoter one
-// The two branches are explored independently: when the father of this ascendant is not an
-// heir, the father's own ascendants are explored, and the same for the mother, with no
-// account of what the other branch found. So a surviving grandparent on one side and a
-// great-grandparent on the other end up in arrHeirs together and share the estate.
-// The header of this file states the opposite rule, that the nearest degree excludes the
-// rest, and Spanish succession also excludes by degree, not by branch.
-// Proposed fix: explore degree by degree rather than branch by branch. Collect every
-// ascendant at currDegree across both branches first; if any of them is an heir, stop and
-// keep only that degree; otherwise descend one degree and repeat. That also removes the
-// need for the two recursive calls below to know anything about each other.
-// **Blocked on Q3**: whether the nearest degree excludes the remoter ones is the first of
-// the five questions about Spanish succession, and this is the routine the answer changes.
+// >>> Claude 2026-09-30 start
+		{N22: the two recursive calls below explore the father's line and the mother's line
+		 independently, which is what used to let a grandparent on one side and a
+		 great-grandparent on the other inherit together. The generation is now decided by the
+		 caller: AscendantHeirs_2 asks for one generation at a time, in order, and keeps the
+		 first one that answers. A pass that asks for a generation the two lines have not
+		 reached adds nothing, because the test at the top of this routine refuses the call, so
+		 the heirs of the pass that answers all belong to the one nearest generation. This
+		 routine itself is unchanged.}
+// <<< Claude 2026-09-30 end
  		if not fatherHeir and not motherHeir then begin
 			// both parents at this level died before the decedent or are excluded, so we explore the parents' ascendants tree
         	if (length(lineage) > 0) then
@@ -1474,7 +1565,6 @@ type
 			exploreAscendantHeirsTree_2 (pDecedent, pFather, degree, currDegree, arrAscendantsType, arrHeirs, nHeirs, currLineage);
 			currLineage[length(currLineage) - 1] := woman;
  			exploreAscendantHeirsTree_2 (pDecedent, pMother, degree, currDegree, arrAscendantsType, arrHeirs, nHeirs, currLineage);
-// END BUG  **N22**
 		end else if fatherHeir or motherHeir then begin
 			if fatherHeir then begin
 				Inc (nHeirs);
@@ -1493,6 +1583,35 @@ type
 		end;
 	end;
 	
+// >>> Claude 2026-09-30 start
+	{N22b: the side of the family an ascendant heir belongs to. The first step of the lineage
+	 records it: an empty lineage is a parent, whose own sex gives the side, a lineage of one
+	 step is a grandparent and one of two steps a great-grandparent, and in both of those the
+	 first step is the parent of the decedent through whom that ascendant is reached.}
+	function sideOfAscendantHeir (const aHeir: AscendantHeir): Sex;
+	begin
+		if length (aHeir.lineage) > 0 then
+			result := aHeir.lineage [0]
+		else if (aHeir.kinType = kt_mother) then
+			result := woman
+		else
+			result := man;
+	end;
+
+	{N22b: the estate of a person whose heirs are ascendants is halved between the father's side
+	 and the mother's side of the family, and within a side the heirs of that side take equal
+	 parts. A side with no heir at this degree leaves its half to the other side. The heirs are
+	 all of one degree, which AscendantHeirs_2 sees to, so no further division by generation
+	 enters: with seven great-grandparents alive, four on one side and three on the other, the
+	 four take an eighth each and the three take a sixth each, and the two lines within a side
+	 are not distinguished. Daniel's rule, 30 September, and the rule of article 810 of the
+	 Spanish civil code.
+
+	 The routine used to count the distinct lines of descent present, of which there are two at
+	 the grandparents and four at the great-grandparents, and give each line an equal part. The
+	 two rules agree whenever the two sides hold the same number of lines, which is why the
+	 difference showed only in the rarer shapes of estate: three great-grandparents in three
+	 different lines used to take a third each and now take a quarter, a quarter and a half.}
 	procedure allocateShareAscendantsHeirs_2 (
 								pDecedent: pRelativeType;
 								nHeirs: integer;
@@ -1500,56 +1619,32 @@ type
 								shareInheritance: double
 							);
 	var
-		nLineages: integer = 0;
-		indHeir, indHeir2: integer;
+		indHeir: integer;
+		nOnSide: array [Sex] of integer;
+		shareOfSide: double;
+		side: Sex;
 	begin
-		if nHeirs = 1 then
+		nOnSide [man] := 0;
+		nOnSide [woman] := 0;
+		for indHeir := 1 to nHeirs do
+			Inc (nOnSide [sideOfAscendantHeir (arrHeirs[indHeir-1])]);
+		if (nOnSide [man] > 0) and (nOnSide [woman] > 0) then
+			shareOfSide := shareInheritance / 2
+		else
+			{only one side has an heir at this degree, and it takes the whole estate}
+			shareOfSide := shareInheritance;
+		for indHeir := 1 to nHeirs do begin
+			side := sideOfAscendantHeir (arrHeirs[indHeir-1]);
+			arrHeirs[indHeir-1].nParentsInLineage := nOnSide [side];
 			addHeir_2 (
 						pDecedent,
-						arrHeirs[0].heir,
-						arrHeirs[0].kinType,
-						shareInheritance
-					)
-		else if nHeirs = 2 then begin
-			{ if there are two heirs, they can either be the two parents
-			  or two grandparents or two great-grandparents. In the latter case
-			  it does not matter if they are for the same lineage or a different one
-			  and they will get the same share of inheritance
-			}
-			addHeir_2 (
-						pDecedent,
-						arrHeirs[0].heir,
-						arrHeirs[0].kinType,
-						shareInheritance / 2
+						arrHeirs[indHeir-1].heir,
+						arrHeirs[indHeir-1].kinType,
+						shareOfSide / nOnSide [side]
 					);
-			addHeir_2 (
-						pDecedent,
-						arrHeirs[1].heir,
-						arrHeirs[1].kinType,
-						shareInheritance / 2
-					);
-		end else begin
-			{if there at at least 3, they can be either grandparents or great-grandparents.
-			 We need to take into account the lineage
-			}
-			nLineages := nHeirs;
-			for indHeir := 1 to (nHeirs-1) do
-				for indHeir2 := indHeir+1 to nHeirs do
-					if AreArraysEqual_Sex(arrHeirs[indHeir-1].lineage, arrHeirs[indHeir2-1].lineage) then begin
-						Dec (nLineages);
-						arrHeirs[indHeir-1].nParentsInLineage := 2;
-						arrHeirs[indHeir2-1].nParentsInLineage := 2;
-					end;
-			// Now we can allocate the share to each relative
-			for indHeir := 1 to nHeirs do
-				addHeir_2 (
-							pDecedent,
-							arrHeirs[indHeir-1].heir,
-							arrHeirs[indHeir-1].kinType,
-							shareInheritance / (nLineages * arrHeirs[indHeir-1].nParentsInLineage)
-						);
-		end
+		end;
 	end;
+// <<< Claude 2026-09-30 end
 
 	function AscendantHeirs_2 (pDecedent: pRelativeType; var shareInheritance: double; arrHeirs: arrayAscendants): boolean;
 	var
@@ -1557,16 +1652,46 @@ type
 		degree, currDegree: integer;
 		nHeirs: integer = 0;
 		currLineage: arrayOfSex;
+// >>> Claude 2026-09-30 start
+		indHeir: integer;
+// <<< Claude 2026-09-30 end
 	begin
 		result := false;
-		setLength(arrAscendantsType[man], 3);
-		setLength(arrAscendantsType[woman], 3);
+		setLength(arrAscendantsType[man], kNbGenerationsAscendantHeirs);
+		setLength(arrAscendantsType[woman], kNbGenerationsAscendantHeirs);
 		arrAscendantsType[man] := [kt_father, kt_grandFather, kt_greatGrandFather];
 		arrAscendantsType[woman] := [kt_mother, kt_grandMother, kt_greatGrandMother];
-		degree := 3;
-		currDegree := 1;
-		setLength(currLineage, 0);
-		exploreAscendantHeirsTree_2 (pDecedent, pDecedent, degree, currDegree, arrAscendantsType, arrHeirs, nHeirs, currLineage);
+// >>> Claude 2026-09-30 start
+		{N22: one pass for each generation in turn, keeping the first generation that holds an
+		 heir. The estate of a person with no descendant goes to the ascendants of the nearest
+		 degree and to no other, so a surviving grandmother excludes every great-grandparent,
+		 whichever line each of them belongs to. The exploration used to be made once, with
+		 degree set to the last generation, and the father's line and the mother's line were
+		 then free to stop at different generations: a grandparent on one side and a
+		 great-grandparent on the other inherited together and every share came out too small.
+		 Passing degree as the one generation to reach, and stopping at the first generation
+		 that answers, leaves exploreAscendantHeirsTree_2 and the allocation of the shares
+		 untouched: a pass that finds no heir at the generation asked for adds nothing, since
+		 the recursion that would go further is refused by the test at the top of the routine.}
+		for degree := 1 to kNbGenerationsAscendantHeirs do begin
+			nHeirs := 0;
+			currDegree := 1;
+			setLength (currLineage, 0);
+			exploreAscendantHeirsTree_2 (pDecedent, pDecedent, degree, currDegree, arrAscendantsType, arrHeirs, nHeirs, currLineage);
+			if nHeirs > 0 then begin
+				{the heirs of one pass all belong to the generation that pass asked for, which is
+				 what the length of the lineage records. The property holds because the earlier
+				 generations were asked for first and answered nothing, so it is worth stating}
+				for indHeir := 2 to nHeirs do
+					if (length (arrHeirs[indHeir-1].lineage) <> length (arrHeirs[0].lineage)) then
+						if reportFailure (chk_inh_ascendantsSameDegree,
+								['relative ', pDecedent^.indNumber, ', heirs ', nHeirs,
+								', generation ', degree]) then
+							breakOnFailure;
+				break;
+			end;
+		end;
+// <<< Claude 2026-09-30 end
 		if nHeirs > 0 then begin
 			allocateShareAscendantsHeirs_2 (pDecedent, nHeirs, arrHeirs, shareInheritance);
 			result := true;
@@ -2124,78 +2249,134 @@ type
 		end;
 	end;
 
-	function checkHeirs (pRelative: pRelativeType): integer;
-	var
-		ind: integer;
+// >>> Claude 2026-09-30 start
+	{N26: the kin types the branch named by the first algorithm covers. That algorithm answers
+	 with a branch of the kinship tree and not with a list of persons, so this is the set the
+	 heirs found by the second algorithm must belong to.}
+	function kinSetOfBranch (aTypeHeir: typeOfHeirs): KinSetType;
 	begin
-		result := 1;
-		with pRelative^ do begin
-// BUG  **N26**  checkHeirs reports agreement in the case where the two algorithms disagree,
-//                and its last branch cannot be reached
-// Three faults in the case structure below.
-// (a) result is initialised to 1, that is agreement, and the first branch only sets it to 0
-//     when the kin types of the second algorithm fall outside the set the first named. The
-//     case where the first algorithm found NO heirs and the second found some, which is
-//     exactly a disagreement, is reported as agreement whenever the types happen to match
-//     the branch label.
-// (b) the comparison of the two lists is order sensitive: it walks both by index and calls
-//     them different at the first position where they differ. Two algorithms that found the
-//     same heirs in a different order are reported as disagreeing.
-// (c) the final else is unreachable: the three tests before it, nHeirs = 0 and nHeirs_2 > 0,
-//     then nHeirs <> nHeirs_2, then nHeirs = nHeirs_2, cover every case, so the message it
-//     writes can never appear.
-// Proposed fix: compare the two heir sets as sets, by identity of the relatives rather than
-// by position, and treat "one algorithm found heirs and the other did not" as a
-// disagreement in every case. Then decide what the routine should return: today it returns
-// an integer used as a boolean. **Blocked on Q3**, since what the two algorithms are
-// supposed to agree about is what the succession rules say.
-			if (nHeirs = 0) and (nHeirs_2 > 0) then begin
-				// there are heirs, but the first algorithm possibly only returns a generic information, like 'childrenTree'
-				// typeOfHeirs = (th_doNotApply, th_none, th_childrenTree, th_ascendantsTree,
-				// th_partner, th_siblingsTree, th_auntUncleTree, th_grandAuntUncleTree);
-				case typeHeir of
-					th_doNotApply: ;
-					th_none: ;
-					th_childrenTree:
-						if not heirsInKinSet (heirs_2, nHeirs_2, [kt_child, kt_grandChild, kt_greatGrandChild]) then
-							result := 0;
-					th_ascendantsTree:
-						if not heirsInKinSet (heirs_2, nHeirs_2, [
-													kt_father, kt_mother,
-													kt_grandFather, kt_grandMother,
-													kt_greatGrandFather, kt_greatGrandMother
-											]) then
-							result := 0;
-					th_partner:
-						if not heirsInKinSet (heirs_2, nHeirs_2, [kt_partner]) then
-							result := 0;
-					th_siblingsTree:
-						if not heirsInKinSet (heirs_2, nHeirs_2, [kt_sibling, kt_nieceNephew, kt_grandNieceNephew]) then
-							result := 0;
-					th_auntUncleTree:
-						if not heirsInKinSet (heirs_2, nHeirs_2, [kt_auntUncle, kt_cousin]) then
-							result := 0;
-					th_grandAuntUncleTree: if not heirsInKinSet (heirs_2, nHeirs_2, [kt_grandAuntUncle]) then
-						result := 0;
-				end; 
-			end else if (nHeirs <> nHeirs_2) then begin
-				// the first algorithm has a heirs list, but the number is not equal to the second algorithm
-				result := 0;
-				exit;
-			end else if (nHeirs = nHeirs_2) then begin
-				// we check the list of heirs returned by both algorithms (this includes the case where the number is 0 for both)
-				for ind := 1 to nHeirs do
-					if heirs[ind-1] <> heirs_2[ind-1].heir then begin
-						result := 0;
-						break;
-					end;
-			end else begin
-				// which cases do we have here? In principle none
-				result := 0;
-				writeAndWait ('ERROR ==> checkHeirs case not caught, with number of heirs' + intToStr (nHeirs) + ' and ' + intToStr (nHeirs_2));
-			end;
-// END BUG  **N26**
+		case aTypeHeir of
+			th_childrenTree:
+				result := [kt_child, kt_grandChild, kt_greatGrandChild];
+			th_ascendantsTree:
+				result := [kt_father, kt_mother,
+							kt_grandFather, kt_grandMother,
+							kt_greatGrandFather, kt_greatGrandMother];
+			th_partner:
+				result := [kt_partner];
+			th_siblingsTree:
+				result := [kt_sibling, kt_nieceNephew, kt_grandNieceNephew];
+			th_auntUncleTree:
+				result := [kt_auntUncle, kt_cousin];
+			th_grandAuntUncleTree:
+				result := [kt_grandAuntUncle];
+		else
+			{th_doNotApply and th_none name no heir at all}
+			result := [];
 		end;
 	end;
+
+	{N26: every heir the first algorithm listed is also one of the heirs of the second. The
+	 comparison is made on the identity of the person, so it does not depend on the order of
+	 the two lists. It is a one way test: the first algorithm fills its list of heirs only for
+	 the relatives from whom ego inherits, and only with ego and, in one case, with one of
+	 ego's parents, so its list is a part of the list of the second algorithm and not the whole
+	 of it.}
+	function heirsConfirmed (const heirsOne: arrayOfRelatives; nOne: longint;
+							const heirsTwo: arrayHeirInfo; nTwo: longint): boolean;
+	var
+		indOne, indTwo: longint;
+		found: boolean;
+	begin
+		result := true;
+		for indOne := 1 to nOne do begin
+			found := false;
+			for indTwo := 1 to nTwo do
+				if (heirsTwo [indTwo - 1].heir = heirsOne [indOne - 1]) then begin
+					found := true;
+					break;
+				end;
+			if not found then
+				exit (false);
+		end;
+	end;
+
+	{N26: the referee of the two algorithms that look for the heirs of a relative. It returns
+	 kNotDefined when neither algorithm looked at this relative, 1 when the two answers
+	 are compatible and 0 when they are not, and it records each kind of disagreement as a
+	 check of its own. Kinship calls it only when INHERITANCE and DEBUG are both set, and its
+	 value is written to one column of the individual kinship file.
+
+	 What is compared, given that the first algorithm names a branch of the tree while the
+	 second lists the heirs and their shares:
+	   whether both found heirs or both found none,
+	   whether the kin types of the heirs of the second lie in the branch named by the first,
+	   whether the heirs the first listed are among the heirs of the second.
+	 The branch named by the first algorithm is widened by the partner when the succession rules
+	 give the partner a share alongside the descendants or the ascendants, which is what
+	 PARTNER_FIRST_HEIR and PARTNER_FULL_HEIR decide. This is the part of N26 that the partner
+	 field of the relative record was added for: the first algorithm used to report the partner
+	 only when no descendant and no ascendant inherited.
+
+	 A disagreement over collateral heirs is expected as long as the two algorithms describe
+	 them differently: the first names one branch, the sibling tree or the aunts and uncles or
+	 the grand-aunts and grand-uncles, whereas the second applies the rule of the degree, under
+	 which all collateral kin of the nearest degree inherit together. See the collateral item
+	 of the TODO.}
+	function checkHeirs (pRelative: pRelativeType): integer;
+	var
+		expectedKin: KinSetType;
+	begin
+		result := kNotDefined;
+		with pRelative^ do begin
+			if (typeHeir = th_doNotApply) then
+				{the first algorithm did not look for this relative's heirs, so there is nothing to
+				 compare}
+				exit;
+			if not ((typeOfKin = kt_ego) or (typeOfKin in g_GENPARAM.HEIRS_KINTYPES.value)) then
+				{the second algorithm looks at ego and at the kin types of HEIRS_KINTYPES, so a
+				 relative outside that set has no answer from the second algorithm to compare with.
+				 The two algorithms do not cover the same relatives, and without this test the
+				 difference of coverage is reported as a disagreement.}
+				exit;
+			result := 1;
+
+			expectedKin := kinSetOfBranch (typeHeir);
+			if partnerCanInherit and g_GENPARAM.PARTNER_FIRST_HEIR.value then
+				if g_GENPARAM.PARTNER_FULL_HEIR.value then
+					{the partner takes the whole estate, so no other kin inherits}
+					expectedKin := [kt_partner]
+				else
+					{the partner takes a share alongside the branch named by the first algorithm}
+					expectedKin := expectedKin + [kt_partner];
+
+			if ((typeHeir = th_none) and (nHeirs_2 > 0))
+					or ((typeHeir <> th_none) and (nHeirs_2 = 0)) then begin
+				result := 0;
+				if reportFailure (chk_inh_heirsFoundByOneOnly,
+						['relative ', indNumber, ', branch ', str_typeOfHeirs [typeHeir],
+						', heirs of the second algorithm ', nHeirs_2]) then
+					breakOnFailure;
+				exit;
+			end;
+
+			if not heirsInKinSet (heirs_2, nHeirs_2, expectedKin) then begin
+				result := 0;
+				if reportFailure (chk_inh_heirKinTypes,
+						['relative ', indNumber, ', branch ', str_typeOfHeirs [typeHeir],
+						', heirs of the second algorithm ', nHeirs_2]) then
+					breakOnFailure;
+			end;
+
+			if not heirsConfirmed (heirs, nHeirs, heirs_2, nHeirs_2) then begin
+				result := 0;
+				if reportFailure (chk_inh_heirNotConfirmed,
+						['relative ', indNumber, ', heirs of the first algorithm ', nHeirs,
+						', of the second ', nHeirs_2]) then
+					breakOnFailure;
+			end;
+		end;
+	end;
+// <<< Claude 2026-09-30 end
 	
 end.

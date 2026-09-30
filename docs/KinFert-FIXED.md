@@ -28,6 +28,11 @@ These changed simulated numbers. Anything you ran before 26 August carries them.
 
 | what was wrong | where | effect |
 |---|---|---|
+| **The education probabilities of a cohort file never reached the distribution anyone was drawn from** | `initEduStatus` and the new `cumulateEduStatus`, `EducationalLevel.pas`; the call for every cohort in `DemRegimeCollection_init` | The three sampling routines read `cumulValue`, and `cumulValue` was computed once, when the cohort object was created, from the built-in defaults of 0.5, 0.4, 0.1 for men and 0.6, 0.35, 0.05 for women. The cohort file reader and the interpolation between cohorts write `.value` only, so in the cohort and the intra-family modes every person was drawn from those defaults while `_ALLCOHORTS.TXT`, which dumps `.value`, echoed faithfully what had been asked for. Wrong numbers, no warning, and a dump that agreed with the input | The three cumulation loops are now one routine, `cumulateEduStatus`, called on a cohort object as it is created and again for every cohort at the start of a run, after the cohort file has been read and the missing cohorts interpolated, which is the one place every route passes through. Each row is checked to sum to one, as `eduRowSumsToOne`, which catches a cohort file whose three probabilities do not: a row summing to less than one gives the top level more than it asks for and a row summing to more never reaches the top level at all. Demonstrated on this build: with a cohort asking 0.60, 0.30, 0.10, the cumulative values still read 0.500 and 0.900 before the call and 0.600 and 0.900 after it, and a row of 0.60, 0.30, 0.20 is reported |
+| **N20, the stochastic education mode was silent about reading none of the parameters** | `edStatusStocha`, `EducationalLevel.pas`; the notice in `initParams` | The mode gives every person an equal chance of the three levels. That is what it is for, a uniform test distribution, but nothing said so, and a run made with `EDU_STATUS` on it looked as though the six `EDU_` parameters had been used | The thirds stay, by your decision of 18 September, and are now declared in the source. `initParams` writes one line in the memo at the start of such a run saying that the mode reads none of the `EDU_` parameters and which modes do |
+| **N18, the intra-family mode correlated four kin types out of twenty-seven, and siblings were not among them** | `edStatusIntraFamily`, `EducationalLevel.pas`; `giveEdStatus`, `Kinship.pas` | Only ego, the partner, the children and the grandchildren were correlated. Everyone else, siblings included, was drawn from the cohort distribution with no family link, in a mode whose name promises one | The rule now names no kin type, by your answer to Q5: whoever has both parents in the network, with a status already drawn, takes the distribution conditional on the two of them, which covers the siblings, the nephews and nieces, the cousins and ego itself, and whoever is left keeps the cohort distribution. The partner stays a case of its own. `giveEdStatus` draws the parents before their children, by climbing to them first, where before it walked the list in the order the network was built and a child could be reached before its mother. One draw per person either way, so the random stream keeps its length; which person takes which number changes, so the education of a run differs from before even where the distributions do not. **The consequence to weigh:** the `EDU_` proportions of a cohort now bind only the people at the top of each line of descent, and the levels among egos are those the parent to child matrix implies rather than the proportions asked for |
+| **The five reports of `EducationalLevel.pas` did not stop what they reported** | `edStatusCohort`, `edStatusChild`, `edStatusPartner`, `eduLevel` | A nil person was reported and then dereferenced; an unassigned cohort was reported and then handed to `getCohort_p`, which answers with the nearest cohort it has, so the person was drawn from another cohort's distribution; a nil partner was reported and then dereferenced; a partner with no status was read before the test; and a bad or empty status became the lowest level in silence | All five go through the verification table, as `eduRelativeMissing`, `eduCohortNotAssigned`, `eduParentStatusMissing` and `eduLevelName`, and each one now leaves the routine or falls back to the distribution of the cohort, which is what a person with no partner or no known parents should have |
+| **N34. The parity distribution was counted with a plain `Inc` from every worker thread** | `incrementNbChildren`, `Parenthood.pas` | `distNbChildren` belongs to the demographic regime, one record shared by every thread, and both callers, `egoAddPersonsAndBirths` in `Kinship.pas` and `addPerson` in `Parenthood.pas`, run inside the workers. `Inc` is a read, add, write sequence, so two threads incrementing the same cell at the same moment lost one of the two counts. Nothing crashed and no message appeared: the table was simply short by an unpredictable number, so a multithreaded run and a single threaded one of the same configuration did not agree. The three cells now use `InterLockedIncrement`, which is what the BACKFOR counters and the family A counters already use, at a cost paid once per woman. Test it with V11: the same configuration with multithreading on and off must give the same parity distribution |
 | **Parameter sweeps did not sweep.** Each step read its value from an index assigned nine lines later, and each step's base came from the parameter the previous step had overwritten | `SpecialRuns.pas` | `NSTEP_SEPARATION` and `NSTEP_CONTRACEPTION_AFTER_UNION` collapsed to zero after step 1, so every step after the first simulated the same thing. Stepped means of age at union never reached their High value. Amenorrhea accumulated instead of stepping. **Single-parameterisation runs, every `NSTEP_*` at 1, were never affected** |
 | **`endUnion` was never set true.** Declared, initialised false twice, tested in three loops, assigned nowhere | `FertilityRuntime.pas` | The loops meant to stop at dissolution never stopped, and the age at end of union recorded the **last** separation drawn rather than the first. One loop ran 40 years of monthly draws |
 | **`monthIncrement` kept a stale value** on the stopping path, about twenty months | `FertilityRuntime.pas` | After a birth, conception fields were written into the previous child's record and the clock advanced twenty months at a time |
@@ -87,20 +92,441 @@ to change if Léridon's Table I shows the model too fecund.
 adjustment when the age at sterility falls below 33, and the linear taper to zero at the
 sterility age.
 
+### `RESHUFFLED_FECUNDABILITY` now reshuffles the multiplier and nothing else (N4c, 17 September)
+
+The switch was listed as defect N4c and is not one: it selects a second model of heterogeneity,
+in which the multiplier varies within a woman instead of between women. What was wrong was the
+implementation. The redraw sat inside `pregnancy`, so it happened once per conception rather than
+once per cycle, and it rebuilt the whole array as `relativeFecundabilityLevel * gFecundability
+[age]`, which put the woman back on the general schedule by age and discarded her own: the
+Léridon taper over the 12.5 years before her age at sterility, and the shortening of that period
+when her age at sterility falls below 33. Since `gFecundability` is flat from age 21 upward under
+the Léridon schedule, and flat from 33 under `HIGH_LOW_FECUNDABILITY`, that taper is the only
+decline in fecundability the model has at the ages where it matters, so after her first
+conception a woman ran at her plateau level up to the month she became sterile. Three years
+before her age at sterility her own schedule asks for about 0.29 of the plateau, 0.24 on the
+continuous taper the whole-year arithmetic approximates, and the rebuild gave her 1.0.
+
+The model is now what it says. The rebuild is gone. `initFecundLife` stores the reciprocal of the
+multiplier its schedule was built with, in the new field `invRelativeFecundabilityLevel` of
+`FecundLifeType`, and the test in the month loop of `calcNbChildren` reads
+
+```pascal
+if g_GENPARAM.fixedParameters [reshuffledFecundability].state.value then
+    fecundabilityThisCycle := fecundabilityLevel (randomGenerator)
+            * fecundLife.invRelativeFecundabilityLevel
+            * fecundLife.levelFecundabilityAge [currAge]
+else
+    fecundabilityThisCycle := fecundLife.levelFecundabilityAge [currAge];
+```
+
+so the multiplier the schedule carries is taken out, the woman's own age schedule and taper are
+left exactly as `initFecundLife` built them, and a newly drawn multiplier is applied to that, once
+per cycle of exposure. The months of a non susceptible period, which the loop steps over, draw
+nothing. The woman's `relativeFecundabilityLevel` is no longer overwritten, so the individual
+fecundability output again reports the level she was given rather than the one last drawn.
+
+With the switch off, which is the default, the expression is the same value as before and no draw
+is added, so the random stream and every result are unchanged. With it on, two things follow from
+the model rather than from the code, and belong in the manual: the between-woman variance the
+Léridon parameterisation asks for is absent, and with it the selection by which the most fecund
+conceive first, so waiting times and parity progression differ from a run with the switch off; and
+the histogram `gCount_fecundability_draws` then counts cycles rather than women, which the
+distribution check still passes because the draws themselves are correct.
+
+**Not done, and it is a decision:** `fecundabilityLevel` finds its multiplier by walking the
+cumulative distribution cell by cell, and `kMaxDistribFecundability` is 300, so a call averages
+about 150 iterations. Once per birth interval that cost is nothing; once per cycle of exposure it
+sits in the innermost loop of the program. A precomputed inverse table, or a binary search, brings
+it to one lookup, but a table indexed by the draw does not reproduce the scan exactly, so it would
+change results with the switch on.
+
+## Inheritance: the ascendants, by degree and by side of the family (N22 and N22b, 30 September)
+
+**This one changes results.** It is the only change of the month in the inheritance module that
+does, and it needs your review before anything is built on top of it.
+
+**What was wrong.** When a person leaves no descendant, the estate goes to the ascendants, and
+`exploreAscendantHeirsTree_2` looked for them by recursion: if neither parent was alive at the
+death, it explored the father's own ascendants and then the mother's own ascendants, in two calls
+that knew nothing of each other. Each line was therefore free to stop at a different generation. A
+man dies with no children and no parent; his maternal grandmother is alive and so is a
+great-grandfather on his father's side; the two searches put both of them in the heir list and they
+took one half each. The rule, in the header of the file, in the Spanish code and in your own words,
+is that the nearest degree excludes the rest, so the grandmother should have taken the whole
+estate. The fault only showed when one side found nobody at a generation while the other found
+somebody, which is why it survived: with a paternal grandfather and a maternal grandmother both
+alive, the two searches stop at the same generation and the old code was right.
+
+**What was done.** `AscendantHeirs_2` now asks for one generation at a time. It calls the search
+with `degree` set to the parents, then to the grandparents, then to the great-grandparents, and
+keeps the first generation that holds an heir. The search itself and the division of the shares are
+untouched: a pass that asks for a generation the two lines have not reached adds nothing, because
+the test at the top of the search refuses the call, so the heirs of the pass that answers all
+belong to the one nearest generation. The three generations are named by one constant,
+`kNbGenerationsAscendantHeirs`, which is also the length of the two lists of kin types the routine
+builds. A new failure point, `inhAscendantsSameDegree`, states the property that the heirs found
+all belong to one generation, which the length of the recorded lineage shows.
+
+**Measured, on a stub genealogy compiled outside the project with the real routines.** Nine cases,
+and the shares sum to one in every one of them. Two parents alive: one half each. One parent: the
+whole estate. The case above, a maternal grandmother and a paternal great-grandfather: the
+grandmother now takes 1.0000 where she used to take 0.5000, the other half having gone to the
+great-grandfather. Four grandparents: one quarter each. Two paternal grandparents and one maternal
+grandmother: 0.2500, 0.2500, 0.5000. Eight great-grandparents: one eighth each. No ascendant alive:
+no heir, and the search moves on to the partner and the lateral kin as before.
+
+**The division of the shares, which the repair brought into view, and which you settled the same
+day (`N22b`).** Your rule: the estate is halved between the father's side of the family and the
+mother's side, and within a side the heirs of that side take equal parts. A side with no heir at
+that degree leaves its half to the other side. Your two examples: with three of the four
+grandparents alive, the two on one side take a quarter each and the one on the other side takes a
+half; with seven of the eight great-grandparents alive, the four on one side take an eighth each
+and the three on the other take a sixth each. The two lines within a side, the father's father's
+line and the father's mother's line, are not distinguished, and the choice of the heirs remains a
+matter of the degree alone.
+
+`allocateShareAscendantsHeirs_2` used to count the distinct lines of descent present, two at the
+grandparents and four at the great-grandparents, and give each line an equal part. It now counts
+the heirs on each side and divides accordingly, through a small `sideOfAscendantHeir`, which reads
+the side from the first step of the recorded lineage, or from the sex of the parent when the heirs
+are the parents. The two rules agree whenever the two sides hold the same number of lines, which is
+why the difference showed only in the rarer shapes of estate: three great-grandparents in three
+different lines used to take a third each and now take a quarter, a quarter and a half. The field
+`nParentsInLineage` of the heir record now holds the number of heirs on the same side, which is
+what the share is divided by; nothing reads it, so it is there to be looked at in the debugger, and
+its comment in `Declarations.pas` says so.
+
+**Measured, thirteen cases in all, shares summing to one in every one.** Both of your examples come
+out as you stated them: three grandparents give 0.2500, 0.2500, 0.5000, and seven great-grandparents
+split four and three give 0.1250 four times and 0.1667 three times. Four great-grandparents on the
+maternal side alone take a quarter each, the paternal side being empty. Two cases changed with the
+new rule: three great-grandparents in three different lines, from a third each to 0.2500, 0.2500,
+0.5000, and one paternal line of one plus one of two against a single maternal survivor, from
+0.3333, 0.1667, 0.1667, 0.3333 to 0.1667 three times and 0.5000.
+
+**Files touched.** `inheritance.pas`, `AscendantHeirs_2`, `allocateShareAscendantsHeirs_2` and one
+constant, with the new `sideOfAscendantHeir` and the explanatory comment inside
+`exploreAscendantHeirsTree_2`; `Declarations.pas`, the comment on one field; `Verification.pas`,
+one identifier. The module has not been built in Lazarus.
+
+## Inheritance: the referee of the two heir searches (N26, 30 September)
+
+The module answers the question "who are this person's heirs" twice, by two searches written years
+apart, and `checkHeirs` is the routine that compares the two answers. Its verdict goes to one
+column of the individual kinship file in a run with `INHERITANCE` and `DEBUG` both on, and it is
+the instrument for the two defects that are left, `N22` and `N24`. It was reporting agreement in
+the one case that is plainly a disagreement, so it was hiding them.
+
+**What was wrong, in five parts.**
+
+1. The comparison started from agreement and contradicted itself only when the kin types of the
+   second search fell outside the branch the first had named. The case where the first search
+   found nobody and the second found heirs was therefore reported as agreement.
+2. The two lists of heirs were compared by position, so the same heirs found in a different order
+   counted as different.
+3. The final branch could not be reached: the three tests before it, no heirs in the first and
+   some in the second, then unequal counts, then equal counts, cover every case, so the message
+   it wrote could never appear.
+4. The first search answers with one branch of the kinship tree in `typeHeir`, and the partner is
+   one of those branches, so a person whose heirs are the children could not at the same time be
+   recorded as leaving a surviving partner who inherits. The succession rules the second search
+   applies do give the partner a share alongside the descendants or the ascendants, according to
+   `PARTNER_FIRST_HEIR` and `PARTNER_FULL_HEIR`. The two answers were therefore not comparable
+   from `typeHeir` alone, which is the part of the fault you identified.
+5. The two searches do not look at the same people. The first goes through the relatives of
+   `gPossibleHeirs` who are kin of ego; the second looks at ego and at the kin types of
+   `HEIRS_KINTYPES`. Every relative that only one of them examined was reported as a
+   disagreement, which is a difference of coverage and not a difference of opinion.
+
+**What was done.** One boolean field, `partnerCanInherit`, was added to the relative record beside
+`typeHeir`, initialised in `Init.pas` where `typeHeir` is, and filled in `lookForHeirs` for every
+relative that routine examines, before it enters the chain of branches. It holds the first
+search's own partner test, so the partner is now reported whatever branch `typeHeir` ends up
+naming, which is the smallest change that makes the two answers comparable. Nothing reads the field
+except `checkHeirs`, so no simulated quantity changes.
+
+The partner test of each search was taken out into a function of its own, `partnerCanBeHeir_1` and
+`partnerCanBeHeir_2`, with the conditions unchanged: the first asks whether the last union ended at
+the person's own age at death and the partner of that union was alive then, the second asks whether
+the last union ended by the person's own death and the partner was alive then. The two state the
+same condition in two ways, so `lookForHeirs` now reports a case where they disagree, as
+`inhPartnerTestsDiffer`. `partnerHeir` and `partnerIsHeir_2` call these functions and behave as
+before.
+
+**Why the two partner tests were kept apart, and what the exact comparison rests on.** Traced on
+30 September, so that it does not have to be traced again. When a union ends by the person's own
+death, `copyWomanPartnershipInfoToWomanAsRelative` and
+`copyWomanPartnershipInfoToManAsRelative` in `Kinship.pas`, at `4000` and `3947`, write the age at the end of that union
+from the same stored value as the age at death, by assignment and with no arithmetic, and the age
+at death is copied forward unchanged from one union record to the next in `FertilityRuntime.pas`.
+The equality the first test makes is therefore exact, not an accident of rounding. Arithmetic does
+enter the widowhood branch, where the age at the end of the union is the age at union plus the
+duration of the partner's union, and a partner who died a moment before could in principle produce
+a sum that rounds to the person's own age at death. In that case the first test's second
+condition, that the partner was alive at the death, refuses it, which is what the comment on the
+old dead branch of `partnerHeir` was about. So the two tests should agree everywhere, and
+`inhPartnerTestsDiffer` should stay silent.
+
+The reason for keeping both was not the comparison but the gates: the answer of the first search
+goes into `typeHeir`, which `checkEgoIsHeir` reads as a condition in ten places, so replacing that
+test could change results with nothing to say whether the change was right. Once a run of a few
+thousand egos leaves `inhPartnerTestsDiffer` silent, the two can be collapsed into one, which is a
+two line change.
+
+`checkHeirs` was rewritten. It returns `kNotDefined` when either search did not look at the
+relative, 1 when the two answers are compatible and 0 when they are not. It compares the heirs by
+the identity of the person rather than by position; the set the second search's heirs must lie in
+comes from a new `kinSetOfBranch`, widened by the partner when `PARTNER_FIRST_HEIR` and
+`PARTNER_FULL_HEIR` say the partner shares with the descendants or the ascendants, or narrowed to
+the partner alone when the partner takes everything. The list of the first search is checked as a
+part of the list of the second and not as its equal, since the first fills its list only for the
+relatives from whom ego inherits, and only with ego and, in one case, one of ego's parents. Each
+kind of disagreement is now a check of its own: `inhHeirsFoundByOneOnly`, `inhHeirKinTypes` and
+`inhHeirNotConfirmed`. The branch that could not be reached is gone, and with it one of the four
+`writeAndWait` sites of the module.
+
+**Files touched.** `Declarations.pas`, the field and its byte count; `Init.pas`, one line;
+`Verification.pas`, four identifiers with their names, their descriptions and their kind, all four
+failure points; `inheritance.pas`, `lookForHeirs`, `partnerHeir`, `partnerIsHeir_2` and
+`checkHeirs`, with three new functions and `Verification` added to the implementation's `uses`.
+The logic of the new routines was compiled and exercised on its own outside the project, with the
+eight cases of the comparison, before delivery; the module itself has not been built in Lazarus.
+
+**What to expect when you run it.** `inhHeirKinTypes` will speak on lateral heirs, and that is not
+a fault of the referee: the first search names one branch of the lateral tree while the second
+applies the rule of the degree, under which every lateral relative of the nearest degree inherits
+together. A decedent with a living first cousin and a living grand-aunt gets two different answers.
+The second search is the one that follows the rule. The `TODO` records what follows from that.
+
+## Inheritance: the ancestor shared with a lateral relative (N24, 30 September)
+
+**This one changes results.** It is the second of the two changes of the month in the inheritance
+module that do.
+
+**What was wrong.** When a lateral relative of ego dies, the module collects the people who could
+be that person's heirs, and for some of those relatives it collects them from ego's side of the
+family. It first asks the right question, through `commonAncestor`: which of ego's own parents is
+an ancestor of the dead relative? It then threw the answer away and collected the children of both
+of ego's parents whatever the answer had been.
+
+The case that makes it wrong. A niece dies with no descendant, no living parent and no living
+grandparent, so her aunts and uncles inherit, and they are the children of her grandparents. Ego is
+one of them, so one of ego's parents is a grandparent of the niece. Not necessarily both: if ego
+and the niece's father share only their father, then ego's mother is no relation of the niece at
+all, and the children she had with another man share no blood with the niece under any rule set.
+Those people were collected all the same, entered the heir list on the same footing as the true
+aunts and uncles, and took an equal share of the estate. The same fault sat in the block for a dead
+grand niece or grand nephew.
+
+**What was done.** The answer of `commonAncestor` is now used, exactly as the first cousins block
+of the same routine already used it: a side of ego's family with no ancestor in common with the
+dead relative contributes nobody, and the children collected are those of the ancestor the two
+actually share. A nil parent of ego is refused by the same test. One new failure point,
+`inhNoCommonAncestor`, states the property that at least one of the two sides must answer, since
+ego would not be a lateral relative of that kin type otherwise.
+
+**The three call sites where the answer was not needed, and why they were left alone.** Of the five
+places that call `commonAncestor`, only two collected from ego's side. The first cousins block, at
+`inheritance.pas:1091`, always used the answer and is untouched. The aunts and uncles block, at
+`1058`, and the grand aunts and grand uncles block, at `1148`, collect the children of the dead
+relative's own parents, and every child of a parent of the dead relative shares a parent with it
+and is therefore a blood sibling of it, the half-siblings included. No side has to be excluded
+there, so applying the same filter would have wrongly dropped the half-siblings on the side ego
+does not share. Those two blocks assigned the answer and never read it, which is what made the
+whole thing hard to see, so the useless assignments are gone and a comment says why the list needs
+no filter. Nothing about those two blocks changed for the simulation.
+
+**Measured on a stub genealogy compiled outside the project with the real code of the four sites.**
+With ego and the niece's father full siblings, both of ego's parents are grandparents of the niece
+and both sides contribute, as before. With ego and the niece's father sharing only their father,
+one side contributes where two used to, which is the repair. The two blocks that collect from the
+dead relative's own parents still collect both of them.
+
+**Files touched.** `inheritance.pas`, four blocks of `checkEgoIsHeir` and one new local;
+`Verification.pas`, one identifier. The module has not been built in Lazarus.
+
+## Nuptiality: the standard deviation of the schedule of ages at first union (N51, 30 September)
+
+`RodTrussFirstUnion` builds the schedule of ages at first union and divides by the standard
+deviation twice, and it recomputes the mean of the schedule it has just built by dividing by the
+proportion ever in union. Either divisor could be exactly zero, and a zero raises `EInvalidOp`
+under the range checks of `Defines.pas`.
+
+**Where a zero could come from, and what was left of it.** Two of the three routes had already
+been closed by earlier work. N53 holds both mean ages at first union at or above 14.64, one year
+above the mean at which `std_Coale_Rodriguez_Trussel` returns exactly zero, so the function that
+turns a mean into a standard deviation can no longer hand one over. N50 gave
+`STD_DEV_AGE_UNION` a lower limit of 1, in the dialog and in the reader of a configuration file
+alike, so the parameter cannot carry one either.
+
+The route that was left is a stepped run, and it is live. `SpecialRuns` builds the standard
+deviation itself, from `std_Logistic_Dani_2004` or `std_Campbell_Wood_1988` according to the fixed
+parameter `stdUnionDanielOrCampbellWood`, halves it at the first step of a sweep over the standard
+deviation, and writes it straight into `dp[stdnupt].value` in its innermost block, where no range
+test stands in front of it. `std_Campbell_Wood_1988` is exactly zero for every mean at or below
+about 15.32 years, while N53 holds the mean only at or above 14.64. A sweep over the mean age at
+union that passes through the interval between those two therefore wrote a standard deviation of
+exactly zero and divided by it. I had first described this entry as reachable only by hand editing
+`STD_NUPT`; that was wrong, and the stepped run is the real case.
+
+The second divisor, the proportion ever in union, is admitted as zero by the dialog and by the
+reader, since `kMinEverInUnionProp` is zero. That is a modelling choice rather than an oversight: a
+population in which nobody ever enters a union has no births either. The arithmetic still has to
+survive it.
+
+**What was done.** A floor, `kMinStdNuptSchedule`, declared beside `kMinNuptScaleFactor` at the top
+of `Nuptiality.pas`, and a guard at the head of `RodTrussFirstUnion` that reports through
+`stdNuptTooLow` and substitutes the floor when the standard deviation arrives at zero or below. The
+guard sits at the division rather than at the places the value comes from, for the same reason the
+guard of N29 sits in `CoaleFirstUnion`: this is the one routine every route passes through, its
+four callers being `initStandardNuptiality` by way of `calcCelibacy_RT_woman` and
+`calcCelibacy_RT_man`, `calcRepartnering`, and `calcNuptScaleFactorRT`. The standard deviation is a
+value parameter, so the substitution is local to the call. A small but positive standard deviation
+is left as the user asked for it: it builds a schedule concentrated on a few ages, which
+`adjustTabNupt` then rescales, and that is a configuration to think about rather than an arithmetic
+fault.
+
+The floor is the companion of `kMinNuptScaleFactor`. The header of `RodTrussFirstUnion` records
+that its parameters (1, 21.36, 6.583312236) build the same schedule as `CoaleFirstUnion` (10, 1, 1),
+so a scale factor of one is a standard deviation of 6.583312236 years and the two are
+proportional; the floor is that value taken at `kMinNuptScaleFactor`, which is 0.579 years, the
+schedule whose mean lies one year above its starting age.
+
+For the proportion ever in union: a zero is reported through `everInUnionZero`, the recomputation
+of the mean is skipped rather than evaluating `0.0/0.0`, and the two rescalings that follow, in
+`calcCelibacy_RT_woman` and `calcCelibacy_RT_man`, are skipped as well, since the table they would
+rescale is all zeros and is already what it should be.
+
+Each of the four functions that can produce a standard deviation now carries a note of its own
+domain, which is what the entry asked for, since no single limit on the mean covers them all: the
+Coale and Rodriguez and Trussell function is zero at 13.64 and mirrored below it by its absolute
+value; Campbell and Wood is zero at and below 15.32 and bounded inside itself below that; the
+logistic has no zero in the mean but is zero when its final level is zero; and `std_unionLinear`
+returns whatever the two standard deviations the user gives interpolate to, zero included, and is
+the one of the four with no caller.
+
+**Measured, six cases, with the real `RodTrussFirstUnion` and `adjustTabNupt` compiled outside the
+project.** An ordinary schedule, mean 21.36 and 95 per cent ever in union, gives densities summing
+to 0.950000 and a recovered mean of 21.361, with nothing reported, which is the case that must not
+change. Campbell and Wood at a mean of 15, standard deviation zero, now reports once and builds a
+schedule summing to 0.950000 with a mean of 15.16 instead of stopping the run; the same halved at
+the first step of a sweep behaves identically. A zero proportion ever in union leaves the densities
+at zero, reports once, and divides by nothing. Both faults at once report both and do not stop. A
+standard deviation of 0.9, small but positive, is left untouched and reports nothing.
+
+**One thing noticed in passing, and not changed.** At the mean of the Coale standard, 21.36 years,
+`std_Coale_Rodriguez_Trussel` returns 5.43, whereas the equivalence in the header of
+`RodTrussFirstUnion` puts the standard deviation of that same standard schedule at 6.583312236, a
+difference of about 20 per cent. The two are different parameterisations of the same family and
+they ought to agree at the standard. It affects no result today, since only the function is used to
+set a standard deviation from a mean, and the floor is insensitive to which of the two constants it
+is derived from, but it is worth a look when you next read that routine.
+
+**Files touched.** `Nuptiality.pas`, three constants, the head of `RodTrussFirstUnion`, the two
+rescalings, and a note beside each of the four standard deviation functions; `Verification.pas`,
+two identifiers. The unit has not been built in Lazarus.
+
+**The documentation of the schedule was reorganised at the same time, on your instruction.** The
+explanations of the schedule of ages at first union had grown up one repair at a time, each
+carrying the number of the entry it came from, so they read as a record of the work rather than as
+an account of the model. They are now one block at the top of the implementation of
+`Nuptiality.pas`, headed "The schedule of ages at first union", which sets out what the table is,
+the two parameterisations of the Coale and McNeil curve and how they meet, where each of the three
+quantities comes from and what it has to satisfy, where the three guards sit and why, and the
+domain of each of the four standard deviation functions. The constants below it carry one or two
+lines each. Every routine that had a long comment, `boundMeanAgeUnion`, the difference between the
+two mean ages, `CoaleFirstUnion` and `RodTrussFirstUnion`, keeps what is didactic about its own
+arithmetic, most of all the account in `CoaleFirstUnion` of how a negative scale factor produces a
+table that passes every test and is nonsense, and points at the overview for the rest. No entry
+number is left anywhere in the unit. The constant block was recompiled outside the project after
+the rewrite: every constant keeps its value and the three behaviours of the schedule are
+unchanged. One comment in `Declarations.pas`, on `kMaxMeanAgeUnion`, still explains the zero of the
+standard deviation function; it names no entry number and is left as it is.
+
+## Four things the compiler had been saying all along (30 September)
+
+The compile log of the whole project was read once, message by message. Most of what it reports
+is either the ordinary noise of a large program (a unit in a `uses` clause for one type, a
+parameter kept for the sake of a shared signature) or the deliberate consequence of a switch.
+Four messages were not noise.
+
+**A check that could never fail.** `FertilityRuntime.pas`, in `calcNbChildren`, read the woman's
+age at the current cycle into `currAge`, whose type `FecundAges` is the subrange
+`kMinAgeFert..kMaxAgeFert`, and then tested whether `currAge` was outside that same subrange. The
+test could not report anything: with range checking on, which is how the project is built, an age
+outside the bounds raises a range error on the assignment before the test is reached, and with
+range checking off the two comparisons are constantly false. The age is now read into a plain
+`longint`, `ageThisCycle`; the test is made on that; and the value is brought inside the bounds
+afterwards, so that a run which is not stopped at the failure carries on with a legal index into
+the fecundability tables rather than failing on the assignment. The check `chk_currAgeInFecundRange`
+can now actually fire. On a correct run it does not fire, because the index was already inside the
+bounds; what changes is that the guard is real.
+
+**A function that never set its result.** `init_waiting_time_distribution` in `Fertility.pas` was
+declared to return the median of the distribution (`): double; // return median value`) and never
+assigned it, so a caller that read the value would have read whatever the return register held.
+None of the six call sites read it: four in `DemographicRegime.pas` and two in `Nuptiality.pas`,
+all of them statements. It is now a procedure, and its two unused local variables, `ind` and
+`median`, are gone. The median can be recovered from `arrayDurationAcc`, which holds the
+accumulated distribution, if it is ever wanted.
+
+**`out` where the routine reads what it was given.** `ageChildren`, the table of children by age
+of the mother and by order, was declared `out` in three places: the interface and the
+implementation of `calcCompleteFertilityWoman`, and `fixedNumChildren`. The declaration was wrong
+in each. `calcCompleteFertilityWoman` zeroes the table only when `param_newPartnershipLife` is
+true; otherwise it keeps the counts of the earlier unions and adds to them, and `addChild` adds
+to the cell rather than setting it. For an unmanaged array of `longint` the two modes generate the
+same code, so no result changes, but `out` tells the compiler and the reader that the caller's
+value is not used, which is the opposite of what happens. The three are now `var`, each with a
+line saying why. `calcAgeChildrenTable` in `Kinship.pas` keeps `out`, because it does fill its
+table completely.
+
+**A directive inside a comment.** `Kinship.pas`, in the explanation above `individualKin_end`, had
+the words "swallowed by `{$I-}`" written inside a brace comment, so the compiler saw a nested
+comment and reported "Comment level 2 found". The braces are dropped from the quotation. Nothing
+else changes; the message was harmless, but it is one line of noise fewer in the log.
+
+**Two more parameters in the wrong mode.** `TUnionsType.copyMe` and `DumpCmdFile` both declared
+`var` where the routine creates the thing it is asked for and never reads what the caller passed.
+`copyMe` begins with `o := TUnionsType.Create`, and `DumpCmdFile` begins with
+`outFile := TFileType.Create`. Both are now `out`. For a class reference the two modes generate
+the same code, so nothing moves, and four "does not seem to be initialized" hints go with the
+change: one in `FertilityRuntime.pas` and three in `ReadCmdFileUnit.pas`. The callers were checked
+first: all four pass a local or a field that is unset at the point of the call, so no live object
+is overwritten.
+
+Also from the log, and not a code change: the Lazarus build was asked for `-vn-`, `-vh-` and
+`-vi-`, which remove the notes, the hints and the informational lines, leaving the warnings and
+the errors visible. The macOS minimum version, `-WM11.0`, was verified to be rejected as an
+illegal parameter on a non-Darwin target, so it belongs in a macOS build mode or on the
+Conditionals page rather than in the options shared by the three platforms.
+
+
 ## Crashes, hangs and dead ends
 
 | | |
 |---|---|
+| **G1. The log window could hang a whole run, on an ordinary path.** `MemoWriteLnExec` in `LazMain.pas` began `s := myLine + s` and never emptied `myLine`, which only the constructor and `ClearLog` do. After any `memoWrite` without a line feed, and `Kinship.pas:6022` makes one on a normal run, every later line carried the same prefix. The test `if (s = kEndThreadMessage)` could then never match, so `memoWriting` was never set false and the worker thread spun for ever in `while (KinFertForm.memoWriting) do ;` at `LazMain.pas:856`. The run never finished, one core stayed at 100 per cent, `SaveLog` never ran, and every button was dead, since each begins `if gSimulationRunning then exit` | `myLine := ''` immediately after the line that consumes it. `myLine` is written in exactly two other places, the constructor and `ClearLog`, and accumulated in one, `MemoWriteExec`, so the clear belongs at the point of consumption and nowhere else. Nothing else in the unit reads it | 
+| **N42. Each init thread seeded its own generator from inside `Execute`.** `initRandomized` goes through the run-time library's `random()` and so through the global `RandSeed`, with no lock, which the comment on that routine in `RandomNumbers.pas` forbids from a worker. Two threads seeding in the same moment could be handed the same seed, and two cohorts then received the same fertility schedule, which made them duplicates of each other. Reached with `MULTITHREADING` and `MULTITHREADING_INIT` both on | Seeded in `TDemRegInitThread.Create` instead, with `initWithSeed (nextThreadSeed)`. That constructor runs on the main thread, since the pool loop creates every init thread before starting any of them, and `nextThreadSeed` hands out one distinct seed per call. It is the correction already made in `Kinship.pas` in round 3, now in the one place that still had the old form. Test it with V23: no two cohorts may share a seed |
+| **N43. The thread pool loop could not end on the flag it set, and started a thread twice.** `allThreadsDead` was set true before the loop over the threads and false on its first pass whatever the state of that thread, so `until (nActiveThreads <= 0) or (allThreadsDead)` could only end through the count. And a thread was started when its state was `thread_suspended`, while the state became `thread_active` inside `Execute`, that is only once the system had scheduled it: a thread started on one pass and not yet scheduled was still `thread_suspended` on the next, was started a second time and counted twice, so `nActiveThreads` could not return to zero and the loop spun. `G11` was the same fault seen from the other side | `allThreadsDead` is now set false only for a thread that is not dead, which makes that half of the exit test work, and the state is set to `thread_active` by the pool loop itself, on the main thread, immediately before `start`. The field then has one writer instead of two, and `nActiveThreads` stays equal to the number of occupied slots, which is what the search for a free slot below it assumes. The line in `Execute` is gone. The `WaitFor` and `Free` loop after the pool loop is unchanged. The loop still waits by spinning rather than sleeping, as it was written |
+| **N45. The trailing zero strip could eat a whole number, or read past the end of the string.** `doubleToMinStringHelper` removed trailing zeros with no test that a decimal point remained. At the shipped `FLOATING_POINT_DIGITS` of 3 nothing was wrong, since `floatToStrF` then always writes a point. At 0, verified by running FPC 3.2.2: 100 was written as `1`, 1000 as `1`, 20 as `2`, and 0.23, 0.1 and 0.0, all written as `0`, left the string empty and then read `Result [0]`, which raises `ERangeError` under the range checks of `Defines.pas`. The dialog offers 1 to 10, so a value of 0 or below reached the program only from a configuration file, whose reader applied no range test of its own until N50 was fixed on the same day | The strip now runs only while the string still contains a decimal point, and the test that removes a trailing point also covers an empty string. Verified against the old form over 100, 20, 1000, 12.34, 1.5, 0.23, 0.1, 0.0 and -0.5 at 0, 1 and 3 digits: identical at 1 and 3, which is the whole range the dialog allows, and correct rather than destructive at 0. The separator is the point and not the one of the locale, since `Declarations` and `Init` both set `gFormatSettings.DecimalSeparator` to `'.'` |
 | A fallback thread-cleanup loop that **could never exit** and read fields of objects the RTL may already have freed | Deleted. `TSimulEgoTreeCleanUp` already does the work on the normal path, and a fallback that hangs the program is worse than none |
 | **46 debugger traps that never fired.** The idiom falls back to `assert(true, ...)` on ARM, and `Assert` raises only when its condition is false | On your Apple Silicon Mac every one of them was a silent no-op, including several in exception handlers that swallow the exception and fall through. Now `assert(false, ...)` |
 | **Division by zero** in `writeInfoParents` for a cohort in which no woman was simulated | Guarded |
 | **One blank line rejected a whole cohort file**, although the first pass over the same file tolerates blanks | Fixed |
 | The inheritance warning fired **once per missing kin type**, up to 21 times per cohort per replicate | One message now lists them |
+| **N32. An exception in `endBySeparation` left the fate of a union to two undefined values.** `aleaSeparation` and `separationRisk` were assigned inside a `try`, and the handler reported the exception and then let execution continue past the end of the block, where the two are compared to decide whether the union ends. If the exception fired before or during those assignments, both held whatever was on the stack. The likely source was the index: `monthly_risk_separation` runs from 0 to `kMaxDurationUnionInMonths` and the duration was not bounded, and `relRisk_separation_children_duration` runs from -11 months, the age of a child conceived before the union, and the age of the youngest child was not bounded either | Both variables are now set before anything can go wrong, to the pair that means the union does not end, a risk of zero against a draw of one; the handler leaves the function instead of falling through; and both indices are brought to the nearest cell the table holds, reported as `separationIndex`. Reproduced at reduced scale: with a true separation risk of 0.10 and an out of range duration, the old shape separated 1000 unions out of 1000, the new shape none, and both agree on every duration inside the table. No draw is added or removed on either path, so the sequence of random numbers is unchanged |
+| **N37. The person memory manager allocated about 800 MB before anything was known about the run.** `TPersonMemoryManager` stores people in a three level array so that it can grow a chunk at a time instead of resizing one large block. The constructor did not do that: it called `setLength (personList, nw_level1, nw_level2, nw_level3)`, which allocates every sub-array of all three dimensions at once and zero fills them, so with no argument it took 100 x 100 x 10000 references, about 800 MB on a 64 bit build, resident rather than reserved because the zero fill writes every page. Two managers were created this way in `initMotherhood` before the number of people was known. Two other variants stood in the file under `CHANGE_IN_MAY2024`, undefined in `Defines.pas`, and could not be used: the define paired the constructor that allocates only `personList[0,0]` with the `addPerson` that allocates only when the first index passes `nw_level1`, so nothing ever created `personList[0,1]` and the ten thousand and first person wrote into a zero length array. Pairing that constructor with the other `addPerson` instead, which is what appears to have been intended, fails later for a second reason: `countLevel2` is never reset when the first index advances, so the first chunk of the second block is the last one allocated. Both failures were reproduced at reduced scale, at exactly the predicted persons | The constructor now allocates nothing, and `addPerson` creates each level the first time a person falls in it, reading the lengths of the arrays rather than keeping counters beside them. `countLevel1`, `countLevel2` and `nw_level1` are gone, the first dimension grows without limit so nothing can be lost, and `nPersons` is incremented after the person is stored rather than before. `approxSize` no longer sets a capacity, only the chunk size, and the two calls in `initMotherhood` therefore need no count. The `CHANGE_IN_MAY2024` branches are removed. A manager now costs one chunk per `nw_level3` people and nothing else |
+| **N29. The scale factor of the standard nuptiality schedule could be zero or negative.** `CoaleFirstUnion` at `Nuptiality.pas:840` divides by it three times in one expression. Its four callers in `initNuptiality`, at lines 657, 661, 679 and 683, compute it as `(mean - ageMin) / 11.37`, and nothing keeps `mean` above `ageMin`: a configuration in which men enter unions on average about five years younger than women makes it zero or negative. At zero this raised `EZeroDivide`. Below zero every density comes out negative, and so does their sum, so `adjustTabNupt` divides the total wanted by a negative sum and the two negatives cancel: the table ends up entirely non-negative and summing to exactly the total asked for, passing every test that could be made of it, with all of the mass on the first age of the schedule. At a factor of minus one year the table is 1.0 at `kMinAgeUnion` and zero everywhere else, that is, every woman enters a union at the youngest age the model allows. Verified numerically | Guarded in `CoaleFirstUnion` itself, which `calcNuptScaleFactor` and `calcCelibacy` are the only two callers of, so one test covers every route to the division. A factor of zero or below is reported as `scaleFactorTooLow` and replaced by `kMinNuptScaleFactor`, the factor of a schedule whose mean lies one year above its starting age. The test was first written as a floor at that same one year, which was wrong: `mean` is a double, so the four sites can legitimately produce any positive value, and a configuration whose two mean ages at union differ by a little over four years reports a factor of 0.073 on every call. The test is now on zero and below only, which is what N29 was about. A small positive factor builds a schedule that is computable but heavily compressed, and distorted by being read at whole years: at a factor of one year the integer ages already hold 0.87 of the mass and at half that 0.29, the rest falling between the years, so `adjustTabNupt` rescales a near spike. Bounding the two means so that this cannot arise is N53, done on 17 September |
+| **N53. Neither mean age at first union had a range of its own.** The two means arrive in `initStandardNuptiality` from the demographic regime and the whole nuptiality schedule is built from them at once. The only range applied to them was the one the dialog applies at `LazConfig.pas:489` and `506`, which is the range of an individual age at union, 10 to 59 for women and 10 to 69 for men. That range is deliberate and stays as it is, but a mean cannot take the whole of it. `std_Coale_Rodriguez_Trussel`, the function that turns each mean into the standard deviation of its schedule, is `sqrt (43.34 * abs (mean - 13.64) / 11.36)`: it returns exactly zero at a mean of 13.64, which `RodTrussFirstUnion` then divides by twice, and below that the `abs` mirrors the mean, so a mean of 12 silently takes the standard deviation of a mean of 15.28. A second route, found on 17 September: the difference between the two means, men less women, is the whole of the scale factor of the schedule of ages at union of men, which is `(meanDiffSex + 5) / 11.37` for every age at union of women above 19. At a difference of -4 years that factor is 0.088, at -5 exactly zero, and below that negative | Each mean is now tested where it is set, at all four sites, before anything is computed from it, against `kMinMeanAgeUnionSchedule` to `kMaxMeanAgeUnionSchedule`. The lower end, 14.64, is one year above the zero of the standard deviation function, where that function returns 1.95 years; the upper end, 40, is a modelling judgement rather than a property of the schedule, set in one place so it can be changed in one place, and it keeps the two fixed age paths inside the arrays they index with `trunc (mean)`. A mean outside the range is brought to the nearest end and reported as `meanAgeUnionRange`. The difference between the two means is reported as `meanAgeUnionDiff` when it is at or below -5, and is otherwise left exactly as the two parameters make it: at and below -5 the arithmetic is already caught downstream by the guard of N29, so repairing it a second time here would put two different substitutions on one fault. The literal 13.64 inside the standard deviation function is now the constant that sets the lower end, with the same value, so the two cannot drift apart. `LazConfig` is untouched. Neither check fires on a configuration whose means lie inside the range, so no result changes; your own configuration, whose two means differ by about 4.2 years, triggers neither |
 
 ## Output and configuration
 
 | | |
 |---|---|
+| **N50. The limits the dialog applies never reached a run started from a configuration file.** `LazConfig`, `LazOutput` and `LazLowlevel` pass the acceptable range of each field to `CreateComponentChange` as bare arguments, for example `kIsInteger, 100, 1000000` for `NWOMEN`, and none of it reached `readValue`, which accepted whatever `val` could parse. A configuration file could therefore set `FLOATING_POINT_DIGITS` to 0, which N45 shows writing 100 as `1`, `NWOMEN` to 50, `PROP_WOMEN_AT_BIRTH` to 1.2, and so on, every one of them refused by the dialog | The range now sits on the parameter object. `GenericName` carries `hasRange`, `minValue` and `maxValue` with a `setRange` that only stores a range whose ends are in order, and `LongintName.readValue`, `DoubleName.readValue` and `DoubleCumulName.readValue` test the value against it: an out of range value is reported by name, with the value and the range, the parameter keeps its default, and a non zero code is returned, so `checkCode` refuses the file exactly as it refuses a malformed value. The ranges come from one table, `kParameterRange` in `Declarations.pas`, holding the 41 parameters that have a range in the dialog and that are read as a single value, transcribed from those `CreateComponentChange` calls and checked name by name against the parameters they name. `applyParameterRanges` gives them out at the end of `initCmd`, which every path calls before a configuration file is read, and at the end of `DemographicRegimeSettings_initialState`, so that a cohort created while a cohort file is read carries its ranges too; under `TALKATIVE` a name in the table that no parameter answers to is reported. Tested with a small program on this build: in range accepted, out of range and malformed both refused with the default restored, and a parameter the table does not name read as before. `LazConfig` is untouched and keeps its own copy of the numbers for now, which is where a range is stated to the user; four fields whose dialog range covers a whole array, `APRIORI_PPR`, `EFF_STOPPING_CONTRACEP`, `PROP_USING_SPACING` and `WAITING_TIME_SPACING`, have readers that take a row at a time and are not covered | **Completed on 18 September, one set of numbers.** Every limit is now a named constant in a new block of `Declarations.pas`, headed by a note saying that these bound an input and are not axis bounds, so a constant that sizes an array is never used as an input limit and the reverse. `kParameterRange` names those constants, and so do all 47 `CreateComponentChange` calls of `LazConfig`, `LazOutput` and `LazLowlevel`, which no longer carry a number of their own: 43 of them passed the limits as their last two arguments and four array fields passed them before `maxValueShown` and `maxValueDataset`. Every value is the one the dialog applied before, so the dialog and a configuration file refuse exactly what they refused, and a disagreement between the two is no longer possible to write. Where a different limit looks more defensible the line carries a **Claude suggestion** and nothing is changed; those are listed in the TODO. One rename came with it: the local constant of `std_Logistic_Dani_2004` in `Nuptiality.pas`, which you had moved into that function under the name `kMinMeanAgeUnion`, is now `kCentringMeanLogistic`, since it is the mean the logistic is centred on and would otherwise hide the new limit of the same name. The three dialog units compile only in Lazarus, so that part is unverified here; `Declarations.pas` and `Nuptiality.pas` compile clean, and the reader was tested again afterwards |
+| **N19. The education columns of the cohort file described tables the run did not use.** The three tests that choose which table to dump were shifted by one: `eduEgo` was written for `EDU_STATUS` stochastic, `eduEgoPartner` for the cohort mode and `eduEgoPartnerChildren` for the intra-family mode, while what the modes read in `EducationalLevel.pas` is no table at all for stochastic, which draws a third for each level (N20), `eduEgo` for the cohort mode, and all three for the intra-family mode. The file stayed self-describing, since the header repeated the same tests and the reader matches by column name, so values read back into the table their name gives; what was wrong is that a cohort file never carried the parameters of the run that wrote it | Both writers now follow the modes: nothing for stochastic, `eduEgo` for the cohort mode, and `eduEgo`, `eduEgoPartner` and `eduEgoPartnerChildren` for the intra-family mode, with the header in the same order. **The column set of the cohort file changes for all three modes.** A file written by an earlier version still reads correctly, because the reader goes by the names in its header. A file written in one mode and read in another now carries only the columns the writing mode used, which for the stochastic mode is none, where before it carried `eduEgo`; if you would rather the file always held all three tables, which would make its format independent of the mode, that is a one line change in each of the two writers |
 | `FILENAME` was omitted from the configuration file under the default `WRITE_ONLY_CHANGES` | Re-running a configuration gave every output the fallback name `KINFERT_*`, so two sets of outputs appeared under two names from what you believed was one study. Now always written |
 | A hand-written `kinship=on` matched no branch and the whole file was abandoned, although the file the program writes promises that case does not matter | Fixed with a throwaway `aCommand_raw` |
 | The DemoCare reader typed every non-ego row `kt_nonBio` and ignored the `relative` column | Kin types now survive the round trip |
@@ -329,6 +755,13 @@ two it is, "Simulated, last of 5 settings" against "Simulated, all 5 settings", 
 when only one setting ran. The memo repeats it in words after the count of draws.
 
 ## Looked at and cleared
+
+**N10, the net reproduction rate (18 September).** The entry reported the rate computed with the
+constant 0.488 in place of `PROP_WOMEN_AT_BIRTH`. `FertilityRuntime.pas:3187` now reads
+`tnr := tnr + Total_NetFertility * pDemReg^.dp[propWomenAtBirth].value`, so the defect is gone. The
+only other 0.488 left in the program are the parameter's own default, in `DemographicRegime.pas:145`,
+and a local initialisation in `sexAtBirth` at `Mortality.pas:414` that the next line overwrites with
+the parameter, so neither is a second copy of the fault.
 
 Raised during the review, investigated, and found not to be faults. Recorded so that they are not
 investigated again.

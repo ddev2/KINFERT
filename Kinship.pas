@@ -31,6 +31,12 @@ var
 	gFirstYearUnions, gLastYearUnions: longint;
 	
 	// When using the backward algorithms of BACKFOR and CAMSIM (various versions)
+	{These five are set from MOTHER_ALGORITHM and CAMSIM_1993_ANY_AGE_UNION by
+	 applyMotherAlgorithm, which initMotherhood calls before it allocates anything, and from
+	 the checkboxes of the Utiles form when the configuration file said nothing about the
+	 algorithm. They must not change between the pre-simulation and the kinship stage: the
+	 first two of them decide whether the index each alternate algorithm reads is built at
+	 all.}
 	gBACKFOR_mode: boolean = false;
 	gBACKFOR_mode_pure: boolean = false;
 	gCAMSIM_1987: boolean = false;
@@ -66,7 +72,6 @@ var
 	 gChildStateMarginBelow.}
 	gStateChildren, gStateGrooms: array of arrayOfLongint;
 
-// >>> Claude 2026-09-11 start
 	{The question these charts exist to answer is not how many lookups were made but whether
 	 each one found what it asked for: whether a child, or an ascendant of a child, found a
 	 mother in its own birth cohort, and whether a man found a bride of the cohort and age at
@@ -82,7 +87,6 @@ var
 	                   can be drawn beside the share that missed.}
 	gMotherSearch, gMotherSearchMiss, gMotherSearchYears: array of arrayOfLongint;
 	gBrideSearch, gBrideSearchMiss, gBrideSearchYears: array of arrayOfLongint;
-// <<< Claude 2026-09-11 end
 	{The groom index is indexed by cohort AND by age at union, so a one dimensional count
 	 by cohort cannot tell a shortage concentrated at particular ages at union from one
 	 spread evenly across them. gStateGroomsByAge keeps both dimensions.
@@ -121,7 +125,6 @@ var
 	gBrideWomenSkipped: longint = 0;
 	gBrideShortfallBelow: longint = 0;
 	gBrideShortfallAbove: longint = 0;
-// >>> Claude 2026-09-11 start
 	gChildLookupsSeen: longint = 0;
 	gChildLookupsClamped: longint = 0;
 	gChildClampWorst: longint = 0;
@@ -129,7 +132,6 @@ var
 	 say which set of kin the clamped queries belong to}
 	gChildLookupsSeenByGen: array [0..kNbKinGenerations-1] of longint;
 	gChildLookupsClampedByGen: array [0..kNbKinGenerations-1] of longint;
-// <<< Claude 2026-09-11 end
 	// OBSOLETE
 	gStateBrides, gStateMothers, gStateYearUnions: array of longint;
 	gAgeChildbearing, gAgeChildbearingBACKFOR, gAgeChildbearingBACKFOR_post: array [FecundAges] of longint;
@@ -167,6 +169,14 @@ var
 	gGroomStateMarginAbove: longint = kStateRangeLengthLimit;
 	{deepest ascendant generation the current kin set requires, from maxAscendantGeneration}
 	gMaxGenerationSimulated: longint = 0;
+
+	{Sets the five algorithm flags from MOTHER_ALGORITHM and CAMSIM_1993_ANY_AGE_UNION when the
+	 configuration file gave the algorithm, and the other way round when it did not, so that
+	 whichever of the two said it, the parameter written to a dumped configuration file is the
+	 algorithm that actually ran. initMotherhood calls it before it allocates anything.}
+	procedure applyMotherAlgorithm;
+	{The name of the algorithm in force, as str_motherAlgorithm spells it}
+	function motherAlgorithmInForce: longint;
 
 	procedure initMotherhood (randomGenerator: TRandomNumberGenerator);
 	procedure disposeMotherhood;
@@ -548,8 +558,7 @@ gIndMother: longint = 0;
 					pPartner := getPartner (pRelative, indUnion);
                     if (pPartner = nil) then continue;
 					indUnionPartner := getIndUnion(pPartner, pRelative);
-// >>> Claude 2026-09-11 start
-					{**N28, the caller side.** getIndUnion returns kNotDefined when the partner
+					{getIndUnion returns kNotDefined when the partner
 					 does not carry this person as the partner of any of his or her unions, that
 					 is when the reciprocal link is broken. Every line below then passes that
 					 index to a getter, which answers kNotDefined, and to a setter, which used to
@@ -565,7 +574,6 @@ gIndMother: longint = 0;
 							breakOnFailure;
 						continue;
 					end;
-// <<< Claude 2026-09-11 end
                     yearEndUnion1 := getYearEndUnion(pRelative, indUnion);
                     ageEndUnion1 := getAgeEndUnion(pRelative, indUnion);
                     yearEndUnion2 := getYearEndUnion(pPartner, indUnionPartner);
@@ -1686,18 +1694,12 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 			end;
 		end; {indCohort}
 	
-		MotherLookup := 'KINFERT';
-		if gBACKFOR_mode_pure then
-			MotherLookup := 'BACKFOR';
-		if gBACKFOR_mode then
-			MotherLookup := 'BACKFOR_mixed';
-		if gCAMSIM_1987 then
-			MotherLookup := 'CAMSIM_1987';
-		if gCAMSIM_1993 then begin
-			MotherLookup := 'CAMSIM_1993';
-			if gCAMSIM_1993_unbounded then
-				MotherLookup := MotherLookup + '_unbounded';
-		end;
+		{one place spells the five names, str_motherAlgorithm, and it is the same place the
+		 MOTHER_ALGORITHM parameter reads and writes, so the name in the results file is the
+		 name to put in a configuration file to obtain them again}
+		MotherLookup := str_motherAlgorithm [motherAlgorithmInForce];
+		if gCAMSIM_1993 and gCAMSIM_1993_unbounded then
+			MotherLookup := MotherLookup + '_unbounded';
 
         writeToFile := true;
 		fileScreenWriteLn (gOutFileKin, ['======================================================================'], col_none, writeToFile);
@@ -2154,7 +2156,6 @@ end;
 		result := kinGenerationRow (kinGeneration [typeOfKin]);
 	end;
 
-// >>> Claude 2026-09-11 start
 	{Records one search and how far it had to go from what it asked for. 'cell' is the cohort
 	 asked for, already turned into an index of the array, and is clamped here because a search
 	 can be for a cohort outside even the widened span. 'distance' is in years, zero when the
@@ -2173,7 +2174,6 @@ end;
 		end;
 	end;
 
-// <<< Claude 2026-09-11 end
 	function lookInChildrenRange (cohortChild: longint; typeOfKin: KinTypes = kt_ego): longint;
 	var
 		gen: longint;
@@ -2383,7 +2383,6 @@ if (indUnionSelected > 9) then
 	
 	function lookingForABrideByAgeAndCohort (randomGenerator: TRandomNumberGenerator;
                                     cohortWoman, ageUnionWoman: longint;
-// >>> Claude 2026-09-11 start
                                     out ageUnionSelected: double
 									{type of kin of the man this bride is for, so that the search outcome
 									 can be counted by generation as the other two algorithms are}
@@ -2393,7 +2392,6 @@ if (indUnionSelected > 9) then
 		cohortWomanInd, indBride, ageUnionWomanInd: longint;
 		womanInd: longint;
 		nAges, indTried, step, ageUnionWomanIndAsked: longint;
-// <<< Claude 2026-09-11 end
 	begin
 		cohortWomanInd := lookInBridesRange (cohortWoman);
 		ageUnionWomanInd := min (kMaxAgeUnion_women, max(ageUnionWoman, kMinAgeUnion_women)) - kMinAgeUnion_women;
@@ -2410,9 +2408,7 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 		 the search now stops at the array bounds and then tries the other direction before
 		 giving up. Giving up is reported through the verification table rather than silently.}
 		nAges := length (g_RangeBridesNb[cohortWomanInd]);
-// >>> Claude 2026-09-11 start
 		ageUnionWomanIndAsked := ageUnionWomanInd;
-// <<< Claude 2026-09-11 end
 		indTried := ageUnionWomanInd;
 		if (ageUnionWoman < 20) then step := 1 else step := -1;
 		while (indTried >= 0) and (indTried < nAges) and
@@ -2443,7 +2439,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 					' at any age at union']);
 		end;
 		ageUnionWomanInd := indTried;
-// >>> Claude 2026-09-11 start
 
 		{Did this man find a bride of the cohort and age at union he was looking for? The cohort
 		 is clamped by lookInBridesRange and the age at union may have moved in the sweep above,
@@ -2455,7 +2450,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 				cohortWoman - (gFirstCohortGrooms - gGroomStateMarginBelow),
 				abs ((gFirstCohortBrides + cohortWomanInd) - cohortWoman) +
 				abs (ageUnionWomanInd - ageUnionWomanIndAsked));
-// <<< Claude 2026-09-11 end
 		indBride := trunc ( randomGenerator.alea ( 0, g_RangeBridesNb[cohortWomanInd, ageUnionWomanInd] - 0.00000000001 ) );
 		womanInd := g_RangeBridesInfo[cohortWomanInd, ageUnionWomanInd, indBride];
 		
@@ -2586,7 +2580,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 					'population, and from kMaxAgeUnion_women and kMinAgeUnion_women otherwise, all in ' +
 					'Declarations.pas.');
 
-// >>> Claude 2026-09-11 start
 	end;
 
 	{The READ side, reported at the END of the run rather than at the end of initMotherhood: the
@@ -2637,7 +2630,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 							sharePct (missed, searches), '), on average ',
 							str_float (years / missed), ' years away']);
 			end;
-// >>> Claude 2026-09-13 start
 			{Say something in every case, including the case where the count is zero, which is
 			 otherwise indistinguishable from the report not having run.}
 			if (totSearches = 0) then
@@ -2651,14 +2643,12 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 						' answered from another cell (', sharePct (totMissed, totSearches),
 						'), on average ', str_float (totYears / max (1, totMissed)),
 						' years away over the ones that missed']);
-// <<< Claude 2026-09-13 end
 		end;
 
 	begin
 		reportOne (gMotherSearch, gMotherSearchMiss, gMotherSearchYears, 'Searches for a mother');
 		reportOne (gBrideSearch, gBrideSearchMiss, gBrideSearchYears, 'Searches for a bride');
 
-// <<< Claude 2026-09-11 end
 		if (gChildLookupsClamped > 0) and not StablePopulation () then
 			writeAndWait ('===> WARNING: under variable rates, ' + IntToStr (gChildLookupsClamped) +
 					' of ' + IntToStr (gChildLookupsSeen) + ' searches for a mother (' +
@@ -2667,10 +2657,8 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 					IntToStr (gFirstCohortAncestorsChildren) + ' to ' + IntToStr (gLastCohortAncestorsChildren) +
 					', so the mother came from a cohort up to ' + IntToStr (gChildClampWorst) +
 					' years away and therefore from a different fertility regime. The range is set in ' +
-// >>> Claude 2026-09-11 start
 					'initMotherhood from the first and last cohort asked for, widened by one mean age ' +
 					'at childbearing per ascendant generation below.');
-// <<< Claude 2026-09-11 end
 	end;
 
 	procedure addGroomsInfo (womanInd: longint; arrayMothers: boolean = true);
@@ -3129,7 +3117,6 @@ if checkFalse (chk_kin_valueAgeUnionWomanGMenWomen, (ageWomanInd < kNotDefined) 
 		//writeState ('gStateBrides', gStateBrides, gFirstCohortBrides, gLastCohortBrides);
 		//writeState ('gStateMothers', gStateMothers, gFirstCohortWomen, gLastCohortWomen);
 		writeStateByGeneration ('gStateGrooms', gStateGrooms,
-// >>> Claude 2026-09-11 start
 				gFirstCohortGrooms, gLastCohortGrooms,
 				gGroomStateMarginBelow, gGroomStateMarginAbove);
 		{the search outcome behind the first charts of the Children-Grooms tab, so that the
@@ -3150,7 +3137,6 @@ if checkFalse (chk_kin_valueAgeUnionWomanGMenWomen, (ageWomanInd < kNotDefined) 
 				gFirstCohortGrooms, gLastCohortGrooms,
 				gGroomStateMarginBelow, gGroomStateMarginAbove);
 		writeStateByGeneration ('gBrideSearchYears', gBrideSearchYears,
-// <<< Claude 2026-09-11 end
 				gFirstCohortGrooms, gLastCohortGrooms,
 				gGroomStateMarginBelow, gGroomStateMarginAbove);
 		//writeState ('gStateYearUnions', gStateYearUnions, gFirstYearUnions, gLastYearUnions);
@@ -3460,6 +3446,47 @@ end;
 		end; {cohort}
 	end;
 	
+	function motherAlgorithmInForce: longint;
+	{Which of the five is in force, read from the flags themselves, in the order in which
+	 ancestorsAndTheirOffspring tests them, so that this function and the dispatcher can never
+	 disagree}
+	begin
+		if gBACKFOR_mode then
+			result := mother_BACKFOR_mixed
+		else if gBACKFOR_mode_pure then
+			result := mother_BACKFOR
+		else if gCAMSIM_1987 then
+			result := mother_CAMSIM_1987
+		else if gCAMSIM_1993 then
+			result := mother_CAMSIM_1993
+		else
+			result := mother_KINFERT;
+	end;
+
+	procedure applyMotherAlgorithm;
+	{Two sources can name the algorithm: the configuration file, through MOTHER_ALGORITHM, and
+	 the checkboxes of the Utiles form. The configuration file wins when it named one, because a
+	 run started from a command file should do what the file says. When it did not, the
+	 checkboxes stand and the parameter is set from them instead, so that a dumped
+	 configuration file records the algorithm that actually ran rather than the default.}
+	var
+		alg: longint;
+	begin
+		if g_GENPARAM.motherAlgorithm.readInConfigFile then begin
+			alg := g_GENPARAM.motherAlgorithm.value;
+			gBACKFOR_mode := (alg = mother_BACKFOR_mixed);
+			gBACKFOR_mode_pure := (alg = mother_BACKFOR);
+			gCAMSIM_1987 := (alg = mother_CAMSIM_1987);
+			gCAMSIM_1993 := (alg = mother_CAMSIM_1993);
+			gCAMSIM_1993_unbounded := g_GENPARAM.CAMSIM_1993_ANY_AGE_UNION.value;
+		end else begin
+			g_GENPARAM.motherAlgorithm.value := motherAlgorithmInForce;
+			g_GENPARAM.CAMSIM_1993_ANY_AGE_UNION.value := gCAMSIM_1993_unbounded;
+		end;
+		g_GENPARAM.motherAlgorithm.setChanged;
+		g_GENPARAM.CAMSIM_1993_ANY_AGE_UNION.setChanged;
+	end;
+
 	procedure initMotherhood (randomGenerator: TRandomNumberGenerator);
 	var
 		cohort, age, indMother, indBride, indCohort: longint;
@@ -3496,23 +3523,15 @@ if g_GENPARAM.DEBUG.value then begin
 		f.Destroy;
 	end;
 end;
-		if gBACKFOR_mode then begin
-			memoWriteLn (['Le Bras'' BACKFOR mode']);
-		end;
-		if gBACKFOR_mode_pure then begin
+		{The algorithm is settled here, before any index is allocated, and does not change
+		 again during the run}
+		applyMotherAlgorithm;
+		if (motherAlgorithmInForce <> mother_KINFERT) then begin
 			gBACKFOR_women := 0;
 			gBACKFOR_nTries := 0;
-			memoWriteLn (['Le Bras'' pure BACKFOR mode']);
-		end;
-		if gCAMSIM_1987 then begin
-			gBACKFOR_women := 0;
-			gBACKFOR_nTries := 0;
-			memoWriteLn (['CAMSIM 1987 mode']);
-		end;
-		if gCAMSIM_1993 then begin
-			gBACKFOR_women := 0;
-			gBACKFOR_nTries := 0;
-			memoWriteLn (['CAMSIM 1993 mode']);
+			memoWriteLn (['Mother search algorithm: ', str_motherAlgorithm [motherAlgorithmInForce]]);
+			if gCAMSIM_1993 and gCAMSIM_1993_unbounded then
+				memoWriteLn (['   age at union of the mother drawn without an upper bound']);
 		end;
 
 		if StablePopulation() then begin
@@ -3648,14 +3667,6 @@ end;
 			end;
 		end;
 		
-// BUG  **N37**  TPersonMemoryManager.Create with no argument allocates about 800 MB
-// The parameterless constructor takes the default size of the person memory manager, large
-// enough for a whole simulated population, and one or two of them are created here before
-// anything is known about how many people the run needs. On a machine with little memory the
-// run stops here for no reason the user can see.
-// Proposed fix: pass the number actually needed, as the cohort thread data does a few hundred
-// lines above with TPersonMemoryManager.Create (numberWomenCollection, false). The count is
-// available: it is the number of women, and of brides, that initMotherhood is about to create.
 		gThisIsNotAnArrayOfBrides := true;
 		gBig_ArrayWomen := TPersonMemoryManager.Create();
 		SetLength (womenPopNumbers{%H-}, gLastCohortWomen - gFirstCohortWomen + 1);
@@ -3663,7 +3674,6 @@ end;
 			if StablePopulation() then begin
 				gThisIsNotAnArrayOfBrides := false;
 				gBig_ArrayBrides := TPersonMemoryManager.Create();
-// END BUG  **N37**
 				SetLength (bridesPopNumbers{%H-}, gLastCohortBrides - gFirstCohortBrides + 1);
 			end;
 		end;
@@ -3764,27 +3774,23 @@ end;
 		SetLength (gStateChildren, 0, 0);
 		SetLength (gStateChildren, kNbKinGenerations,
 				(gLastCohortAncestorsChildren + gChildStateMarginAbove) - (gFirstCohortAncestorsChildren - gChildStateMarginBelow) + 1);
-// >>> Claude 2026-09-11 start
 		SetLength (gMotherSearch, 0, 0);
 		SetLength (gMotherSearchMiss, 0, 0);
 		SetLength (gMotherSearchYears, 0, 0);
 		SetLength (gMotherSearch, kNbKinGenerations, length (gStateChildren [0]));
 		SetLength (gMotherSearchMiss, kNbKinGenerations, length (gStateChildren [0]));
 		SetLength (gMotherSearchYears, kNbKinGenerations, length (gStateChildren [0]));
-// <<< Claude 2026-09-11 end
 		SetLength (gStateMothers, (gLastCohortWomen + kStateRangeLengthLimit) - (gFirstCohortWomen - kStateRangeLengthLimit) + 1);
 		SetLength (gStateBrides, (gLastCohortBrides + kStateRangeLengthLimit) - (gFirstCohortBrides - kStateRangeLengthLimit) + 1);
 		SetLength (gStateGrooms, 0, 0);
 		SetLength (gStateGrooms, kNbKinGenerations,
 				(gLastCohortGrooms + gGroomStateMarginAbove) - (gFirstCohortGrooms - gGroomStateMarginBelow) + 1);
-// >>> Claude 2026-09-11 start
 		SetLength (gBrideSearch, 0, 0);
 		SetLength (gBrideSearchMiss, 0, 0);
 		SetLength (gBrideSearchYears, 0, 0);
 		SetLength (gBrideSearch, kNbKinGenerations, length (gStateGrooms [0]));
 		SetLength (gBrideSearchMiss, kNbKinGenerations, length (gStateGrooms [0]));
 		SetLength (gBrideSearchYears, kNbKinGenerations, length (gStateGrooms [0]));
-// <<< Claude 2026-09-11 end
 		SetLength (gStateYearUnions, (gLastYearUnions + kStateRangeLengthLimit) - (gFirstYearUnions - kStateRangeLengthLimit) + 1);
 
 		LookMemory;
@@ -3834,9 +3840,7 @@ end;
 	var
 		ind: longint;
 	begin
-// >>> Claude 2026-09-11 start
 		reportSearchOutcome;
-// <<< Claude 2026-09-11 end
 		if ( (gBACKFOR_mode_pure or gCAMSIM_1993) and (gBACKFOR_women > 0) ) then begin
 			fileScreenWriteLn (gOutFileKin, ['BACKFOR Women: ', gBACKFOR_women, ', mean number of tries: ', gBACKFOR_nTries / gBACKFOR_women]);
 		end;
@@ -3881,14 +3885,12 @@ end;
 		SetLength (gStateMothers, 0);
 		SetLength (gStateBrides, 0);
 		SetLength (gStateGrooms, 0, 0);
-// >>> Claude 2026-09-11 start
 		SetLength (gMotherSearch, 0, 0);
 		SetLength (gMotherSearchMiss, 0, 0);
 		SetLength (gMotherSearchYears, 0, 0);
 		SetLength (gBrideSearch, 0, 0);
 		SetLength (gBrideSearchMiss, 0, 0);
 		SetLength (gBrideSearchYears, 0, 0);
-// <<< Claude 2026-09-11 end
 		SetLength (gStateYearUnions, 0);
 	end;
 	
@@ -4824,7 +4826,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		// we have one!
 		womanObj := getWomanFromBigArray (g_RangeBirthsInfo[cohortChildInd + offsetCohort, indMother]);
 		result := offsetCohort;
-// >>> Claude 2026-09-11 start
 		{Did this child find a mother of its own cohort? Two things can move the answer away
 		 from the cohort asked for: the clamp into the indexed range performed by
 		 lookInChildrenRange, and the step to a neighbouring cohort taken just above when the
@@ -4834,7 +4835,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 				generationRowOfKin (typeOfKinChild),
 				cohortChild - (gFirstCohortAncestorsChildren - gChildStateMarginBelow),
 				(gFirstCohortAncestorsChildren + cohortChildInd + offsetCohort) - cohortChild);
-// <<< Claude 2026-09-11 end
 	end;
 	
 	{we determine the direct ancestry of pRefChild, and at the same time we will have all the siblings}
@@ -4883,7 +4883,18 @@ last := pLastChild^.ageAtBirthOfEgo;
 											womanObj.pChildrenList, pRefChild);
 		// age at childbearing !
 		result := trunc ( pRefChild^.ageMotherAtChildbirth );
-Inc (gAgeChildbearingBACKFOR [result]);
+		{lookingForRefChild returns 0 when the mother it was given has no child born that
+		 year, and then leaves ageMotherAtChildbirth as it was, so the age above can be any
+		 leftover value, zero included. It is used by the callers as an upper age in
+		 calc_ageUnion, which assigns round (ageMax) to a variable of type agesSingle, and as
+		 an index into ageChildren and into the histogram below, both of them on the fertile
+		 ages. Rather than let an unusable value reach any of the three, the function reports
+		 it and returns 0, which the callers read as 'no age at childbearing'.}
+		if (birthOrder = 0) or (result < kMinAgeFert) or (result > kMaxAgeFert) then begin
+			reportFailure (chk_kin_backforAgeChildbearing, [cohortChild, birthOrder, result]);
+			result := 0;
+		end else
+			Inc (gAgeChildbearingBACKFOR [result]);
 	end;
 	
 	function BACKFOR_MotherAgeUnion (randomGenerator: TRandomNumberGenerator; cohortMother, ageChildbearing: longint): longint;
@@ -4900,6 +4911,25 @@ Inc (gAgeChildbearingBACKFOR [result]);
 	end;
 	
 	const kMaxTries = 10000;
+		{Bounds for the alternate mother searches. kMaxTries above is the number of complete
+		 fertility histories simulated for one age at childbearing and one age at union before
+		 the search gives up on that pair. kMaxRetreatsBACKFOR is the number of one year moves
+		 of the age at childbearing allowed before a fresh age at childbearing is drawn, twenty
+		 being enough to cross the fertile ages from either end. kMaxPassesBACKFOR is the total
+		 number of passes allowed for one reference child, so it holds two sweeps of the
+		 fertile ages with a fresh draw between them. A pass costs at most kMaxTries complete
+		 fertility histories, so the worst case before the run stops with a message is
+		 kMaxPassesBACKFOR times kMaxTries histories for one reference child, which is slow but
+		 is reached only when the population simulated cannot produce the combination asked
+		 for. kMaxDrawsBACKFOR bounds the redrawing of an age at childbearing that came back
+		 undefined, which costs nothing.}
+		kMaxRetreatsBACKFOR = 20;
+		kMaxPassesBACKFOR = 40;
+		kMaxDrawsBACKFOR = 10;
+		{The range of ages at childbearing CAMSIM 1993 accepts, which were written as the
+		 literals 13 and 54 in its reshuffle test}
+		kMinAgeChildbearingCAMSIM = 13;
+		kMaxAgeChildbearingCAMSIM = 54;
 
 	function CAMSIM_NumberChildren (randomGenerator: TRandomNumberGenerator; pRefChild: pRelativeType): longint;
 	var
@@ -4909,15 +4939,17 @@ Inc (gAgeChildbearingBACKFOR [result]);
 		result := 0;
 		cohortChild := trunc (pRefChild^.yearBirth);
 		cohortChildInd := lookInChildrenRange (cohortChild, pRefChild^.typeOfKin);
+		if (CAMSIM_RangeBirthsNb [0, cohortChildInd] <= 0) then begin
+			reportFailure (chk_kin_camsimParityIndexEmpty, [cohortChild, cohortChildInd, 0]);
+			exit;
+		end;
 		dummy := randomGenerator.alea0;
 		sum := 0;
-		indChild := 1;
-		while (dummy > sum) do begin
-			sum := sum + CAMSIM_RangeBirthsNb[indChild, cohortChildInd] / CAMSIM_RangeBirthsNb[0, cohortChildInd];
+		indChild := 0;
+		repeat
 			Inc (indChild);
-		end;
-		if indChild > kMaxNbChildrenCalc then
-		indChild := kMaxNbChildrenCalc;
+			sum := sum + CAMSIM_RangeBirthsNb [indChild, cohortChildInd] / CAMSIM_RangeBirthsNb [0, cohortChildInd];
+		until (sum >= dummy) or (indChild >= kMaxNbChildrenCalc);
 		result := indChild;
 	end;
 
@@ -4927,8 +4959,24 @@ Inc (gAgeChildbearingBACKFOR [result]);
 	var
 		indMother, womanInd, birthOrder, cohortChild, cohortChildInd: longint;
 	begin
+		result := 0;
 		cohortChild := trunc (pRefChild^.yearBirth);
 		cohortChildInd := lookInChildrenRange (cohortChild, pRefChild^.typeOfKin);
+		{The parity asked for has to be one the index can answer. Cell 0 of the parity axis is
+		 the total for the cohort and not a parity, so a parity of zero is refused as well as
+		 one outside the axis. Without this test, an empty cell gave a draw on a count of zero:
+		 the draw returns 0, the row was allocated but never filled, so the woman read was the
+		 first woman of the array, who has no reason to have had a birth that year.
+		 lookingForRefChild then found no child, left ageMotherAtChildbirth as it was, and the
+		 function returned the age at childbearing of an unrelated mother.}
+		if (numChildrenSelected < 1) or (numChildrenSelected > kMaxNbChildrenCalc) then begin
+			reportFailure (chk_kin_camsimParityIndexEmpty, [cohortChild, cohortChildInd, numChildrenSelected]);
+			exit;
+		end;
+		if (CAMSIM_RangeBirthsNb [numChildrenSelected, cohortChildInd] <= 0) then begin
+			reportFailure (chk_kin_camsimParityIndexEmpty, [cohortChild, cohortChildInd, numChildrenSelected]);
+			exit;
+		end;
 
 		{We randomly select a mother who had a birth in year cohortChild, in order to obtain an age at childbearing }
 		indMother := trunc ( randomGenerator.alea ( 0, CAMSIM_RangeBirthsNb[numChildrenSelected, cohortChildInd] - 0.00000000001 ) );
@@ -4940,6 +4988,12 @@ Inc (gAgeChildbearingBACKFOR [result]);
 											getWomanFromBigArray (womanInd).pChildrenList, pRefChild);
 		// age at childbearing !
 		result := trunc ( pRefChild^.ageMotherAtChildbirth );
+		{the same guard as BACKFOR_MotherAgeChildbearing: a child that was not found leaves
+		 ageMotherAtChildbirth untouched, so the age can be any leftover value}
+		if (birthOrder = 0) or (result < kMinAgeFert) or (result > kMaxAgeFert) then begin
+			reportFailure (chk_kin_backforAgeChildbearing, [cohortChild, birthOrder, result]);
+			result := 0;
+		end;
 	end;
 
 	function infoRefChildToMotherAndSibling (
@@ -5005,6 +5059,7 @@ Inc (gAgeChildbearingBACKFOR [result]);
 		birthOrder: longint;
 		nTries: longint = 0;
 		motherFound: boolean = false;
+		nPasses: longint = 0;
 	begin
 		result := -1; {No child found}
 
@@ -5012,6 +5067,18 @@ Inc (gAgeChildbearingBACKFOR [result]);
 		yearBirthRefChildInd := yearBirthRefChildInd +
 					pRefChild^.yearBirth - trunc (pRefChild^.yearBirth);
 		// We don't have the age at childbearing, so we assign a year of birth for the mother equal to the ego's one
+// >>> Claude 2026-09-15 start
+		{BUG DECISION NEEDED, left as it stands on purpose. The line below gives the mother the
+		 year of birth of her own child, so the call to getCohort_p (cohortWoman) inside the
+		 loop simulates her whole reproductive life with the fertility, nuptiality and
+		 mortality of her child's cohort, one generation too late. Her cohort is corrected
+		 about forty lines below, after the simulation, from the age at childbearing that came
+		 out of it, so the woman ends with the history of one cohort and the identity of
+		 another. This is not an oversight of the original author: the comment above says that
+		 the age at childbearing is not known at this point, which is true of CAMSIM 1987 as
+		 described. Changing it would change what the algorithm is, so it is reported in
+		 docs/KinFert-Alternate-Mother-Algorithms.md rather than changed here.}
+// <<< Claude 2026-09-15 end
 		cohortWoman := trunc (yearBirthRefChildInd);
 		ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator, cohortWoman, kMaxAgeUnion_women);
 		while (not motherFound) do begin
@@ -5033,10 +5100,23 @@ Inc (gAgeChildbearingBACKFOR [result]);
 							nil,
 							gNilBlock
 						);
-		until (nbChildren > 0) or (nTries > 10000);
-		if (nTries > 10000) then begin
+		{kMaxTries, declared above with the same value, replaces the two literals 10000 that
+		 were written out here}
+		until (nbChildren > 0) or (nTries > kMaxTries);
+		Inc (nPasses);
+		if (nTries > kMaxTries) then begin
 			ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator, cohortWoman, kMaxAgeUnion_women);
 			nTries := 0;
+			{The outer loop had no cap: it drew another age at union and started again without
+			 limit, so a cohort in which no woman ever bears a child gave a run that never
+			 ends. A pass costs up to kMaxTries complete fertility histories, so the cap is
+			 reached only when the cohort cannot produce a mother at all.}
+			if (nPasses >= kMaxPassesBACKFOR) then begin
+				if reportFailure (chk_kin_backforNoMother,
+						[trunc (pRefChild^.yearBirth), cohortWoman, nPasses]) then breakOnFailure;
+				myHalt (['CAMSIM 1987: no woman of cohort ', cohortWoman, ' bore a child in ',
+						nPasses, ' passes of ', kMaxTries, ' simulated reproductive lives']);
+			end;
 		end
 		else
 			motherFound := true;
@@ -5100,6 +5180,7 @@ Inc (gAgeChildbearingBACKFOR [result]);
 		yearBirthRefChildInd: double;
 		birthOrder: longint;
 		fertFunctionRan, endClause: boolean;
+		nDraws, nPasses, nRetreats, step: longint;
 	begin
 		result := -1; {No child found}
 
@@ -5109,23 +5190,54 @@ Inc (gAgeChildbearingBACKFOR [result]);
 		yearBirthRefChildInd := lookInChildrenRange (trunc (pRefChild^.yearBirth), pRefChild^.typeOfKin) + gFirstCohortAncestorsChildren;
 		yearBirthRefChildInd := yearBirthRefChildInd +
 					pRefChild^.yearBirth - trunc (pRefChild^.yearBirth);
-		cohortWoman := trunc (yearBirthRefChildInd - ageChildbearing - 0.5);
+		nPasses := 0;
+		nRetreats := 0;
+		step := 0;
 		while not motherFound do begin
+		Inc (nPasses);
 		fertFunctionRan := false;
 		endClause := false;
-		if (ageChildbearing < 13) or (ageChildbearing > 54) then begin
-			// Hack to reshuffle things in case the value of ageChildbearing goes awry
+		{The reshuffle drew once and did not look at what came back, so an age at childbearing
+		 that was still outside the accepted range, zero among them, went on to index
+		 ageChildren, whose first axis is the fertile ages. It now draws until the pair holds
+		 together or the draws are spent, and a pair that never holds stops the run with the
+		 reason rather than reading outside the table. The parity and the age at childbearing
+		 are always drawn together, because the age is drawn from the mothers of that parity.}
+		nDraws := 0;
+		while ((ageChildbearing < kMinAgeChildbearingCAMSIM) or (ageChildbearing > kMaxAgeChildbearingCAMSIM))
+				and (nDraws < kMaxDrawsBACKFOR) do begin
+			Inc (nDraws);
 			numChildrenSelected := CAMSIM_NumberChildren (randomGenerator, pRefChild);
 			ageChildbearing := CAMSIM_MotherAgeChildbearing (randomGenerator, pRefChild, numChildrenSelected);
 		end;
+		if (ageChildbearing < kMinAgeChildbearingCAMSIM) or (ageChildbearing > kMaxAgeChildbearingCAMSIM) then begin
+			if reportFailure (chk_kin_backforAgeChildbearing,
+					[trunc (pRefChild^.yearBirth), numChildrenSelected, ageChildbearing]) then breakOnFailure;
+			myHalt (['CAMSIM 1993: no usable age at childbearing for a reference child born in ',
+					trunc (pRefChild^.yearBirth), ' after ', nDraws, ' draws']);
+		end;
+		{cohortWoman was computed once, before the loop, and never again, although the age at
+		 childbearing it follows from changes inside the loop. The mother was then simulated
+		 with the rates of a cohort that did not match the age being sought. It is recomputed
+		 here, on every pass.}
+		cohortWoman := trunc (yearBirthRefChildInd - ageChildbearing - 0.5);
 		if (anyAgeAtUnion) then
 			ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator, cohortWoman, kMaxAgeUnion_women)
 		else
 			ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator, cohortWoman, ageChildbearing);
 
 		// Sanity check: if the age at union of the woman is higher than the age at childbearing of ego, we try another woman...
-		if ageUnionWoman > ageChildbearing then
+		{this returns to the top of the loop, where nPasses is counted and the cap below
+		 applies, so a pair of values that can never agree no longer spins without end}
+		if ageUnionWoman > ageChildbearing then begin
+			if (nPasses >= kMaxPassesBACKFOR) then begin
+				if reportFailure (chk_kin_backforNoMother,
+						[trunc (pRefChild^.yearBirth), ageChildbearing, ageUnionWoman]) then breakOnFailure;
+				myHalt (['CAMSIM 1993: no age at union below the age at childbearing ',
+						ageChildbearing, ' in ', nPasses, ' passes']);
+			end;
 			continue;
+		end;
 
 			repeat
 				FreeAndNil (unionStates);
@@ -5158,11 +5270,40 @@ Inc (gAgeChildbearingBACKFOR [result]);
 			InterlockedExchangeAdd (gBACKFOR_nTries, nTries);
 			if nTries > kMaxTries then begin
 				if reportFailure (chk_kin_womenFoundInBackfor, [gBACKFOR_women + 1, ageChildbearing, ageUnionWoman]) then breakOnFailure;
-				if ageChildbearing > 30 then begin
-					Dec (ageChildbearing);
-				end
-				else begin
-					Inc (ageChildbearing);
+				{The move of one year is the device described in the note to Table 2 of the
+				 paper: when no couple with a birth at the age selected is obtained after
+				 kMaxTries unsuccessful tries, that age is increased or decreased by one year
+				 until an adequate couple is found. It is kept here for that reason, and the
+				 counts of tries reported in that table depend on it. What is added is a bound
+				 on both sides, since the move had none and the age at childbearing could walk
+				 out of the fertile ages and out of the ageChildren table with it, and a redraw
+				 of the pair once the moves are spent, since a parity and an age at childbearing
+				 belong together in this algorithm: the age is drawn from the mothers of that
+				 parity. Setting the age to zero sends the pass above back to its bounded
+				 redraw, which draws both again.}
+				Inc (nRetreats);
+				if (nRetreats <= kMaxRetreatsBACKFOR) then begin
+					if (step = 0) then begin
+						if (ageChildbearing > 30) then step := -1 else step := 1;
+					end;
+					if (ageChildbearing + step < kMinAgeChildbearingCAMSIM)
+						or (ageChildbearing + step > kMaxAgeChildbearingCAMSIM) then
+						step := -step;
+					if (ageChildbearing + step >= kMinAgeChildbearingCAMSIM)
+						and (ageChildbearing + step <= kMaxAgeChildbearingCAMSIM) then
+						ageChildbearing := ageChildbearing + step;
+				end else begin
+					ageChildbearing := 0;
+					nRetreats := 0;
+					step := 0;
+					reportFailure (chk_kin_backforAgeDrawnAgain,
+							[trunc (pRefChild^.yearBirth), numChildrenSelected, nPasses]);
+				end;
+				if (nPasses >= kMaxPassesBACKFOR) then begin
+					if reportFailure (chk_kin_backforNoMother,
+							[trunc (pRefChild^.yearBirth), numChildrenSelected, nPasses]) then breakOnFailure;
+					myHalt (['CAMSIM 1993: no mother found for a reference child born in ',
+							trunc (pRefChild^.yearBirth), ' after ', nPasses, ' passes']);
 				end;
 			end else
 				motherFound := true;
@@ -5221,7 +5362,8 @@ Inc (gAgeChildbearingBACKFOR [result]);
 		selectedChild: longint;
 		yearBirthRefChildInd: double;
 		birthOrder: longint;
-		
+		nDraws, nRetreats, nPasses, step, ageChildbearingDrawnAgain: longint;
+
 	begin
 		result := -1; {No child found}
 		yearBirthRefChildInd := lookInChildrenRange (trunc (pRefChild^.yearBirth), pRefChild^.typeOfKin) + gFirstCohortAncestorsChildren;
@@ -5229,7 +5371,29 @@ Inc (gAgeChildbearingBACKFOR [result]);
 						pRefChild^.yearBirth - trunc (pRefChild^.yearBirth);
 		{1. Select an age at childbearing}
 		ageChildbearing := BACKFOR_MotherAgeChildbearing (randomGenerator, pRefChild);
+		{An undefined age at childbearing is drawn again rather than carried into
+		 calc_ageUnion, where a zero upper age is an assignment out of the range of
+		 agesSingle, and into ageChildren, whose first axis is the fertile ages. If the pool
+		 of mothers cannot give one at all, the run stops here with the reason: the alternative
+		 would be to invent an age at childbearing, and the whole point of this algorithm is
+		 that the age at childbearing is drawn rather than assumed.}
+		nDraws := 0;
+		while (ageChildbearing = 0) and (nDraws < kMaxDrawsBACKFOR) do begin
+			Inc (nDraws);
+			ageChildbearing := BACKFOR_MotherAgeChildbearing (randomGenerator, pRefChild);
+		end;
+		if (ageChildbearing < kMinAgeFert) or (ageChildbearing > kMaxAgeFert) then begin
+			if reportFailure (chk_kin_backforNoMother,
+					[trunc (pRefChild^.yearBirth), nDraws, ageChildbearing]) then breakOnFailure;
+			myHalt (['BACKFOR: no age at childbearing could be drawn for a reference child born in ',
+					trunc (pRefChild^.yearBirth), ' after ', nDraws, ' draws']);
+		end;
+		{the direction of the one year move, decided on the first move and reversed at a bound}
+		step := 0;
+		nRetreats := 0;
+		nPasses := 0;
 		repeat
+			Inc (nPasses);
 			{2. Next, randomly select an age at union for the woman, lower or equal age at childbearing}
 			cohortWoman := trunc (yearBirthRefChildInd - ageChildbearing - 0.5);
 			ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator, cohortWoman, ageChildbearing);
@@ -5259,10 +5423,47 @@ Inc (gAgeChildbearingBACKFOR [result]);
 			if nTries > kMaxTries then begin
 				nTries := 0;
 				if reportFailure (chk_kin_womenFoundInBackfor, [gBACKFOR_women + 1, ageChildbearing, ageUnionWoman]) then breakOnFailure;
-				if ageChildbearing > 30 then
-					Dec (ageChildbearing)
-				else
-					Inc (ageChildbearing);
+				{The move of one year, bounded on both sides. The direction is the one the
+				 original code used, downwards from above 30 and upwards otherwise, but it is
+				 reversed when the bound is reached instead of walking out of the fertile ages,
+				 which was an index out of range in the condition above and in the histogram
+				 below.}
+				Inc (nRetreats);
+				if (nRetreats <= kMaxRetreatsBACKFOR) then begin
+					if (step = 0) then begin
+						if (ageChildbearing > 30) then step := -1 else step := 1;
+					end;
+					if (ageChildbearing + step < kMinAgeFert) or (ageChildbearing + step > kMaxAgeFert) then
+						step := -step;
+					if (ageChildbearing + step >= kMinAgeFert) and (ageChildbearing + step <= kMaxAgeFert) then
+						ageChildbearing := ageChildbearing + step;
+				end else begin
+					{The moves are spent. A fresh age at childbearing is drawn from the
+					 distribution of births by age of mother, and the search starts again from
+					 there. Nothing is displaced by this: the new age is a draw from the same
+					 distribution as the first one, and cohortWoman is recomputed from it at the
+					 top of the next pass, so the woman is always simulated with the rates of
+					 the cohort her age at childbearing implies. The alternative, keeping the
+					 woman already simulated and moving the age at childbearing to one at which
+					 she did give birth, would displace both the distribution of ages at
+					 childbearing and her year of birth away from the cohort she was simulated
+					 with.}
+					ageChildbearingDrawnAgain := BACKFOR_MotherAgeChildbearing (randomGenerator, pRefChild);
+					if (ageChildbearingDrawnAgain >= kMinAgeFert) and (ageChildbearingDrawnAgain <= kMaxAgeFert) then begin
+						reportFailure (chk_kin_backforAgeDrawnAgain,
+								[ageChildbearing, ageChildbearingDrawnAgain, nPasses]);
+						ageChildbearing := ageChildbearingDrawnAgain;
+					end;
+					{whether the new draw was usable or not, the moves start again from here}
+					nRetreats := 0;
+					step := 0;
+				end;
+				if (not motherFound) and (nPasses >= kMaxPassesBACKFOR) then begin
+					if reportFailure (chk_kin_backforNoMother,
+							[gBACKFOR_women + 1, ageChildbearing, ageUnionWoman]) then breakOnFailure;
+					myHalt (['BACKFOR: no mother found for a reference child born in ',
+							trunc (pRefChild^.yearBirth), ' after ', nPasses, ' passes']);
+				end;
 			end else
 				motherFound := true;
 		until motherFound;
@@ -5271,6 +5472,15 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 		InterlockedIncrement (gBACKFOR_women);
 
 		// looking for the refChild in the list of children to update her/his info
+		{The loop above is now left only with a woman who has a birth at this age, so the count
+		 below is positive. It is tested all the same: a draw on an empty count returns zero,
+		 the search through the children list then finds nothing, and the reference child
+		 silently keeps the age at childbearing of another mother.}
+		if (ageChildren [ageChildbearing, 0] <= 0) then begin
+			if reportFailure (chk_kin_backforNoMother,
+					[gBACKFOR_women, ageChildbearing, ageUnionWoman]) then breakOnFailure;
+			myHalt (['BACKFOR: the mother kept has no birth at age ', ageChildbearing]);
+		end;
 		selectedChild := trunc ( randomGenerator.alea (0, ageChildren [ageChildbearing, 0] - 0.00000000001) );
 		pCh := pChild;
 		gotoToFirstLiveBornChild(pCh);
@@ -5317,61 +5527,125 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 	Note that in Le Bras' original algorithm, other parameters are age of union of father as well as having for him an age of death higher than age at fatherhood,
 	but they are integrated here, as if the potential father dies too young, then we would not have a birth to begin with}
 	var
-		indMother, numMother, birthOrder: longint;
+		{birthOrder and grow are gone with the code that used them: birthOrder held a result
+		 that was never read, and grow was the direction of the one way sweep}
+		indMother, numMother: longint;
 		cohortChild, cohortChildInd: longint;
 		ageChildbearing: longint;
 		ageUnionWoman, ageUnionWomanTemp, ageUnionWomanInd: longint;
-		grow: boolean;
+		nDraws: longint;
+
+		function nearestAgeAtUnionHeld (ageAsked, ageChildbearingNow: longint; out ageUsed: longint): longint;
+		{The number of mothers the index holds for this cohort at the age at union nearest
+		 ageAsked, looking on both sides and staying between kMinAgeUnion_women and the age at
+		 childbearing, or 0 if the whole row is empty.
+
+		 The original walked in one direction only. Both of its loops carried the same pair of
+		 bounds, and the second started from the value the first had left, so the bound that
+		 stopped the first loop blocked the second at its own first test and it never ran a
+		 single iteration. Reversing the direction therefore never happened, and half the row
+		 was never examined. The bride search had the same defect, in
+		 selectBrideByGroomCohortAndAgeAtUnion.}
+		var
+			d, a: longint;
+		begin
+			result := 0;
+			ageUsed := ageAsked;
+			for d := 0 to kMaxAgeFert - kMinAgeFert do begin
+				a := ageAsked - d;
+				if (a >= kMinAgeUnion_women) and (a <= ageChildbearingNow) then begin
+					result := RangeBirthsBACKFORNb [cohortChildInd, a - kMinAgeUnion_women];
+					if (result > 0) then begin
+						ageUsed := a;
+						exit;
+					end;
+				end;
+				a := ageAsked + d;
+				if (a >= kMinAgeUnion_women) and (a <= ageChildbearingNow) then begin
+					result := RangeBirthsBACKFORNb [cohortChildInd, a - kMinAgeUnion_women];
+					if (result > 0) then begin
+						ageUsed := a;
+						exit;
+					end;
+				end;
+			end;
+			result := 0;
+		end;
 
 	begin
 		{1. Select an age at childbearing}
 		ageChildbearing := BACKFOR_MotherAgeChildbearing (randomGenerator, pRefChild);
-		
-		{2. Next, randomly select an age at union for woman, lower or equal the previous age at childbearing}
-		ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator,
-							trunc (pRefChild^.yearBirth - ageChildbearing - 0.5),
-							ageChildbearing);
-		ageUnionWomanInd := ageUnionWoman - kMinAgeUnion_women;
-		
+		{an age at childbearing that came back undefined is drawn again, rather than being used
+		 as the upper age in calc_ageUnion, where a zero upper age is an assignment outside the
+		 range of agesSingle, and as an index into the index row below}
+		nDraws := 0;
+		while (ageChildbearing = 0) and (nDraws < kMaxDrawsBACKFOR) do begin
+			Inc (nDraws);
+			ageChildbearing := BACKFOR_MotherAgeChildbearing (randomGenerator, pRefChild);
+		end;
+		if (ageChildbearing < kMinAgeFert) or (ageChildbearing > kMaxAgeFert) then begin
+			if reportFailure (chk_kin_backforAgeChildbearing,
+					[trunc (pRefChild^.yearBirth), nDraws, ageChildbearing]) then breakOnFailure;
+			myHalt (['BACKFOR_MIXED: no age at childbearing could be drawn for a reference child born in ',
+					trunc (pRefChild^.yearBirth), ' after ', nDraws, ' draws']);
+		end;
+
 		{3. No we look for a suitable mother, based on the previous age at union, in the set of mother who had a child
 		at age ageChildbearing the year cohortChild}
 		cohortChild := trunc (pRefChild^.yearBirth);
 		cohortChildInd := lookInChildrenRange (cohortChild, pRefChild^.typeOfKin);
-		
-		numMother := RangeBirthsBACKFORNb[cohortChildInd, ageUnionWomanInd];
-		if numMother = 0 then begin
-			grow := (ageUnionWoman < 20);
-			ageUnionWomanTemp := ageUnionWoman;
-			while (numMother = 0) and (ageUnionWomanTemp > kMinAgeUnion_women) and (ageUnionWomanTemp <  ageChildbearing) do begin
-				if grow then
-					Inc (ageUnionWomanTemp)
-				else
-					Dec (ageUnionWomanTemp);
-				numMother := RangeBirthsBACKFORNb[cohortChildInd, ageUnionWomanTemp - kMinAgeUnion_women];
+		{2. An age at union for the woman, not above the age at childbearing, and then the
+		 nearest age at union the index can actually answer for this cohort. The sweep covers
+		 every age from kMinAgeUnion_women to the age at childbearing, so when it finds nothing
+		 the row is empty and drawing another age at union cannot help: what can help is a
+		 larger age at childbearing, which widens the range of ages at union allowed, so that is
+		 what is drawn again.}
+		numMother := 0;
+		nDraws := 0;
+		while (numMother = 0) and (nDraws < kMaxDrawsBACKFOR) do begin
+			Inc (nDraws);
+			ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator,
+								trunc (pRefChild^.yearBirth - ageChildbearing - 0.5),
+								ageChildbearing);
+			numMother := nearestAgeAtUnionHeld (ageUnionWoman, ageChildbearing, ageUnionWomanTemp);
+			if (numMother > 0) then begin
+				ageUnionWomanInd := ageUnionWomanTemp - kMinAgeUnion_women;
+				if (ageUnionWomanTemp <> ageUnionWoman) then
+					reportFailure (chk_kin_motherFoundBACKFOR,
+							[cohortChild, ageUnionWoman, ageUnionWomanTemp]);
+			end else begin
+				ageChildbearing := BACKFOR_MotherAgeChildbearing (randomGenerator, pRefChild);
+				if (ageChildbearing < kMinAgeFert) or (ageChildbearing > kMaxAgeFert) then
+					ageChildbearing := kMaxAgeFert;
 			end;
-			if (numMother = 0) then begin
-				grow := not grow;
-				while (numMother = 0) and (ageUnionWomanTemp > kMinAgeUnion_women) and (ageUnionWomanTemp <  ageChildbearing) do begin
-					if grow then
-						Inc (ageUnionWomanTemp)
-					else
-						Dec (ageUnionWomanTemp);
-					numMother := RangeBirthsBACKFORNb[cohortChildInd, ageUnionWomanTemp - kMinAgeUnion_women];
-				end;
-			end;
-			ageUnionWomanInd := ageUnionWomanTemp - kMinAgeUnion_women;
 		end;
+		{This was the line that made the algorithm unusable. The comment said that the mother
+		 found in the previous step would be used, but that mother was a local variable inside
+		 BACKFOR_MotherAgeChildbearing and was gone when it returned, so womanObj was never
+		 assigned on this path. It is an out parameter of a class type, which the compiler does
+		 not clear, and the caller's own variable has no initial value either, so the call to
+		 updateInfoMother below dereferenced whatever the stack held, as did two further uses of
+		 womanObj in ancestorsAndTheirOffspring.
+
+		 There is nothing to fall back on here: the whole point of the algorithm is to take the
+		 mother from the set of mothers indexed by cohort and age at union, and the sweep above
+		 has already looked at every age at union the index could answer. So the run stops with
+		 the reason. If this is reached, the index was not built: it is filled only when
+		 gBACKFOR_mode was already set while initMotherhood ran, which applyMotherAlgorithm now
+		 settles before anything is allocated.}
 		if (numMother = 0) then begin
-			// Not found. We will use mother already found in previous step
-			if reportFailure (chk_kin_motherFoundBACKFOR, [cohortChild, ageUnionWoman]) then breakOnFailure;
-		end else begin
-			indMother := trunc ( randomGenerator.alea ( 0, RangeBirthsBACKFORNb[cohortChildInd, ageUnionWomanInd] - 0.00000000001 ) );
-			// we have one!
-			womanObj := getWomanFromBigArray (RangeBirthsBACKFORInfo[cohortChildInd, ageUnionWomanInd, indMother]);
-			// we select a child from that mother born in year cohortChild in order to obtain the correct age at childbearing
-			birthOrder := lookingForRefChild (	randomGenerator, cohortChildInd + gFirstCohortAncestorsChildren,
-									womanObj.pChildrenList, pRefChild);
+			if reportFailure (chk_kin_backforNoMother,
+					[cohortChild, ageChildbearing, ageUnionWoman]) then breakOnFailure;
+			myHalt (['BACKFOR_MIXED: the set of mothers holds no birth in year ', cohortChild,
+					' at any age at union up to ', ageChildbearing]);
 		end;
+		indMother := trunc ( randomGenerator.alea ( 0, RangeBirthsBACKFORNb[cohortChildInd, ageUnionWomanInd] - 0.00000000001 ) );
+		// we have one!
+		womanObj := getWomanFromBigArray (RangeBirthsBACKFORInfo[cohortChildInd, ageUnionWomanInd, indMother]);
+		{The call to lookingForRefChild that stood here has been dropped. Its result was
+		 assigned to birthOrder and never read, because updateInfoMother below returns its own,
+		 and it repeated the same search of the same children list with the same arguments, so
+		 it walked that list twice for every reference child.}
 
 		// we copy the information from that mother and determine the birth order of the reference child
 		result := updateInfoMother (randomGenerator, womanObj, pRefChild, 0, pMother);
@@ -5691,11 +5965,9 @@ end;
 		{Looking in a random way for a woman who fits the 2 criteria: woman's birth cohort and union at the correct age}
 		// the age at union for the woman can be slightly different than the one we looked for,
 		// especially if the value is very low or very high (hopefully it will not choke with a previous partnership)
-// >>> Claude 2026-09-11 start
 		womanInd := lookingForABrideByAgeAndCohort (randomGenerator, pLastRelative^.cohort, trunc(manUnionInfo.ages[le_union, woman]), ageUnionWomanSelected
 					, pMan^.typeOfKin
 					);
-// <<< Claude 2026-09-11 end
 	end;
 
 	// better way of doing it: everything is based 'in fine' on the two-way table of age at union of women BY age at union of men
@@ -5749,7 +6021,6 @@ end;
 			yearUnionInd := yearUnionTemp;
 		end;
 
-// >>> Claude 2026-09-11 start
 		{as in selectBrideByGroomCohortAndAgeAtUnion, but this algorithm moves the YEAR of union
 		 rather than the age at union when the cell is empty. The distance is again in years and
 		 is recorded against the man's own birth cohort, so that the three bride algorithms can
@@ -5758,7 +6029,6 @@ end;
 				generationRowOfKin (pMan^.typeOfKin),
 				pMan^.cohort - (gFirstCohortGrooms - gGroomStateMarginBelow),
 				yearUnionInd - lookInYearsUnionRange (yearUnion));
-// <<< Claude 2026-09-11 end
 		indUnion := trunc ( randomGenerator.alea ( 0, nUnions - 0.00000000001 ) );
 		womanInd := g_RangeYearUnionsInfo[yearUnionInd, ageUnionInd, indUnion];
 		
@@ -5789,7 +6059,7 @@ end;
 		cohortGroom, cohortGroomInd: longint;
 		ageUnion, ageUnionInd, ageUnionIndTemp: longint;
 		nBrides, indBride: longint;
-		grow: boolean;
+		nAgesMen, step: longint;
 	begin
 		// groom's info: birth cohort and age at union
 		if g_GENPARAM.NEW_INIT_MOTHERHOOD.value then begin
@@ -5808,30 +6078,58 @@ end;
 		ageUnionInd := ageUnion - kMinAgeUnion_men;
 		nBrides := g_RangeBridesForGrooms_Nb[cohortGroomInd, ageUnionInd];
 
-		grow := ( ageUnion < 30 );
-		ageUnionIndTemp := ageUnionInd;
+		{The search for a bride at a neighbouring age at union, bounded at both ends.
+
+		 Found by ChatGPT's independent review of 13 September, and it is the same defect as the
+		 one corrected in lookingForABrideByAgeAndCohort on 11 September, in the algorithm that
+		 is actually in force rather than in its sibling.
+
+		 The loop tested only the upper bound. The direction is chosen from the man's age, and
+		 for an age at union of 30 or more it decrements, so a run of empty cells walked the
+		 index down through zero and past it: a range error with the checks of Defines.pas on,
+		 and a read outside the array without them. Worse, the failure branch reported the
+		 problem and then fell through to the two lines below, which draw an index from
+		 nBrides = 0 and read a cell that holds nothing.
+
+		 The sweep now stops at both ends, tries the other direction before giving up, and a
+		 cohort row with no bride at any age at union ends the run rather than reading an empty
+		 cell. Halting is a blunt answer: the caller uses womanInd on the next line and has no
+		 failure channel, so giving it one is the better long-term shape, and it is the same
+		 argument as in lookingForABrideByAgeAndCohort.}
+		nAgesMen := kMaxAgeUnion_men - kMinAgeUnion_men + 1;
 		if nBrides = 0 then
 			// No bride for this age at union of the groom. We keep track of that
 			// (reached from every worker thread: a plain Inc loses increments)
 			InterlockedIncrement (g_RangeBridesForGrooms_NotFound [cohortGroomInd, ageUnionInd]);
 
-		while (nBrides = 0) and (ageUnionIndTemp < (kMaxAgeUnion_men - kMinAgeUnion_men)) do begin
+		if (ageUnion < 30) then step := 1 else step := -1;
+		ageUnionIndTemp := ageUnionInd;
+		while (nBrides = 0) and (ageUnionIndTemp + step >= 0) and (ageUnionIndTemp + step < nAgesMen) do begin
 			// if there is no bride, we change the men's age at union up or down, depending on its level
-			if grow then
-				Inc (ageUnionIndTemp)
-			else
-				Dec (ageUnionIndTemp);
+			ageUnionIndTemp := ageUnionIndTemp + step;
 			nBrides := g_RangeBridesForGrooms_Nb[cohortGroomInd, ageUnionIndTemp];
+		end;
+		if (nBrides = 0) then begin
+			{nothing in the preferred direction, so sweep the other way from where we started}
+			ageUnionIndTemp := ageUnionInd;
+			while (nBrides = 0) and (ageUnionIndTemp - step >= 0) and (ageUnionIndTemp - step < nAgesMen) do begin
+				ageUnionIndTemp := ageUnionIndTemp - step;
+				nBrides := g_RangeBridesForGrooms_Nb[cohortGroomInd, ageUnionIndTemp];
+			end;
 		end;
 		if nBrides = 0 then begin
 			// panic! No bride
-			if reportFailure (chk_kin_brideFoundByCohortAndAge, []) then breakOnFailure;
+			if reportFailure (chk_kin_brideFoundByCohortAndAge,
+					['groom cohort ', cohortGroom, ' (index ', cohortGroomInd, '), age at union ',
+					 ageUnion, ': no bride at any age at union in that cohort']) then
+				breakOnFailure;
+			myHalt (['Bad, bad: no bride in g_RangeBridesForGrooms_Info for groom cohort ',
+					cohortGroom, ' at any age at union']);
 		end else begin
 			// We found brides at age 'ageUnionIndTemp'
 			ageUnionInd := ageUnionIndTemp;
 		end;
 
-// >>> Claude 2026-09-11 start
 		{Did this man find a bride of the cohort and the age at union he was looking for? Two
 		 things can move the answer: the clamp of his cohort into the indexed range, and the
 		 step to another age at union taken just above when the cell was empty. Both are counted
@@ -5841,7 +6139,6 @@ end;
 				cohortGroom - (gFirstCohortGrooms - gGroomStateMarginBelow),
 				abs ((gFirstCohortGrooms + cohortGroomInd) - cohortGroom) +
 				abs (ageUnionInd - (ageUnion - kMinAgeUnion_men)));
-// <<< Claude 2026-09-11 end
 		indBride := trunc ( randomGenerator.alea ( 0, nBrides - 0.00000000001 ) );
 		womanInd := g_RangeBridesForGrooms_Info[cohortGroomInd, ageUnionInd, indBride];
 		
@@ -6128,13 +6425,39 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		end;
 	end;
 
+	{The status of a person is now drawn after the status of that person's parents, because
+	 the intra-family mode gives anyone whose two parents are in the network the distribution
+	 conditional on the two of them. The single pass that stood here walked the list in the order
+	 the network was built, so a child could be reached before its mother or father and would then
+	 fall back to the distribution of the cohort, losing exactly the correlation the mode is for.
+	 assignOne climbs to the parents first and returns at once for anyone already assigned, so each
+	 person is drawn once and the recursion is bounded by the number of ascendant generations the
+	 network carries. The statuses are cleared first, since the relatives of a replicate are reached
+	 again in the next one and an old status would stop the assignment.
+	 One draw is still made for each person, so the stream is not lengthened or shortened; which
+	 person receives which number does change, so the education of a given run differs from before
+	 even where the distributions are the same.}
 	procedure giveEdStatus (randomGenerator: TRandomNumberGenerator;pEgo: pRelativeType);
 	var
 		pRelative: pRelativeType;
+
+		procedure assignOne (pRel: pRelativeType);
+		begin
+			if (pRel = nil) or (pRel^.status <> '') then exit;
+			assignOne (pRel^.father);
+			assignOne (pRel^.mother);
+			pRel^.status := edStatus (randomGenerator, getCohort_p (pRel^.cohort), pRel, g_GENPARAM.eduKind.value);
+		end;
+
 	begin
 		pRelative := pEgo;
 		while (pRelative <> nil) do begin
-			pRelative^.status := edStatus (randomGenerator, getCohort_p(pRelative^.cohort), pRelative, g_GENPARAM.eduKind.value);
+			pRelative^.status := '';
+			pRelative := pRelative^.nextRelative;
+		end;
+		pRelative := pEgo;
+		while (pRelative <> nil) do begin
+			assignOne (pRelative);
 			pRelative := pRelative^.nextRelative;
 		end;
 	end;
@@ -8128,9 +8451,7 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 	procedure individualKin_end (fileFormat: Kinship_FileFormat; indFamily, nIndividuals: longint; fname: string;
 								 closeIt: boolean = true);
 	{closeIt is FALSE for every cohort except the last one: the individual file is opened
-	 once, on the first cohort, and must stay open until the last cohort has been written.
-	 Closing it earlier sent every later cohort to a closed handle, and the failure was
-	 swallowed by {$I-}, so the file silently contained only the first cohort.}
+	 once, on the first cohort, and must stay open until the last cohort has been written.}
 	var
 		tStart: TDateTime;  // Begin and end of measurement, and difference
 		iHours, iMinutes, iSeconds, iMilliseconds: Word;  // Time components

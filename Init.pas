@@ -208,6 +208,7 @@ var
 			nUnions := 0;
 			partnershipStatusAt50 := any;
 			typeHeir := th_doNotApply;
+			partnerCanInherit := false;
 			//egoAsHeir := eh_doNotApply;
 			nHeirs := 0;
 			setLength (heirs, 0);			
@@ -420,6 +421,8 @@ var
 			g_GENPARAM.eduKind.value := eduNone;
 			g_GENPARAM.kinIndFmt.value := out_EgoGenealogy;
 			g_GENPARAM.countryInheritance.value := inher_Spain;
+			g_GENPARAM.motherAlgorithm.value := mother_KINFERT;
+			g_GENPARAM.CAMSIM_1993_ANY_AGE_UNION.value := TRUE;
 
 			g_GENPARAM.DUMP.value := TRUE;
 			g_GENPARAM.DUMPALL.value := FALSE;
@@ -499,6 +502,17 @@ var
 					g_GENPARAM.listOfParams);
 			g_GENPARAM.countryInheritance := CountryInheritanceName.Create(inher_Spain, 'COUNTRY_INHERITANCE_RULES',
 					'Values can be 0 (Spain), 1 (Other)',
+					g_GENPARAM.listOfParams);
+			g_GENPARAM.motherAlgorithm := MotherAlgorithmName.Create(mother_KINFERT, 'MOTHER_ALGORITHM',
+					'Algorithm used to find the mother of a reference child, by name or by number:' + LineEnding +
+					'KINFERT (0), the algorithm of the model, the one the published results rest on;' + LineEnding +
+					'BACKFOR (1), Le Bras'' original algorithm;' + LineEnding +
+					'BACKFOR_MIXED (2), the same with the mother taken from the set of mothers rather than simulated;' + LineEnding +
+					'CAMSIM_1987 (3) and CAMSIM_1993 (4), the two published CAMSIM algorithms.' + LineEnding +
+					'The four alternates exist so that the five can be run on one configuration and compared.',
+					g_GENPARAM.listOfParams);
+			g_GENPARAM.CAMSIM_1993_ANY_AGE_UNION := BooleanName.Create(TRUE, 'CAMSIM_1993_ANY_AGE_UNION',
+					'With MOTHER_ALGORITHM=CAMSIM_1993, draw the age at union of the mother without an upper bound (ON) or bounded by the age at childbearing selected (OFF). Read only by that algorithm',
 					g_GENPARAM.listOfParams);
 
 			g_GENPARAM.DUMP := BooleanName.Create(FALSE, 'DUMP',
@@ -769,6 +783,15 @@ var
 		if g_GENPARAM.FIXED_FERTILITY.value then
 			initFixedFertility (g_GENPARAM.FIXED_FERTILITY_VALUE.value);
 		initFixedParameters();
+		{The stochastic education mode gives every person an equal chance of each of the three
+		 levels and reads none of the EDU_* parameters. That is what the mode is, a uniform test
+		 distribution, but nothing said so, and a run made with it looked as though the parameters
+		 had been used. One line at the start of the run now says which mode is in force whenever it
+		 is not the one that reads them.}
+		if (g_GENPARAM.eduKind.value = eduStochastic) then
+			memoWriteLn (['===> Education: EDU_STATUS is on the stochastic mode, which gives every person ',
+					'an equal chance of the three levels and reads none of the EDU_ parameters. ',
+					'Use the cohort or the intra-family mode to have those read.']);
 		DemRegimeCollection_init(randomGenerator);
 		initParams := true;
 		

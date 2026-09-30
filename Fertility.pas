@@ -38,11 +38,18 @@ uses
 	function stillbirthRiskModelName: string;
 
 	procedure init_temporary_sterility (p: pStructDemographicRegimeSettings; alpha, beta: double);
-	function init_waiting_time_distribution (
+// >>> Claude 2026-09-30 start
+	{This was declared as a function returning the median of the distribution, but the
+	 result was never set, so what the caller read was whatever the return register held.
+	 None of the six call sites used the value. It is now a procedure. The median can be
+	 recovered from arrayDurationAcc, which holds the accumulated distribution, if it is
+	 ever wanted.}
+	procedure init_waiting_time_distribution (
 			maxDuration: longint;
 			var arrayDurationAcc: array of double;
 			mean, propContraception: double;
-			lambda_erlang: double = 1): double; // return median value
+			lambda_erlang: double = 1);
+// <<< Claude 2026-09-30 end
 	procedure noStoppingContraception (p: pStructDemographicRegimeSettings);
 	procedure adjustContraception (p: pStructDemographicRegimeSettings);
 
@@ -79,7 +86,6 @@ uses
 
 implementation
 
-// >>> Claude 2026-09-12 start
 const
 	{How far the mean a waiting time distribution delivers may stand from the mean asked for,
 	 in years, before chk_fer_waitingTimeMean counts it a failure. The distribution is built on
@@ -88,7 +94,6 @@ const
 	 thousandths leaves room for a long mean in a short array and still catches an error of the
 	 kind the rate used to cause, which was a factor of more than three.}
 	kWaitingTimeMeanTolerance = 0.02;
-// <<< Claude 2026-09-12 end
 
 	function ageToLunarMonths (age: double): longint;
 	begin
@@ -213,7 +218,6 @@ const
 		result := exp (res);
 	end;
 
-// >>> Claude 2026-09-12 start
 	function lnGammaFn (z: double): double;
 	{The logarithm of the gamma function, by the Lanczos approximation with g = 7 and nine
 	 coefficients, which holds about fifteen significant digits for a positive argument. The
@@ -295,7 +299,6 @@ const
 		if (result < 0.0) then result := 0.0;
 		if (result > 1.0) then result := 1.0;
 	end;
-// <<< Claude 2026-09-12 end
 	
 	procedure init_waiting_time_distribution_Erlang (maxDuration: longint; var arrayDurationAcc: array of double; mean, propContraception: double; lambda: double = 1);
 	var
@@ -313,7 +316,6 @@ const
 			for i := 0 to maxDuration do
 				arrayDurationAcc [i] := 0.0;
 
-// >>> Claude 2026-09-12 start
 			{**The Erlang waiting time, rewritten.** Three faults are corrected, and the array is
 			 built as a distribution function rather than as an accumulated sum of densities, so
 			 that it needs no normalisation.
@@ -359,19 +361,18 @@ const
 			checkValue (chk_fer_waitingTimeMean, mean_check, mean, kWaitingTimeMeanTolerance);
 
 			arrayDurationAcc [maxDuration] := 1.0;
-// <<< Claude 2026-09-12 end
 		end;
 	end;
 	
 
-	function init_waiting_time_distribution (
+// >>> Claude 2026-09-30 start
+	procedure init_waiting_time_distribution (
 			maxDuration: longint;
 			var arrayDurationAcc: array of double;
 			mean, propContraception: double;
-			lambda_erlang: double = 1): double; // return median value
-	var
-		ind: longint;
-		median: double;
+			lambda_erlang: double = 1);
+	{the two local variables of the earlier function, ind and median, were never used}
+// <<< Claude 2026-09-30 end
 	begin
 		if ( g_GENPARAM.fixedParameters [waitingTimeErlangPoisson].state.value = true ) then
 			init_waiting_time_distribution_Erlang (maxDuration, arrayDurationAcc, mean, propContraception, lambda_erlang)
@@ -1398,7 +1399,7 @@ const
 						for i := 33 to kMaxAgeFert do
 							gFecundability[i] := gFecundability[i-1];
 						for i := kMinAgeFert to kMaxAgeFert do
-							gFecundability[i] := gFecundability[i] * 13 / kNbLunarMonths;
+							gFecundability[i] := gFecundability[i] * 12 / kNbLunarMonths;
 					end;
 				LeridonOverMagnusIntrauterine:
 					begin
@@ -2007,6 +2008,17 @@ that the woman be sterile before this decrease}
 			for age := b to kMaxAgeFert do
 				fecundLife.levelFecundabilityAge[age] := 0.0;
 		end;
+		{The multiplier that the schedule just built carries, kept as its reciprocal so that
+		 RESHUFFLED_FECUNDABILITY can take it back out with a multiplication and put a newly drawn
+		 one in its place at each cycle, leaving the woman's own age schedule, taper included, as
+		 it is. fecundabilityLevel returns i / (gMean_fecundability * kMaxDistribFecundability)
+		 with i at least 1, so the level cannot be zero; the test only keeps the division safe. A
+		 reciprocal of 1 with a schedule of zeros leaves the woman infecund, which is what a level
+		 of zero would mean.}
+		if (fecundLife.relativeFecundabilityLevel > 0.0) then
+			fecundLife.invRelativeFecundabilityLevel := 1.0 / fecundLife.relativeFecundabilityLevel
+		else
+			fecundLife.invRelativeFecundabilityLevel := 1.0;
 {stopping state}
 		fecundLife.stopping := false;
 	end;

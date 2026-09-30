@@ -1,4 +1,4 @@
-# KinFert — User and Reference Manual
+# KinFert: User and Reference Manual
 
 *A kinship-network microsimulation program with a detailed fertility module.*
 
@@ -7,8 +7,14 @@
 > Sections that describe the *intended* demographic meaning of an option, or the
 > exact grammar of a file, are marked **`[TODO: confirm]`** where the code alone
 > does not settle the question. These are collected in
-> [Appendix F — Open questions](#appendix-f--open-questions-for-the-author).
+> [Appendix F: Open questions](#appendix-f-open-questions-for-the-author).
 > Nothing here changes the program; it documents it.
+>
+> **Verification phase.** The program itself is in its verification phase. The defects found in
+> the audit that began in August 2026 are recorded in `KinFert-FIXED.md`, and what is still open
+> is in `KinFert-TODO.md`, but no run should be treated as settled until the checks collected in
+> `KinFert-Verification-Plan.md` have been made and answered. That document lists what is checked,
+> what is not, and how each answer would be obtained.
 
 ---
 
@@ -16,16 +22,16 @@
 
 1. [Introduction](#1-introduction)
 2. [Installation and building](#2-installation-and-building)
-3. [Getting started — the main window](#3-getting-started--the-main-window)
-4. [Configuring a simulation — the Config window](#4-configuring-a-simulation--the-config-window)
-5. [Low-level (biological) options — the LowLevel window](#5-low-level-biological-options--the-lowlevel-window)
-6. [Outputs — the Outputs window](#6-outputs--the-outputs-window)
+3. [Getting started: the main window](#3-getting-started-the-main-window)
+4. [Configuring a simulation: the Config window](#4-configuring-a-simulation-the-config-window)
+5. [Low-level (biological) options: the LowLevel window](#5-low-level-biological-options-the-lowlevel-window)
+6. [Outputs: the Outputs window](#6-outputs-the-outputs-window)
 7. [Graphs](#7-graphs)
 8. [The demographic model (methods)](#8-the-demographic-model-methods)
 9. [Kin taxonomy reference](#9-kin-taxonomy-reference)
 10. [Input file formats](#10-input-file-formats)
 11. [Output file formats](#11-output-file-formats)
-12. [Tutorial — a first simulation](#12-tutorial--a-first-simulation)
+12. [Tutorial: a first simulation](#12-tutorial-a-first-simulation)
 13. [Troubleshooting](#13-troubleshooting)
 14. [Appendices](#14-appendices)
 
@@ -36,9 +42,9 @@
 ### 1.1 What KinFert is
 
 **KinFert** is a demographic **microsimulation** program. It simulates the
-reproductive life of individual women month by month — taking into account
+reproductive life of individual women month by month, taking into account
 fecundability, sterility, postpartum amenorrhea, contraceptive behaviour, union
-formation and dissolution, and mortality — and from these simulated life
+formation and dissolution, and mortality, and from these simulated life
 histories it reconstructs the **kinship networks** of selected individuals
 (called *egos*). On top of the kin networks it can also resolve **inheritance**:
 who the heirs and decedents of an ego are, and what share of an estate each
@@ -52,14 +58,14 @@ application with a graphical interface on **macOS** and **Windows**.
 
 A run can produce any combination of:
 
-- **Aggregate fertility tables** — completed fertility, parity distributions,
+- **Aggregate fertility tables**: completed fertility, parity distributions,
   parity progression ratios (PPRs), birth intervals, age at childbearing,
   cohort TFR, proportions single, fertility by union duration and union status,
   and more.
-- **Aggregate kinship results** — counts and distributions of kin by type, by
+- **Aggregate kinship results**: counts and distributions of kin by type, by
   age of ego, ages of fathers and sons, union life tables, and totals.
-- **Inheritance results** — heirs and decedents of egos and their shares.
-- **Individual microdata files** — one record per simulated individual
+- **Inheritance results**: heirs and decedents of egos and their shares.
+- **Individual microdata files**: one record per simulated individual
   (fertility) or per kin (kinship), with a configurable set of fields, optionally
   compressed to ZIP.
 - **In-application graphs** of selected inputs and outputs.
@@ -68,10 +74,10 @@ A run can produce any combination of:
 
 KinFert combines two directions of simulation:
 
-- **Forward** — a woman's reproductive life is played out in time from the start
+- **Forward**: a woman's reproductive life is played out in time from the start
   of her reproductive span, generating her children (with their birth months,
   parities, and intervals) inside her union history.
-- **Backward** — to give an ego a complete kin network, the program reconstructs
+- **Backward**: to give an ego a complete kin network, the program reconstructs
   ego's ancestors. It works *upward* for two generations: ego's possible
   **mothers** generate ego (and ego's siblings), and the mothers' own possible
   **mothers** (ego's grandmothers) generate the parents' generation. This
@@ -82,7 +88,7 @@ KinFert combines two directions of simulation:
 Each ego therefore ends up with a genealogical tree spanning descendants
 (children, grandchildren, great-grandchildren), ancestors (parents, grandparents,
 great-grandparents), and their collateral relatives (siblings, cousins, aunts and
-uncles, nieces and nephews, and so on — see [§9](#9-kin-taxonomy-reference)).
+uncles, nieces and nephews, and so on, see [§9](#9-kin-taxonomy-reference)).
 
 ### 1.4 Key concepts and terminology
 
@@ -93,8 +99,8 @@ uncles, nieces and nephews, and so on — see [§9](#9-kin-taxonomy-reference)).
 | **Demographic regime** | The full set of fertility, nuptiality and mortality parameters that govern a cohort. Each cohort can have its own regime; see the cohort data file. |
 | **Lunar month** | The internal time step. There are **12 lunar months per year** (constant `kNbLunarMonths`); fertility durations are counted in lunar months. |
 | **Parity** | Number of children a woman has had. |
-| **PPR** | *Parity progression ratio* — probability of having another child given current parity. KinFert can take PPRs as a *target* to reproduce. |
-| **CTFR / cohort TFR** | Completed (cohort) total fertility — the mean number of children per woman at the end of reproductive life. |
+| **PPR** | *Parity progression ratio*: the probability of having another child given current parity. KinFert can take PPRs as a *target* to reproduce. |
+| **CTFR / cohort TFR** | Completed (cohort) total fertility, the mean number of children per woman at the end of reproductive life. |
 | **Fecundability** | The monthly probability of conception for a non-pregnant, non-sterile woman exposed to risk. |
 | **Sterility** | Permanent loss of the ability to conceive; modelled as a function of age (several models are available). |
 | **Postpartum amenorrhea** | The non-susceptible period after a birth; modelled with the Lesthaeghe–Page formulation. |
@@ -104,7 +110,7 @@ uncles, nieces and nephews, and so on — see [§9](#9-kin-taxonomy-reference)).
 
 ### 1.5 How to read this manual
 
-Chapters [3](#3-getting-started--the-main-window)–[7](#7-graphs) are a **user
+Chapters [3](#3-getting-started-the-main-window)–[7](#7-graphs) are a **user
 guide**: they walk through every window and every option as it appears on screen,
 giving the on-screen label, the internal parameter name, and what the option does.
 Chapter [8](#8-the-demographic-model-methods) is a **methods reference** that
@@ -122,7 +128,7 @@ key constants, a source-module map, and the list of open questions.
 To build KinFert from source you need:
 
 - **Lazarus** (which bundles the **Free Pascal Compiler, FPC**). *`[TODO: confirm the
-  exact Lazarus and FPC versions you build with — this is important for
+  exact Lazarus and FPC versions you build with; this is important for
   reproducibility and should be stated here and in the README.]`*
 - The **LCL** package (ships with Lazarus).
 - The **TAChartLazarusPkg** package (ships with Lazarus; provides the charts on
@@ -152,15 +158,15 @@ executable named **`KinFert`**.
 
 The project is configured (in `kinfert.lpi`) with:
 
-- Optimisation level **0** and **DWARF 3** debug info — i.e. a *debug* build.
+- Optimisation level **0** and **DWARF 3** debug info, i.e. a *debug* build.
 - Range checking (`-Cr`), I/O checking (`-Ci`) and overflow checking
   (`-Co`, `-CO`), and assertions (`-Sa`) **enabled**. These catch many errors at
   run time and are valuable while debugging; a release build would normally turn
   them off for speed.
 - The conditional define **`LAZARUS_GUI`**.
 
-*`[TODO: decide and document a separate "release" build mode for distribution —
-optimisation on, range/overflow checks off — so published binaries run at full
+*`[TODO: decide and document a separate "release" build mode for distribution
+(optimisation on, range/overflow checks off), so published binaries run at full
 speed.]`*
 
 ### 2.5 Running the prebuilt binaries
@@ -170,7 +176,7 @@ Prebuilt executables exist for **macOS** (the `KinFert` binary and the
 should be distributed as **release downloads**, not committed to the source
 repository (they are large). *`[TODO: when publishing, attach the macOS and
 Windows binaries to a GitHub Release and note here which OS versions/architectures
-they target — e.g. Apple Silicon vs Intel.]`*
+they target, e.g. Apple Silicon vs Intel.]`*
 
 ### 2.6 Configuration and output directories
 
@@ -193,7 +199,7 @@ paths adjusted on another.
 
 ---
 
-## 3. Getting started — the main window
+## 3. Getting started: the main window
 
 When KinFert starts, the **main window** (titled *Kinfert*) is your control
 centre. From here you load or edit a configuration, choose where output goes, run
@@ -211,7 +217,7 @@ the simulation, and inspect results.
 | `ConfigFileName` | *(label, shows "none")* | The currently loaded configuration file. |
 | `OutputDirButton` | **Output directory** | Choose the folder where results are written. Shown in `OutputDirName`. |
 | `OutputDirName` | *(label, shows "none")* | The current output directory. |
-| `createConfigFile` | **Edit config** | Open the [Config window](#4-configuring-a-simulation--the-config-window) to enter or edit parameters. |
+| `createConfigFile` | **Edit config** | Open the [Config window](#4-configuring-a-simulation-the-config-window) to enter or edit parameters. |
 | `runSimul` | **run simulation** | Run the simulation with the current parameters. |
 | `status` | **status** | Shows what the program is doing. |
 | `Log` | *(memo)* | The running log of the simulation. |
@@ -241,12 +247,12 @@ the simulation, and inspect results.
 
 ---
 
-## 4. Configuring a simulation — the Config window
+## 4. Configuring a simulation: the Config window
 
 The **Config** window is where a simulation is defined. It is organised into
 groups; this chapter follows those groups. For each option the tables give the
 **label** you see, the **internal name** (useful when reading or editing a
-configuration file — see [§10.1](#101-configuration-command-file)), and its
+configuration file, see [§10.1](#101-configuration-command-file)), and its
 meaning.
 
 ![The Config window](img/config-overview.png)
@@ -277,7 +283,7 @@ Two independent switches decide *what* is simulated:
 
 ### 4.3 Cohorts
 
-![Config window — cohort settings](img/config-cohorts.png)
+![Config window: cohort settings](img/config-cohorts.png)
 
 A run covers either a single birth cohort or a range.
 
@@ -299,7 +305,7 @@ cohort file. See [§10.2](#102-cohort--demographic-regime-data-file).
 
 ### 4.4 Mortality
 
-![Config window — Mortality group](img/config-mortality.png)
+![Config window: Mortality group](img/config-mortality.png)
 
 | Option | Label | Meaning |
 |---|---|---|
@@ -311,7 +317,7 @@ expectancies (see [§8.4](#84-mortality)).
 
 ### 4.5 Union fertility (a priori)
 
-![Config window — Union fertility, a priori](img/config-fertility-apriori.png)
+![Config window: Union fertility, a priori](img/config-fertility-apriori.png)
 
 This group defines the *target* fertility of a union before contraceptive
 behaviour is applied.
@@ -325,7 +331,7 @@ behaviour is applied.
 
 ### 4.6 Contraception use
 
-![Config window — Contraception use](img/config-contraception.png)
+![Config window: Contraception use](img/config-contraception.png)
 
 | Option | Label | Meaning |
 |---|---|---|
@@ -342,7 +348,7 @@ altogether. See [§8.2](#82-fertility).
 
 ### 4.7 Amenorrhea
 
-![Config window — Amenorrhea group](img/config-amenorrhea.png)
+![Config window: Amenorrhea group](img/config-amenorrhea.png)
 
 Postpartum amenorrhea is modelled with the **Lesthaeghe–Page** formulation.
 
@@ -356,9 +362,9 @@ Postpartum amenorrhea is modelled with the **Lesthaeghe–Page** formulation.
 
 ### 4.8 Nuptiality (unions)
 
-![Config window — Union (nuptiality) group](img/config-nuptiality.png)
+![Config window: Union (nuptiality) group](img/config-nuptiality.png)
 
-**Women — first union**
+**Women: first union**
 
 | Option | Label | Meaning |
 |---|---|---|
@@ -367,7 +373,7 @@ Postpartum amenorrhea is modelled with the **Lesthaeghe–Page** formulation.
 | `EVER_INUNION_PROP` | **Prop. ever in union** | Proportion of women ever entering a union. |
 | `MEAN_AGE_UNION_HIGH`, `EVER_INUNION_PROP_HIGH` | **Max value** | Upper values used when a parameter is varied across its range. |
 
-**Men — first union**
+**Men: first union**
 
 | Option | Label | Meaning |
 |---|---|---|
@@ -404,7 +410,7 @@ Postpartum amenorrhea is modelled with the **Lesthaeghe–Page** formulation.
 
 | Option | Label | Meaning |
 |---|---|---|
-| `EDUCATION` | **EDUCATION** *(combo)* | Selects the education-status model. Education status is a categorical attribute (the code uses levels **B**, **M**, **A** — *`[TODO: confirm these stand for Basic / Medium / Advanced and document the available choices in the combo]`*). |
+| `EDUCATION` | **EDUCATION** *(combo)* | Selects the education-status model. Education status is a categorical attribute (the code uses levels **B**, **M**, **A**; *`[TODO: confirm these stand for Basic / Medium / Advanced and document the available choices in the combo]`*). |
 
 Education status is assigned to individuals and can be inherited/correlated
 between parents and children (see [§8.5](#85-education)).
@@ -426,12 +432,12 @@ between parents and children (see [§8.5](#85-education)).
 | `INIT_RANDOM_NUMBERS` | **Same Random Sequence** | Re-seed the generator identically each run, so results are reproducible. |
 | `FIXED_FERTILITY` | **Fixed fertility** | Use a fixed fertility level instead of the full model. |
 | `FIXED_FERTILITY_VALUE` | *(combo)* | The fixed fertility level to use. *`[TODO: list the available values.]`* |
-| `LowLevelOptions` | **Low Level Options** | Open the [LowLevel window](#5-low-level-biological-options--the-lowlevel-window). |
-| `OutputOptions` | **Output Options** | Open the [Outputs window](#6-outputs--the-outputs-window). |
+| `LowLevelOptions` | **Low Level Options** | Open the [LowLevel window](#5-low-level-biological-options-the-lowlevel-window). |
+| `OutputOptions` | **Output Options** | Open the [Outputs window](#6-outputs-the-outputs-window). |
 
 ---
 
-## 5. Low-level (biological) options — the LowLevel window
+## 5. Low-level (biological) options: the LowLevel window
 
 The **LowLevel** window holds the biological and performance options that most
 users leave at their defaults. It is reached from **Low Level Options** on the
@@ -439,12 +445,12 @@ Config window.
 
 ![The LowLevel window](img/lowlevel-window.png)
 
-*The LowLevel window — advanced biological and performance options.*
+*The LowLevel window: advanced biological and performance options.*
 
 ### 5.1 Fecundability
 
 These choose how *fecundability* (monthly conception probability) varies between
-women. *`[TODO: confirm these are mutually exclusive — i.e. they behave as a radio
+women. *`[TODO: confirm these are mutually exclusive, i.e. whether they behave as a radio
 choice of fecundability model.]`*
 
 | Option | Label | Meaning |
@@ -483,7 +489,7 @@ These choose the age pattern of permanent sterility.
 
 ---
 
-## 6. Outputs — the Outputs window
+## 6. Outputs: the Outputs window
 
 The **Outputs** window selects which results are produced. It is reached from
 **Output Options** on the Config window. The **All / none** button toggles a
@@ -491,7 +497,7 @@ whole section at once.
 
 ![The Outputs window](img/outputs-window.png)
 
-*The Outputs window — selects which results are produced.*
+*The Outputs window: selects which results are produced.*
 
 ### 6.1 Fertility result tables
 
@@ -573,7 +579,7 @@ index, Share of inheritance (heirs), Heirs, KinType of heirs, Decedents, Share
 
 ### 6.5 Inheritance
 
-![Outputs window — Inheritance group](img/outputs-inheritance.png)
+![Outputs window: Inheritance group](img/outputs-inheritance.png)
 
 | Option | Label | Meaning |
 |---|---|---|
@@ -629,8 +635,8 @@ TAChart. It is organised into tabs:
 | **Child / Groom** | The cohort/age ranges of children and grooms accessed by the backward algorithm (a diagnostic that the year ranges are wide enough). |
 | **Inputs** | The input schedules currently in effect. |
 | **Inputs (variation)** | How inputs vary across the simulated range/cohorts. |
-| **Outputs — fertility** | Fertility results from the completed run(s). |
-| **Outputs — kinship** | Kinship results from the completed run(s). |
+| **Outputs: fertility** | Fertility results from the completed run(s). |
+| **Outputs: kinship** | Kinship results from the completed run(s). |
 
 Graphs reflect the runs accumulated since the last **Reset run count**.
 *`[TODO: detail exactly which series each tab draws.]`*
@@ -664,31 +670,31 @@ A woman's reproductive life is simulated month by month inside her union history
 The core of each interval is a **conception → pregnancy → birth → postpartum
 amenorrhea → return to susceptibility** cycle, recorded per child in the
 `InfoChildType` structure (month of fecundation, month pregnancy ends, month of
-the next ovulation, birth order, ages of mother and father, and — for a
-spontaneous abortion or stillbirth — a non-positive age at death).
+the next ovulation, birth order, ages of mother and father, and, for a
+spontaneous abortion or stillbirth, a non-positive age at death).
 
 The biological and behavioural ingredients are:
 
-- **Fecundability** — the monthly conception probability. It can be homogeneous
+- **Fecundability**: the monthly conception probability. It can be homogeneous
   across women, vary by drawing a relative level from a Gaussian/Beta law, or be
   reshuffled each interval (the choices in [§5.1](#51-fecundability)). Each woman
   carries an age schedule of fecundability and a relative level
   (`FecundLifeType.levelFecundabilityAge`, `.relativeFecundabilityLevel`).
-- **Sterility** — a per-woman age of permanent sterility
+- **Sterility**: a per-woman age of permanent sterility
   (`FecundLifeType.ageSterile`) drawn from the selected age schedule
   (Leridon 2008, KinFert's own, optionally zero before 25, optionally held
-  constant after 25 — see [§5.2](#52-sterility)).
-- **Postpartum amenorrhea** — the non-susceptible interval after a birth, from the
+  constant after 25, see [§5.2](#52-sterility)).
+- **Postpartum amenorrhea**: the non-susceptible interval after a birth, from the
   **Lesthaeghe–Page** model with parameters α (`AMENO_ALPHA`) and β
   (`AMENO_BETA`), or a single fixed duration.
-- **Contraception** — couples may use contraception **before** the first union,
+- **Contraception**: couples may use contraception **before** the first union,
   **after** the first union before the first wanted birth, to **space** births,
   and to **stop** childbearing. Spacing lengthens intervals (with a waiting time);
   stopping ends childbearing once desired family size is reached (the `stopping`
   flag in `FecundLifeType`).
 
 The *a-priori* fertility of a union is built from the **parity progression
-ratios** (`APRIORI_PPR`) — the program computes an a-priori distribution of
+ratios** (`APRIORI_PPR`): the program computes an a-priori distribution of
 completed family size from the PPRs and the associated **CTFR**. When **PPR values
 as target** (`PPR_TARGET`) is set, the program *iterates* (over `NSTEP_…` steps)
 on contraceptive parameters until the simulated PPRs reproduce the target; the
@@ -696,7 +702,7 @@ fitted values are stored as **adjusted values** (see
 [§8.8](#88-targets-iteration-and-adjusted-values)).
 
 *`[TODO: confirm the conception model (e.g. whether intra-uterine mortality and
-the waiting-time-to-conception distribution are Erlang/Poisson — the option
+the waiting-time-to-conception distribution are Erlang/Poisson; the option
 "waitingTimeErlangPoisson" exists in the code), and the exact role of the
 "spacing/stopping/waiting-time" value lists.]`*
 
@@ -704,17 +710,17 @@ the waiting-time-to-conception distribution are Erlang/Poisson — the option
 
 Unions are governed by `NuptialitySettings` and `separationSettings`:
 
-- **Entry into first union** — driven by the **mean age at union**, its **standard
+- **Entry into first union**: driven by the **mean age at union**, its **standard
   deviation**, and the **proportion ever in union**, separately for women and men.
   Setting **Same age at union for all** (`FIXED_AGE_UNION`) collapses the age
   distribution to a single value. A cross-tabulation
   (`union_women_men` / `union_men_women`) matches the ages of brides and grooms.
-- **Separation** — a monthly separation risk built from a median and shape
+- **Separation**: a monthly separation risk built from a median and shape
   parameter (`separation_median`, `separation_shape`) and an overall frequency
   (`freqSeparation`); second and later unions carry a **relative risk**
   (`SECOND_SEPARATION_REL_RISK`), and the risk also depends on the number of
   children and the union duration.
-- **Repartnering** — after **separation** and after **widowhood**, with
+- **Repartnering**: after **separation** and after **widowhood**, with
   sex-specific frequencies and a duration profile (`prop_repartnering*`). The code
   notes a log-logistic form. *`[TODO: confirm the repartnering hazard shape and the
   remark in the code that risk depends on age rather than time since
@@ -733,7 +739,7 @@ curve.]`*
 
 ### 8.5 Education
 
-Each individual receives an **education status** — a categorical attribute stored
+Each individual receives an **education status**, a categorical attribute stored
 as a short string (the code uses levels **B**, **M**, **A**). Status can be drawn
 stochastically, by cohort, or conditioned on the parents' education (the
 `edStatus…` functions, including a parent→child transmission). *`[TODO: confirm the
@@ -748,9 +754,9 @@ simulation:
    a pool of women (`NUMBER_WOMEN`); that mother is in turn generated by a
    **possible grandmother**. The program reconstructs ancestors **upward for two
    generations** (parents and grandparents), as described in the header of
-   `Kinship.pas`. Several variants of this backward step exist —
+   `Kinship.pas`. Several variants of this backward step exist,
    `gBACKFOR_mode`, `gCAMSIM_1987`, `gCAMSIM_1993` (and an *unbounded* 1993
-   variant) — reflecting the **BACKFOR** and **CAMSIM** lineages of kinship
+   variant), reflecting the **BACKFOR** and **CAMSIM** lineages of kinship
    microsimulation.
 2. **Forward (descendants).** Each woman's reproductive life (§8.2) produces her
    children; iterating the fertility process over generations yields grandchildren
@@ -789,9 +795,9 @@ complete tree (`heirs_2`, `inheritances_2`). The partner can be given priority
 
 Several inputs can be supplied either directly or **as a target** to reproduce:
 
-- **PPR target** (`PPR_TARGET`) — iterate contraception until the simulated PPRs
+- **PPR target** (`PPR_TARGET`): iterate contraception until the simulated PPRs
   match the a-priori PPRs.
-- **Separation target** (`SEP_TARGET`) — iterate until the separation frequency
+- **Separation target** (`SEP_TARGET`): iterate until the separation frequency
   matches.
 
 The number of iteration steps is set by the various **NSteps** fields
@@ -817,8 +823,8 @@ run can be reproduced exactly (subject to the multithreading caveat in
 
 ### 8.11 Multithreading
 
-Three phases can run in parallel — demographic-regime initialisation, motherhood
-initialisation, and kinship simulation — under the master `MULTITHREADING` switch,
+Three phases can run in parallel (demographic-regime initialisation, motherhood
+initialisation, and kinship simulation) under the master `MULTITHREADING` switch,
 with a configurable thread cap and optional batching ([§6.6](#66-multithreading)).
 
 ---
@@ -833,7 +839,7 @@ choose under **Select kin to simulate**.
 
 | Internal name | Display name | Branch |
 |---|---|---|
-| `kt_ego` | ego | — |
+| `kt_ego` | ego | none |
 | `kt_partner` | partner | partner |
 | `kt_child` | child | descendants |
 | `kt_grandChild` | grand child | descendants |
@@ -863,7 +869,7 @@ sibling, grandfather, grandmother, aunt-uncle, child, grandchild.
 
 **Kin with no further descendance** (`gKinWithNoDescendance`): great-grandchild,
 great-grand-niece-nephew, first cousin thrice removed, second cousin twice
-removed — i.e. the program does not extend descendants below these.
+removed, i.e. the program does not extend descendants below these.
 
 The **heirs/decedents** dialogs expose a subset of this list
 ([§6.5](#65-inheritance)); the kinship **output** range runs from `kt_ego` to
@@ -883,10 +889,10 @@ file** and read by **Read config file**. Its conventions are:
 - **Decimal commas are accepted** and converted internally to decimal points, so
   files saved under a European locale load correctly.
 - **Scalar parameters** are stored under the internal names listed in chapters
-  [4](#4-configuring-a-simulation--the-config-window)–[6](#6-outputs--the-outputs-window)
+  [4](#4-configuring-a-simulation-the-config-window)–[6](#6-outputs-the-outputs-window)
   (e.g. `LIFE_EXPECTANCY_AT_BIRTH_WOMEN`, `MEAN_AGE_UNION`, `SEPARATION`).
-- **Tabular parameters** — the value-list inputs such as the a-priori PPRs,
-  stopping efficacy, spacing proportions and waiting times — are written as
+- **Tabular parameters**, the value-list inputs such as the a-priori PPRs,
+  stopping efficacy, spacing proportions and waiting times, are written as
   indexed rows (`index <tab> value`), with `-1` used as a row sentinel.
 - **Save only non-default values** (`WRITE_ONLY_CHANGES`) shortens the file to
   just the parameters that differ from the defaults; **Write detailed config
@@ -946,13 +952,13 @@ With **Individual results** ticked, KinFert writes one record per individual
 
 ### 11.4 Other files
 
-- **Adjusted values** (`WRITE_ADJUSTED_VALUES`) — the fitted fertility and
+- **Adjusted values** (`WRITE_ADJUSTED_VALUES`): the fitted fertility and
   separation values from the target iterations ([§8.8](#88-targets-iteration-and-adjusted-values)).
-- **Log** (`SAVE_LOG`, or **Save output log**) — the run log.
+- **Log** (`SAVE_LOG`, or **Save output log**): the run log.
 
 ---
 
-## 12. Tutorial — a first simulation
+## 12. Tutorial: a first simulation
 
 A minimal end-to-end run (generic; adapt the numbers to your study):
 
@@ -964,8 +970,8 @@ A minimal end-to-end run (generic; adapt the numbers to your study):
    **PPR values as target**), and the **Union** parameters (mean age at union,
    proportion ever in union).
 5. Set **Number of Egos** (start small, e.g. a few thousand, to test quickly).
-6. Click **Output Options** and tick a few results — e.g. **Cohort TFR**, **Parity
-   by age**, **Kin Statistics** — then **OK**.
+6. Click **Output Options** and tick a few results (for example **Cohort TFR**,
+   **Parity by age**, **Kin Statistics**), then **OK**.
 7. **Save config file**, then **OK** to close the Config window.
 8. On the main window click **Output directory** and choose a folder.
 9. Click **run simulation**. Watch the log and progress bar.
@@ -974,7 +980,7 @@ A minimal end-to-end run (generic; adapt the numbers to your study):
 
 *`[TODO: replace this with a concrete worked example using a real configuration
 file and expected output figures, so users can verify their build reproduces
-known results — this also doubles as a regression test.]`*
+known results; this also doubles as a regression test.]`*
 
 ---
 
@@ -999,7 +1005,7 @@ known results — this also doubles as a regression test.]`*
 
 ## 14. Appendices
 
-### Appendix A — Parameter glossary (demographic regime)
+### Appendix A: Parameter glossary (demographic regime)
 
 The per-cohort regime scalars (enumeration `paramDemReg_double`) map to the Config
 labels as follows:
@@ -1026,7 +1032,7 @@ Iteration-step and run counts (`runtimeParam_longint`): `nStepsUnion_mean/prop/D
 `nStepsAmeno`, `nStepsContrFert`, `nStepsSeparation`, `nStepsContrUseAfterUnion`,
 `gBootstrap_nRuns`, and the cohort range / number of women.
 
-### Appendix B — Key constants
+### Appendix B: Key constants
 
 From `Declarations.pas` (defaults built into the program):
 
@@ -1044,7 +1050,7 @@ From `Declarations.pas` (defaults built into the program):
 *`[TODO: extend with kMaxNbChildren, kMaxNbUnion and any other limits users may
 hit.]`*
 
-### Appendix C — Source-module map
+### Appendix C: Source-module map
 
 **Simulation core**
 
@@ -1081,23 +1087,23 @@ hit.]`*
 | `lazkinheirset.pas`, `lazkindecedentset.pas` | Heirs / decedents sets. |
 | `ComponentHelper.pas` | Binds form controls to parameters. |
 
-### Appendix D — Glossary
+### Appendix D: Glossary
 
 *Fecundability, sterility, amenorrhea, parity, PPR, CTFR, nuptiality, spacing,
-stopping, ego, cohort, demographic regime* — see [§1.4](#14-key-concepts-and-terminology).
+stopping, ego, cohort, demographic regime*, see [§1.4](#14-key-concepts-and-terminology).
 
-### Appendix E — References
+### Appendix E: References
 
 The model draws on established demographic methods named in the code:
 
-- **CAMSIM** and **BACKFOR** — kinship microsimulation by backward projection.
-- **Leridon (2008)** — age schedule of sterility.
-- **Lesthaeghe–Page** — postpartum amenorrhea.
+- **CAMSIM** and **BACKFOR**: kinship microsimulation by backward projection.
+- **Leridon (2008)**: age schedule of sterility.
+- **Lesthaeghe–Page**: postpartum amenorrhea.
 
 *`[TODO: add full bibliographic citations for these and any others (e.g. the
 fecundability / waiting-time and union-formation models).]`*
 
-### Appendix F — Open questions for the author
+### Appendix F: Open questions for the author
 
 The following points need your confirmation to finish the manual:
 
@@ -1110,7 +1116,7 @@ The following points need your confirmation to finish the manual:
 7. The **country inheritance rule sets** and the share formula ([§6.5](#65-inheritance), [§8.7](#87-inheritance)).
 8. Exact **file grammars**: configuration file lines and an example ([§10.1](#101-configuration-command-file)), cohort-file block layout ([§10.2](#102-cohort--demographic-regime-data-file)), and the column layouts of the aggregate tables and microdata files ([§11](#11-output-file-formats)).
 9. The available **drop-down values**: education model, fixed-fertility value, kinship file format ([§4.10](#410-education), [§4.12](#412-model-options-and-other-options), [§6.4](#64-kinship-outputs)).
-10. A concrete **worked example** with known outputs for the tutorial / regression test ([§12](#12-tutorial--a-first-simulation)).
+10. A concrete **worked example** with known outputs for the tutorial / regression test ([§12](#12-tutorial-a-first-simulation)).
 
 ---
 

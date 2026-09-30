@@ -44,8 +44,7 @@ function checkChildrenList (nC: longint; pChild: pInfoChildType): boolean;
 	private
 		personList: array of array of array of TPersonMemoryBlock;
 		nPersons: longint;
-		countLevel1, countLevel2: longint;
-		nw_level1, nw_level2, nw_level3: longint;
+		nw_level2, nw_level3: longint;
 		destroyPersonsCollection: boolean;
 
 	public
@@ -74,7 +73,7 @@ implementation
 	
 procedure incrementNbChildren (var distNbChildren: arrayNbChildren; nbChildren, nbUnion: longint; ageDeathWoman, ageEndFirstUnion: double);
 begin
-	Inc (distNbChildren [allStates50, nbChildren]);
+	InterLockedIncrement (distNbChildren [allStates50, nbChildren]);
 	if nbUnion > 0 then begin
 		if (ageDeathWoman >= 50) then
 			InterLockedIncrement (distNbChildren [alive50EverInUnion, nbChildren]);
@@ -293,47 +292,20 @@ end
 					unionStates.mySize;
 	end;
 
-{$IFDEF CHANGE_IN_MAY2024}
 	Constructor TPersonMemoryManager.Create (approxSize: longint = 0;
 		destroyPersonObjOnExit: boolean = true);
 	begin
 		if (approxSize = 0) then begin
-			nw_level1 := kNumWomen_Level1;
 			nw_level2 := kNumWomen_Level2;
 			nw_level3 := kNumWomen_Level3;
 		end else begin
-			nw_level1 := 3;
-			nw_level3 := min (5000, trunc (approxSize / 3));
-			nw_level2 := trunc (approxSize / nw_level3) + 2;
-		end;
-		destroyPersonsCollection := destroyPersonObjOnExit;
-		nPersons := 0;
-		setLength (personList, nw_level1);
-		countLevel1 := 1;
-		setLength (personList[0], nw_level2);
-		countLevel2 := 1;
-		setLength (personList[0, 0], nw_level3);
-	end;
-{$ELSE}
-	Constructor TPersonMemoryManager.Create (approxSize: longint = 0;
-		destroyPersonObjOnExit: boolean = true);
-	begin
-		if (approxSize = 0) then begin
-			nw_level1 := kNumWomen_Level1;
-			nw_level2 := kNumWomen_Level2;
-			nw_level3 := kNumWomen_Level3;
-		end else begin
-			nw_level1 := 1;
 			nw_level3 := max (kNumWomen_Level3, trunc (approxSize / 3));
 			nw_level2 := trunc (approxSize / nw_level3) + 1;
 		end;
 		destroyPersonsCollection := destroyPersonObjOnExit;
 		nPersons := 0;
-		setLength (personList, nw_level1, nw_level2, nw_level3);
-		countLevel1 := 1;
-		countLevel2 := 1;
+		setLength (personList, 0);
 	end;
-{$ENDIF}
 	
 	Destructor TPersonMemoryManager.Destroy;
 	var
@@ -345,62 +317,21 @@ end
 		setLength (personList, 0);
 	end;
 
-{$IFDEF CHANGE_IN_MAY2024}
 	function TPersonMemoryManager.addPerson (aPersonObj: TPersonMemoryBlock): boolean;
 	var
 		ind1, ind2, ind3: longint;
 	begin
-		result := false;
-		Inc (nPersons);
-		self.indexToArrayPos (nPersons - 1, ind1{%H-}, ind2, ind3{%H-});
-		if (ind1 > nw_level1) then begin
-			Inc (nw_level1);
-			setLength (personList, nw_level1, nw_level2, nw_level3);
-		end;
-		if (ind1 > countLevel1 - 1) then begin
-			Inc (countLevel1);
-		end;
-		if (ind2 > countLevel2 - 1) then begin
-			Inc (countLevel2);
-		end;
+		self.indexToArrayPos (nPersons, ind1{%H-}, ind2{%H-}, ind3{%H-});
+		if (ind1 > high (personList)) then
+			setLength (personList, ind1 + 1);
+		if (length (personList [ind1]) = 0) then
+			setLength (personList [ind1], nw_level2);
+		if (length (personList [ind1, ind2]) = 0) then
+			setLength (personList [ind1, ind2], nw_level3);
 		personList [ind1, ind2, ind3] := aPersonObj;
+		Inc (nPersons);
 		result := true;
 	end;
-{$ELSE}
-	function TPersonMemoryManager.addPerson (aPersonObj: TPersonMemoryBlock): boolean;
-	var
-		ind1, ind2, ind3: longint;
-	begin
-		result := false;
-		Inc (nPersons);
-		self.indexToArrayPos (nPersons - 1, ind1{%H-}, ind2, ind3{%H-});
-		if (ind1 > length (personList) - 1) then begin
-		// Out of memory
-			exit;
-		end;
-		if (ind1 > countLevel1 - 1) then begin
-			Inc (countLevel1);
-			setLength (personList[ind1], nw_level2);
-			// ind2 should be equal to 0
-			if (ind2 <> 0) then begin
-				exit;
-				//myHalt (['ind2 is not right in TPersonMemoryManager.addPerson. Stopping...']);
-			end;
-			setLength (personList[ind1, 0], nw_level3);
-		end;
-		if (ind2 > countLevel2 - 1) then begin
-			Inc (countLevel2);
-			// ind3 should be equal to 0
-			if (ind3 <> 0) then begin
-				exit;
-				//myHalt (['ind3 is not right in TPersonMemoryManager.addPerson. Stopping...']);
-			end;
-			setLength (personList[ind1, ind2], nw_level3);
-		end;
-		personList [ind1, ind2, ind3] := aPersonObj;
-		result := true;
-	end;
-{$ENDIF}
 
 	function TPersonMemoryManager.getPerson (personInd: longint): TPersonMemoryBlock;
 	// personInd is 0 based and the last woman is located at personInd = nPersons - 1

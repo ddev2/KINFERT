@@ -352,12 +352,12 @@ begin
 	currentComponentChange.ActivateDisabling (FindComponent ('FERT_SURVEY_MAX'));
 
 	myComponentHelper.CreateComponentChange(FindComponent ('OUTPUT_INDIVIDUAL_AGE_FLOAT'), g_GENPARAM.OUTPUT_INDIVIDUAL_AGE_FLOAT, currentComponentChange, onChangeHandler);
-	myComponentHelper.CreateComponentChange(FindComponent ('FLOATING_POINT_PRECISION'), g_GENPARAM.outputs_fmt [res_floatingNumberPrecision], currentComponentChange, onChangeHandler, kIsInteger, 1, 15);
-	myComponentHelper.CreateComponentChange(FindComponent ('FLOATING_POINT_DIGITS'), g_GENPARAM.outputs_fmt [res_floatingNumberDigits], currentComponentChange, onChangeHandler, kIsInteger, 1, 10);
-	myComponentHelper.CreateComponentChange(FindComponent ('FERT_SURVEY_MIN'), g_GENPARAM.outputs_fmt [res_fertSurvey_ageMin], currentComponentChange, onChangeHandler, kIsInteger, 1, 30);
-	myComponentHelper.CreateComponentChange(FindComponent ('FERT_SURVEY_MAX'), g_GENPARAM.outputs_fmt [res_fertSurvey_ageMax], currentComponentChange, onChangeHandler, kIsInteger, 1, 99);
-	myComponentHelper.CreateComponentChange(FindComponent ('OUTPUT_MAXNUMUNION'), g_GENPARAM.outputs_fmt [res_numUnion], currentComponentChange, onChangeHandler, kIsInteger, 1, 30);
-	myComponentHelper.CreateComponentChange(FindComponent ('OUTPUT_MAXNUMBIRTHS'), g_GENPARAM.outputs_fmt [res_numBirths], currentComponentChange, onChangeHandler, kIsInteger, 1, 50);
+	myComponentHelper.CreateComponentChange(FindComponent ('FLOATING_POINT_PRECISION'), g_GENPARAM.outputs_fmt [res_floatingNumberPrecision], currentComponentChange, onChangeHandler, kIsInteger, kMinFloatingPointPrecision, kMaxFloatingPointPrecision);
+	myComponentHelper.CreateComponentChange(FindComponent ('FLOATING_POINT_DIGITS'), g_GENPARAM.outputs_fmt [res_floatingNumberDigits], currentComponentChange, onChangeHandler, kIsInteger, kMinFloatingPointDigits, kMaxFloatingPointDigits);
+	myComponentHelper.CreateComponentChange(FindComponent ('FERT_SURVEY_MIN'), g_GENPARAM.outputs_fmt [res_fertSurvey_ageMin], currentComponentChange, onChangeHandler, kIsInteger, kMinFertSurveyAge, kMaxFertSurveyAgeMin);
+	myComponentHelper.CreateComponentChange(FindComponent ('FERT_SURVEY_MAX'), g_GENPARAM.outputs_fmt [res_fertSurvey_ageMax], currentComponentChange, onChangeHandler, kIsInteger, kMinFertSurveyAge, kMaxFertSurveyAgeMax);
+	myComponentHelper.CreateComponentChange(FindComponent ('OUTPUT_MAXNUMUNION'), g_GENPARAM.outputs_fmt [res_numUnion], currentComponentChange, onChangeHandler, kIsInteger, kMinOutputMaxNumUnion, kMaxOutputMaxNumUnion);
+	myComponentHelper.CreateComponentChange(FindComponent ('OUTPUT_MAXNUMBIRTHS'), g_GENPARAM.outputs_fmt [res_numBirths], currentComponentChange, onChangeHandler, kIsInteger, kMinOutputMaxNumBirths, kMaxOutputMaxNumBirths);
 	myComponentHelper.CreateComponentChange(FindComponent ('ZIP_INDIVIDUAL'), g_GENPARAM.ZIP_INDIVIDUAL, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('SAVE_LOG'), g_GENPARAM.SAVE_LOG, currentComponentChange, onChangeHandler);
 	myComponentHelper.CreateComponentChange(FindComponent ('WRITE_FOLDER'), g_GENPARAM.WRITE_FOLDER, currentComponentChange, onChangeHandler);
@@ -371,7 +371,7 @@ begin
 	currentComponentChange.ActivateDisabling (FindComponent ('MULTITHREADING_INITMOTHERHOOD'));
 	currentComponentChange.ActivateDisabling (FindComponent ('MULTITHREADING_SIMKIN'));
 	myComponentHelper.CreateComponentChange(FindComponent ('FORCE_NUM_THREADS'), g_GENPARAM.FORCE_NUM_THREADS, currentComponentChange, onChangeHandler);
-	myComponentHelper.CreateComponentChange(FindComponent ('MAX_THREADS'), g_GENPARAM.outputs_fmt [res_maxThreads], currentComponentChange, onChangeHandler, kIsInteger, 1, 999999);
+	myComponentHelper.CreateComponentChange(FindComponent ('MAX_THREADS'), g_GENPARAM.outputs_fmt [res_maxThreads], currentComponentChange, onChangeHandler, kIsInteger, kMinThreadsUsed, kMaxThreadsUsed);
 
 	myComponentHelper.CreateComponentChange(FindComponent ('OUTPUT_AGGREGATE_FERTILITY'), g_GENPARAM.OUTPUT_AGGREGATE_FERTILITY, currentComponentChange, onChangeHandler);
 	if g_GENPARAM.FERTILITY.value then begin

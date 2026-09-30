@@ -151,6 +151,18 @@
       <Libraries Value="/usr/lib/"/>
       <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
     </SearchPaths>
+    <Conditionals Value="// minimum macOS version, Darwin only
+//if TargetOS=&apos;darwin&apos; then
+//  CustomOptions += &apos; -WM11.0&apos;;
+// example for adding linker options on Mac OS X
+//if TargetOS=&apos;darwin&apos; then
+//  LinkerOptions := &apos; -framework OpenGL&apos;;
+
+// example for adding a unit and include path on Windows
+//if SrcOS=&apos;win&apos; then begin
+//  UnitPath += &apos;;win&apos;;
+//  IncPath += &apos;;win&apos;;
+//end;"/>
     <Parsing>
       <SyntaxOptions>
         <CStyleMacros Value="True"/>
@@ -180,7 +192,8 @@
 -Co
 -CO
 -Cr
--dLAZARUS_GUI"/>
+-dLAZARUS_GUI
+-vm5023,5024,5091,6058,11030,11031"/>
       <OtherDefines Count="1">
         <Define0 Value="LAZARUS_GUI"/>
       </OtherDefines>

@@ -10,41 +10,105 @@ Each ego therefore ends with a genealogical tree spanning descendants, ancestors
 
 ## Status
 
-**This is a pre-release. It is published so that the code and its documentation can be read and checked, not because it is finished.**
+**KinFert is in its verification phase. It is published so that the code, its documentation and
+its results can be read and checked, not because the results are settled.** Nothing a run produces
+should be treated as final until the checks collected in `docs/KinFert-Verification-Plan.md` have
+been made and answered. That document is the list of what is checked, what is not, and how each
+answer would be obtained.
 
-The program has been in use for research, but a systematic audit carried out in August 2026 found a number of defects that affect results. Some are fixed; several are not. Anyone using KinFert for substantive work should read `docs/KinFert-TODO.md` first, and in particular sections 2 and 3.
+The program has been used for research for many years. A systematic audit that began in August 2026
+found a number of defects, and those that affect results have since been corrected: the
+fecundability model, the birth interval and the effect of infant death on it, the parity
+progression adjustment, the intrinsic rate and the net reproduction rate, the infant mortality age
+correction and the life expectancy range, the education module, the lost unions and the union
+setters, the schedule of ages at first union, and, on 30 September 2026, the inheritance rules for
+ascendants and for lateral relatives. `docs/KinFert-FIXED.md` records each one, unit by unit, with
+what it changed.
 
-The findings that are **fixed** are described in `docs/KinFert-FIXED.md`, unit by unit, with what each one changed. A change that has not yet been reviewed is wrapped in the source between two line comments, `// >>> Claude <date> start` and `// <<< Claude <date> end`, so it can be read in place; the markers are removed once the change is accepted.
+What is still open is in `docs/KinFert-TODO.md`. In summary:
 
-The findings that are **still open and affect results** include, at the time of writing:
-
-| ID | Effect |
+| | |
 |---|---|
-| N6b | Separation is tested twice over the months a woman spends on spacing contraception, so the hazard is applied twice to those months. |
-| N7 | The parity progression target adjustment sets progression to near-certainty at parities the simulation never reached, with no convergence test. |
-| N11 | Every cohort after the first loses its parameter list, so an edit to cohort 2 is silently discarded. |
-| N17, N19, N20 | The education module indexes the partner correlation matrix with the wrong sex, dumps a different table from the one in force, and ignores its six parameters in stochastic mode. |
-| N9, N10 | The intrinsic growth rate omits the proportion female at birth, and the net reproduction rate hard-codes 0.488 rather than reading the parameter. |
-| N13, N14 | The infant-mortality age correction is inverted, and a life expectancy outside the tabulated range is warned about but not clamped. |
-| N22 to N26 | Several rules in the inheritance module do not match the succession rules stated in its own header comment. |
+| One deliberate decision | `Kinship.pas`, in the CAMSIM 1987 backward search: the mother is given the year of birth of her own child, so her reproductive life is simulated with the regime of the following generation. Correcting it would change what the algorithm is, so it is left as it stands and set out in `docs/KinFert-Alternate-Mother-Algorithms.md` |
+| One option with no effect | The country inheritance parameter never selects between the two rule sets. Both run unconditionally |
+| Guardrails | Several parameters accept values the model cannot use, and a few indices are computed without bounds. None of them binds while the inputs are sensible |
+| Threading | Questions of object lifetime and memory ordering, in section 4 of the TODO |
+| The dialogs | Faults reachable by clicking rather than by running, in section 8 |
 
-`docs/KinFert-TODO.md` gives the evidence for each one, with the unit and the routine.
+A change that has not yet been reviewed is wrapped in the source between `// >>> Claude <date>
+start` and `// <<< Claude <date> end`, so that it can be read in place; the markers are removed
+once the change is accepted.
+
+Results produced with earlier versions of the program are not comparable with results produced
+today wherever one of the corrected defects was in play.
 
 ## Building from source
 
-KinFert is a desktop application with a graphical interface. It is developed on macOS, including Apple Silicon, and also targets Windows.
+KinFert is a desktop application with a graphical interface. It is developed on macOS, including
+Apple Silicon, and also targets Windows.
 
 You need:
 
-- **Lazarus**, which bundles the **Free Pascal Compiler**. The source is written for **FPC 3.2.2**. The exact Lazarus version used for the reference build is still to be pinned here.
+- **Lazarus 4.6**, which bundles the **Free Pascal Compiler**. The reference build uses
+  **FPC 3.2.2**. Both were installed with fpcupdeluxe.
 - The **LCL** package, which ships with Lazarus.
-- The **TAChartLazarusPkg** package, which also ships with Lazarus and provides the charts on the Graphs window.
+- The **TAChartLazarusPkg** package, which also ships with Lazarus and provides the charts on the
+  Graphs window.
 
-`kinfert.lpi` declares exactly those two packages. To build, open `kinfert.lpi` in Lazarus and compile, or run `lazbuild kinfert.lpi` from a terminal.
+`kinfert.lpi` declares exactly those two packages. To build, open `kinfert.lpi` in Lazarus and
+compile, or run `lazbuild kinfert.lpi` from a terminal.
 
-Compile-time switches live in `Defines.pas`, which every unit includes with `{$I Defines.pas}`. Range checking is on, and `ARM` is defined for `CPUAARCH64`. The `Debug` symbol was removed in August 2026: it was defined in every build, so the blocks it guarded were never optional and are now unconditional. Diagnostics are controlled at run time instead, by the `DEBUG` parameter and by `gRunFromIDE`.
+Compile-time switches live in `Defines.pas`, which every unit includes with `{$I Defines.pas}`.
+Range checking is on, and `ARM` is defined for `CPUAARCH64`. The `Debug` symbol was removed in
+August 2026: it was defined in every build, so the blocks it guarded were never optional and are
+now unconditional. Diagnostics are controlled at run time instead, by the `DEBUG` parameter and by
+`gRunFromIDE`.
 
 Compiled binaries and build artefacts are not stored in the repository.
+
+### On macOS: leave the deployment target alone
+
+Do not add `-WM11.0`, or any other macOS minimum version, to the compiler options. FPC 3.2.2 emits
+Objective-C metadata that Apple's current linker rejects once the deployment target is macOS 11 or
+later, because that turns on chained fixups, and the link then fails inside an LCL Cocoa unit with
+
+```
+ld: malformed method list atom 'ltmp5' (cocoawsextctrls.o), fixups found beyond the number of
+method entries
+```
+
+With the target left at its default the program links. Two groups of messages are then expected and
+harmless: several hundred lines of `ld: warning: object file ... was built for newer macOS version
+(11.0) than being linked (10.15)`, and one line reading `-macosx_version_min has been renamed to
+-macos_version_min`, which Lazarus counts as an error although the link succeeds. A newer Free
+Pascal is the proper remedy and is on the list.
+
+### The two configuration files
+
+The program keeps the folder it reads configurations from, and the folder it writes results to, in
+two small text files beside the executable. Each holds one line, a path ending in a separator. They
+are specific to the machine, so the repository carries templates instead:
+
+```
+cp "KinFert ConfigDir.cfg.example" "KinFert ConfigDir.cfg"
+cp "KinFert OutputDir.cfg.example" "KinFert OutputDir.cfg"
+```
+
+Then edit each one to a folder that exists on your machine. On Windows the line looks like
+`C:\Users\yourname\kinfert\`.
+
+## Binaries
+
+Compiled programs for macOS and for Windows are attached to the releases rather than kept in the
+repository, since neither can be produced from the other without the matching toolchain.
+
+The macOS build is neither signed nor notarised, so on a first open macOS refuses it. Either open
+it once from the Finder with a right click and the Open command, which offers the choice the
+double click does not, or clear the quarantine attribute from a terminal:
+
+```
+xattr -d com.apple.quarantine /path/to/KinFert.app
+```
 
 ## Repository layout
 
@@ -54,6 +118,8 @@ Compiled binaries and build artefacts are not stored in the repository.
 | `kinfert.lpi`, `kinfert.lpr` | The Lazarus project. |
 | `docs/KinFert-Manual.md` | User and reference manual: every window and option, the demographic model, the kin taxonomy, and the file formats. A first draft, with open questions collected in its Appendix F. |
 | `docs/KinFert-TODO.md` | The working list of what remains before a finished release. |
+| `docs/KinFert-Verification-Plan.md` | What has to be verified, one entry per check, with the run to make, the file to look at and the answer to expect. The program is in its verification phase and this is the record of it. |
+| `*.cfg.example` | Templates for the two machine-specific configuration files. |
 | `docs/KinFert-FIXED.md` | What has been corrected since the audit began, and why. |
 | `tools/` | `compareruns.lpr`, which compares two results folders, and the small scripts described in `tools/README.md`. |
 

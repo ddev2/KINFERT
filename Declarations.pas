@@ -18,8 +18,6 @@ const
 	kMinAgeUnion = 10;
 	kMaxAgeUnion = 79;
 	
-	kMinMeanAgeUnion = 15;
-	
 	kMinAgeUnion_women = kMinAgeUnion;
 	kMinAgeUnion_men = kMinAgeUnion + 4;
 	kMaxAgeUnion_women = kMaxAgeUnion - 5;
@@ -61,6 +59,166 @@ const
 	kMean_repartneringAfterWidowhood_women = 2;
 	
 	kNotUsed = -999999999;
+
+	{=========== LIMITS ON WHAT THE USER MAY SUPPLY ===========
+	 One pair of constants for each value the user can set, used in two places and nowhere
+	 else: the dialog, which refuses a value outside the pair as it is typed, and kParameterRange
+	 at the end of this unit, which the readers of a configuration file consult. Before these
+	 existed the same numbers were written twice, as bare arguments in LazConfig, LazOutput and
+	 LazLowlevel and again in the table, and only the dialog had them at all.
+
+	 These are limits on an INPUT. They are not the bounds of an axis: kMinAgeUnion, kMaxAgeFert
+	 and the rest stay what they are, the extent of the arrays indexed by an age, and a constant
+	 named kMin or kMax that bounds an array must not be used as an input limit, nor the reverse.
+	 Every value below is the value the dialog applied on 18 September, so this change refuses
+	 exactly what it refused before. Where a different limit looks more defensible, the reason is
+	 recorded on the line as a suggestion and nothing is changed: each one is a decision for
+	 Daniel, and several of them would alter what a configuration file is allowed to say.
+	 All of them are whole numbers, which is what lets them serve both the dialog, whose two
+	 arguments are longint, and the table, whose two fields are double. A fractional limit would
+	 need those two arguments widened to double first.}
+
+	{Completed fertility. CTFR is computed from the parity progression ratios and shown read only.}
+	kMinCTFR = 0;
+	kMaxCTFR = 100;					{Suggestion of 18 September withdrawn on 29 September: it named
+									 kMaxNbChildrenCalc, 15, which is not the largest number of
+									 children the model gives a woman but the last cell of the
+									 reporting and calculation axes, where every higher parity is
+									 folded. The largest number is kMaxNbChildren, one birth for
+									 each year of the fertile span, which is 50. A mean completed
+									 fertility cannot pass that either, so 50 is the defensible
+									 limit and 100 is twice it. The field is computed and shown
+									 read only, so the limit never binds}
+
+	{Size of a run: NWOMEN and NEGO}
+	kMinPopulationSize = 100;
+	kMaxPopulationSize = 1000000;
+
+	{Life expectancy at birth of each sex}
+	kMinLifeExpectancy = 20;
+	kMaxLifeExpectancy = 112;		{kMaxAgeLife is 130, so this is a judgement about what a life
+									 table should be asked to deliver, not an array bound}
+
+// >>> Claude 2026-09-30 start
+	{Mean age at first union, the parameter of the nuptiality schedule. The two pairs below are
+	 the bounds of an individual age at union, which is what the dialog has always applied to
+	 these two parameters and which is wider than a mean can take. The narrower range a schedule
+	 can actually be built from is kMinMeanAgeUnionSchedule to kMaxMeanAgeUnionSchedule in
+	 Nuptiality, applied to each mean as it arrives; the block at the top of that unit's
+	 implementation explains where both ends come from.
+	 Claude suggestion, for both pairs: 15 and 40, which would bring the range the user is
+	 offered into line with the range the schedule accepts.}
+	kMinMeanAgeUnion = 10;
+	kMaxMeanAgeUnion = 59;			{women}
+	kMinMeanAgeUnionMen = 10;
+	kMaxMeanAgeUnionMen = 69;		{men}
+// <<< Claude 2026-09-30 end
+
+	{Proportion ever in union, by the end of the ages at which a union can start}
+	kMinEverInUnionProp = 0;
+	kMaxEverInUnionProp = 1;
+
+	{Standard deviation of the age at first union, in years}
+	kMinStdDevAgeUnion = 1;
+	kMaxStdDevAgeUnion = 100;		{Claude suggestion: 20. Observed standard deviations of the age
+									 at first union lie between about three and eight years, and a
+									 hundred years is longer than a life}
+
+	{Number of steps over which a parameter is interpolated between its low and high values:
+	 every NSTEP_ parameter}
+	kMinNStepInterpolation = 1;
+	kMaxNStepInterpolation = 50;
+
+	{Proportion of unions ending in separation, and the same after adjustment}
+	kMinSeparationProp = 0;
+	kMaxSeparationProp = 1;
+
+	{Risk of a second separation with respect to the first}
+	kMinSecondSeparationRelRisk = 0;
+	kMaxSecondSeparationRelRisk = 10;
+
+	{Proportion entering another union, after a separation and after a widowhood}
+	kMinRepartneringProp = 0;
+	kMaxRepartneringProp = 1;
+
+	{The two parameters of the Lesthaeghe and Page model of amenorrhea}
+	kMinAmenorrheaParam = -100;
+	kMaxAmenorrheaParam = 100;
+
+	{Length of the fixed amenorrhea, in lunar months, when FIXED_AMENORRHEA is on}
+	kMinFixedAmenorrheaMonths = 0;
+	kMaxFixedAmenorrheaMonths = 100;
+
+	{Effectiveness of contraception, and the proportion of couples practising it}
+	kMinContraceptionProp = 0;
+	kMaxContraceptionProp = 1;
+
+	{A waiting time expressed in years: the time to the first birth after the union starts, and
+	 the mean spacing between births}
+	kMinWaitingTimeYears = 0;
+	kMaxWaitingTimeYears = 8;
+
+	{Proportion female at birth}
+	kMinPropWomenAtBirth = 0;
+	kMaxPropWomenAtBirth = 1;		{Claude suggestion: no observed sex ratio at birth puts the
+									 proportion female outside 0.45 to 0.55, and a value of 0 or 1
+									 makes a population of one sex. The pair cannot say that while
+									 the dialog takes whole numbers}
+
+	{Number of bootstrap replicates}
+	kMinBootstrapRuns = 1;
+	kMaxBootstrapRuns = 1000000;
+
+	{The two parameters that decide how a real number is written}
+	kMinFloatingPointPrecision = 1;
+	kMaxFloatingPointPrecision = 15;
+	kMinFloatingPointDigits = 1;
+	kMaxFloatingPointDigits = 10;	{below 1 the trailing zero strip of StringOfLib had no decimal
+									 point to stop at, which was N45}
+
+	{Ages of the women the fertility survey file covers}
+	kMinFertSurveyAge = 1;
+	kMaxFertSurveyAgeMin = 30;
+	kMaxFertSurveyAgeMax = 99;		{Claude suggestion: kMinAgeFert and kMaxAgeFert, 10 and 59, the
+									 ages at which the model has any fertility to report}
+
+	{Largest number of unions and of births the output files show one person having}
+	kMinOutputMaxNumUnion = 1;
+	kMaxOutputMaxNumUnion = 30;		{the same number as kMaxNbUnion, which is declared further down
+									 this unit and so cannot be named here}
+	kMinOutputMaxNumBirths = 1;
+	kMaxOutputMaxNumBirths = 50;	{no suggestion: 50 is exactly kMaxNbChildren, one birth for each
+									 year of the fertile span, so the limit is already the largest
+									 number of births a person can have. The suggestion of
+									 18 September, kMaxNbChildrenCalc, was withdrawn on
+									 29 September: that constant is 15, the last cell of the
+									 reporting and calculation axes, where every higher parity is
+									 folded, and not a bound on the number of births}
+
+	{Number of threads a run may use}
+	kMinThreadsUsed = 1;
+	kMaxThreadsUsed = 999999;		{Claude suggestion: 1024. Nothing is gained beyond the number of
+									 logical processors, which is the default}
+
+	{Age at which every woman becomes sterile when FIXED_DEFINITIVE_STERILITY is on}
+	kMinAgeFixedSterility = 26;
+	kMaxAgeFixedSterility = kMaxAgeFert;
+
+	{Age at which every woman enters a union when FIXED_AGE_UNION is on. The dialog attaches this
+	 pair to the checkbox rather than to the value, where it decides nothing; the pair is here so
+	 that the dialog and this unit still name the same numbers.}
+	kMinFixedAgeUnion = 1;
+	kMaxFixedAgeUnion = 50;			{Claude suggestion: kMinAgeUnion and kMaxAgeUnion_women, since
+									 the value is an age at union and is truncated to index the
+									 schedule}
+
+	{The parity progression ratios. The other three array fields of the dialog take the pairs of
+	 what they measure: the effectiveness of stopping contraception and the proportion using
+	 spacing contraception are proportions, and the mean spacing is a waiting time in years. The
+	 readers of all four take a whole row at a time and test nothing yet, so for those four these
+	 pairs serve the dialog alone until the readers are given the test.}
+	kMinPPR = 0;
+	kMaxPPR = 1;
 
 type
 	agesLife = kMinAgeLife..kMaxAgeLife;
@@ -216,7 +374,21 @@ const
 
 	inher_Spain = 0;
 	inher_Other = 1;
-	
+
+	{The algorithm used to find the mother of a reference child. KINFERT is the one the model
+	 uses and the one the published results rest on; the other four are the published
+	 algorithms, kept so that the five can be run on the same configuration and compared.
+	 Kinship.pas holds one function for each of them and one flag for each of the four
+	 alternates, and applyMotherAlgorithm there turns the value below into those flags.}
+	mother_KINFERT = 0;
+	mother_BACKFOR = 1;
+	mother_BACKFOR_mixed = 2;
+	mother_CAMSIM_1987 = 3;
+	mother_CAMSIM_1993 = 4;
+
+	str_motherAlgorithm: array [mother_KINFERT..mother_CAMSIM_1993] of string = (
+				'KINFERT', 'BACKFOR', 'BACKFOR_MIXED', 'CAMSIM_1987', 'CAMSIM_1993');
+
 	no_union = 0;
 	end_by_death = 1;
 	end_by_widowhood = 2;
@@ -331,6 +503,7 @@ type
 	EduStatusName = class;
 	KinFileFmtName = class;
 	CountryInheritanceName = class;
+	MotherAlgorithmName = class;
 	
 	KinListName = class;
 	FieldListName = class;
@@ -461,6 +634,15 @@ type
 		relativeFecundabilityLevel: double;
 		{== durationFecundInMonths: longint; ==}
 		levelFecundabilityAge: TabFecundAges;
+		{The reciprocal of the multiplier levelFecundabilityAge was built with, set once by
+		 initFecundLife. levelFecundabilityAge carries the woman's own age schedule, which is the
+		 general schedule of fecundability by age up to the age at which her own decline starts
+		 and her Leridon taper from there to her age at sterility, the whole of it multiplied by
+		 her heterogeneity multiplier. Multiplying by this reciprocal takes that multiplier back
+		 out and leaves the age schedule alone, which is what RESHUFFLED_FECUNDABILITY needs when
+		 it draws a new multiplier for each cycle. It costs one multiplication in the inner loop
+		 instead of a division.}
+		invRelativeFecundabilityLevel: double;
 		// whether the woman has reached her desired fertility level
 		// which corresponds to the case when a random draw is greater
 		// than the PPR for her current parity
@@ -537,7 +719,10 @@ type
 		destructor Destroy; override;
 		procedure initUnion (indUnion: longint; initAges: boolean = true);
 		function mySize: longint;
-		procedure copyMe(var o: TUnionsType);
+// >>> Claude 2026-09-30 start
+		procedure copyMe(out o: TUnionsType);	{out, not var: the routine creates the object
+												 and never reads what it was given}
+// <<< Claude 2026-09-30 end
 		procedure newUnion(initAges: boolean = true);
 		procedure visualizeIncoherentUnions(forceWrite: boolean = false);
 		function checkMe (pRelative: pRelativeType): boolean;
@@ -647,6 +832,18 @@ type
 		inKinSet: boolean; {whether that person is linked to at least another relative in the output file with information for each individual}
 
 		typeHeir: typeOfHeirs;
+// >>> Claude 2026-09-30 start
+		{N26: the first algorithm of the inheritance module answers with one branch of the
+		 kinship tree in typeHeir, and the partner is one of those branches, so a relative whose
+		 heirs are the children cannot at the same time be recorded as leaving a surviving
+		 partner who inherits. The succession rules the second algorithm applies do give the
+		 partner a share alongside the descendants or the ascendants, depending on
+		 PARTNER_FIRST_HEIR and PARTNER_FULL_HEIR, so the two answers cannot be compared from
+		 typeHeir alone. This field records the partner test of the first algorithm for every
+		 relative it examines, whatever branch typeHeir ends up naming. It is read by checkHeirs
+		 and by nothing else, so it changes no simulated quantity.}
+		partnerCanInherit: boolean;
+// <<< Claude 2026-09-30 end
 		//egoAsHeir: typeEgoAsHeir;
 		// First algorithm, with incomplete information on heirs (complete only for ego)
 		nHeirs: longint;
@@ -747,6 +944,7 @@ type
 		eduKind: EduStatusName;
 		kinIndFmt: KinFileFmtName;
 		countryInheritance: CountryInheritanceName;
+		motherAlgorithm: MotherAlgorithmName;
 		
 		{COMMAND FILE}
 		DUMP, DUMPALL, DUMPALLCOHORTS, CREATE_COHORT_FILE, ZIP_INDIVIDUAL, SAVE_LOG, TALKATIVE,
@@ -756,6 +954,8 @@ type
 		FERTILITY, KINSHIP, SURVIVALPARENTS, FIXED_FERTILITY,
 		STABLE_POPULATION, PPR_TARGET, FORCE_PPR_TARGET, SEP_TARGET, FORCE_SEP_ITER,
 		INIT_RANDOM_NUMBERS,
+		{only read when MOTHER_ALGORITHM is CAMSIM_1993}
+		CAMSIM_1993_ANY_AGE_UNION,
 		OUTPUT_INDIVIDUAL_FERTILITY_INFO,
 		OUTPUT_INDIVIDUAL_FERTILITY_INFO_EXTENDED,
 		OUTPUT_INDIVIDUAL_KINSHIP_INFO,
@@ -903,6 +1103,14 @@ type
 		readInConfigFile: boolean; // whether the value was read in the config file
 		next: GenericName;
 		checkIt: boolean;
+		{The range of values this parameter accepts, which the readers below test. hasRange is
+		 false until setRange is called, and a parameter with no range is read as before. Both ends
+		 are doubles, which represent a longint exactly over the range these parameters use.}
+		hasRange: boolean;
+		minValue, maxValue: double;
+		procedure setRange (lo, hi: double);
+		{true when v lies outside the range; the reader writes the message}
+		function outOfRange (v: double): boolean;
 
 		constructor Create (n: string; c: string; linkedListOfParams: GenericName = nil; check: boolean = false); overload;
 		destructor Destroy; override;
@@ -1007,6 +1215,20 @@ type
 		function readValue (s: string): word; override;
 		procedure setChanged; override;
 		procedure copyMeTo (var toObj: KinFileFmtName); overload;
+	end;
+
+	MotherAlgorithmType = mother_KINFERT..mother_CAMSIM_1993;
+	MotherAlgorithmName = class(GenericName)
+	public
+		value: MotherAlgorithmType;
+		default: MotherAlgorithmType;
+		constructor Create(v: MotherAlgorithmType; n: string; c: string; linkedListOfParams: GenericName = nil); overload;
+		function defaultValue: string; override;
+		{accepts either the name of the algorithm, as str_motherAlgorithm spells it, or its
+		 number, so that a configuration file can read either way round}
+		function readValue (s: string): word; override;
+		procedure setChanged; override;
+		procedure copyMeTo (var toObj: MotherAlgorithmName); overload;
 	end;
 
 	Inheritance_Country_Rules = inher_Spain..inher_Other;
@@ -1312,6 +1534,14 @@ Var
 {$ENDIF}
 
 	procedure GenParamSetChangedValues;
+	{Gives every parameter of one list the range the table below states for its name, and
+	 answers how many entries of the table the list claimed. forgetParameterRangesFound clears the
+	 record of what has been claimed and reportParameterRangesNotFound writes, under TALKATIVE,
+	 the entries no list claimed, which is how a name in the table that no longer matches a
+	 parameter is noticed.}
+	function applyParameterRanges (head: GenericName): longint;
+	procedure forgetParameterRangesFound;
+	procedure reportParameterRangesNotFound;
 	procedure LookMemory;
 	function sizeOfRelativeType (pRelative: pRelativeType): longint;
 
@@ -1457,6 +1687,9 @@ end;
 				sizeOf (nUnions) +
 				sizeOf (partnershipStatusAt50) +
 				sizeOf (typeOfHeirs) +
+// >>> Claude 2026-09-30 start
+				sizeOf (partnerCanInherit) +
+// <<< Claude 2026-09-30 end
 				sizeOf (nHeirs) +
 				sizeOf (heirs) +
 				sizeOf (nInheritances) +
@@ -1492,6 +1725,23 @@ end;
 	end;
 
 
+	procedure GenericName.setRange (lo, hi: double);
+	{Called by applyParameterRanges from the table at the end of this unit. A pair in the
+	 wrong order, or an empty range, is refused rather than stored, since it would refuse every
+	 value the file offers.}
+	begin
+		if (hi > lo) then begin
+			minValue := lo;
+			maxValue := hi;
+			hasRange := true;
+		end;
+	end;
+
+	function GenericName.outOfRange (v: double): boolean;
+	begin
+		result := hasRange and ((v < minValue) or (v > maxValue));
+	end;
+
 	constructor GenericName.Create (n: string; c: string; linkedListOfParams: GenericName = nil; check: boolean = false); overload;
 	begin
 		inherited Create;
@@ -1500,6 +1750,9 @@ end;
 		changed := false;
 		optional := false;
 		readInConfigFile := false;
+		hasRange := false;
+		minValue := 0.0;
+		maxValue := 0.0;
 		checkIt := check;
 		if checkIt then
 			checkIt := checkIt;
@@ -1553,10 +1806,18 @@ procedure GenericName.copyMeTo (var toObj: GenericName);
 	end;
 
 	function LongintName.readValue (s: string): word;
+	{as in DoubleName.readValue above}
 	begin
 		val ( s, value, result );
-		if (result = 0) then
-			readInConfigFile := true;
+		if (result = 0) then begin
+			if outOfRange (value) then begin
+				writeAndWaitConst (['===> ERROR: ', name, ' = ', value,
+						' lies outside the range this parameter accepts, ', minValue, ' to ', maxValue]);
+				value := default;
+				result := 1;
+			end else
+				readInConfigFile := true;
+		end;
 	end;
 	
 	procedure LongintName.setChanged;
@@ -1621,10 +1882,23 @@ procedure GenericName.copyMeTo (var toObj: GenericName);
 	end;
 
 	function DoubleName.readValue (s: string): word;
+	{A value the dialog would refuse is now refused here as well. The range comes from the
+	 table at the end of this unit, which applyParameterRanges gives to the parameter when it is
+	 created, so the reader and the dialog work from the same numbers. Without a range the reader
+	 behaves as it did. An out of range value is reported, the parameter keeps its default, and a
+	 non zero code is returned, which is what checkCode turns into a refusal of the file: the same
+	 treatment a malformed value receives.}
 	begin
 		val ( s, value, result );
-		if (result = 0) then
-			readInConfigFile := true;
+		if (result = 0) then begin
+			if outOfRange (value) then begin
+				writeAndWaitConst (['===> ERROR: ', name, ' = ', value,
+						' lies outside the range this parameter accepts, ', minValue, ' to ', maxValue]);
+				value := default;
+				result := 1;
+			end else
+				readInConfigFile := true;
+		end;
 	end;
 	
 	procedure DoubleName.setChanged;
@@ -1692,10 +1966,19 @@ procedure GenericName.copyMeTo (var toObj: GenericName);
 	end;
 
 	function DoubleCumulName.readValue (s: string): word;
+	{as in DoubleName.readValue above. No entry of the table names a parameter of this class
+	 today, so the test is inert until one does.}
 	begin
 		val ( s, value, result );
-		if (result = 0) then
-			readInConfigFile := true;
+		if (result = 0) then begin
+			if outOfRange (value) then begin
+				writeAndWaitConst (['===> ERROR: ', name, ' = ', value,
+						' lies outside the range this parameter accepts, ', minValue, ' to ', maxValue]);
+				value := default;
+				result := 1;
+			end else
+				readInConfigFile := true;
+		end;
 	end;
 	
 	procedure DoubleCumulName.setChanged;
@@ -1928,6 +2211,60 @@ procedure GenericName.copyMeTo (var toObj: GenericName);
 		toObj.default := default;
 	end;
 
+	constructor MotherAlgorithmName.Create(v: MotherAlgorithmType; n: string; c: string; linkedListOfParams: GenericName = nil);
+	begin
+		inherited Create(n, c, linkedListOfParams);
+		value := v;
+		default := v;
+	end;
+
+	function MotherAlgorithmName.defaultValue: string;
+	begin
+		result := str_motherAlgorithm [default];
+	end;
+
+	function MotherAlgorithmName.readValue (s: string): word;
+	{The name of the algorithm is accepted as well as its number, so that a configuration file
+	 can say MOTHER_ALGORITHM=CAMSIM_1993 rather than MOTHER_ALGORITHM=4. An unknown name and a
+	 number outside the range are both refused with code 1, which is what checkCode reports.}
+	var
+		lValue: longint;
+		alg: MotherAlgorithmType;
+		nameGiven: string;
+	begin
+		result := 1;
+		nameGiven := upperCase (trim (s));
+		for alg := low (MotherAlgorithmType) to high (MotherAlgorithmType) do
+			if (nameGiven = upperCase (str_motherAlgorithm [alg])) then begin
+				value := alg;
+				result := 0;
+			end;
+		if (result <> 0) then begin
+			val ( s, lValue, result );
+			if (result = 0) then begin
+				if (lValue < low (MotherAlgorithmType)) or (lValue > high (MotherAlgorithmType)) then
+					result := 1
+				else
+					value := MotherAlgorithmType (lValue);
+			end;
+		end;
+		if (result = 0) then
+			readInConfigFile := true;
+	end;
+
+	procedure MotherAlgorithmName.setChanged;
+	begin
+		changed := default <> value;
+	end;
+
+	procedure MotherAlgorithmName.copyMeTo (var toObj: MotherAlgorithmName);
+	begin
+		if toObj = nil then exit;
+		inherited copyMeTo (GenericName (toObj));
+		toObj.value := value;
+		toObj.default := default;
+	end;
+
 	constructor CountryInheritanceName.Create(v: Inheritance_Country_Rules; n: string; c: string; linkedListOfParams: GenericName = nil);
 	begin
 		inherited Create(n, c, linkedListOfParams);
@@ -2145,7 +2482,9 @@ procedure GenericName.copyMeTo (var toObj: GenericName);
 		result := InstanceSize + length (Unions) * sizeOf (UnionAgeDurationsType);
 	end;
 
-	procedure TUnionsType.copyMe(var o: TUnionsType);
+// >>> Claude 2026-09-30 start
+	procedure TUnionsType.copyMe(out o: TUnionsType);
+// <<< Claude 2026-09-30 end
 	var
 		indUnion: longint;
 		ageFec: FecundAges;
@@ -2165,6 +2504,7 @@ procedure GenericName.copyMeTo (var toObj: GenericName);
 		o.nbChildren := nbChildren;
 		o.fecundLife.ageSterile := fecundLife.ageSterile;
 		o.fecundLife.relativeFecundabilityLevel := fecundLife.relativeFecundabilityLevel;
+		o.fecundLife.invRelativeFecundabilityLevel := fecundLife.invRelativeFecundabilityLevel;	{for RESHUFFLE FECUNDABILITY}
 		for ageFec := low(FecundAges) to high(FecundAges) do
 			o.fecundLife.levelFecundabilityAge [ageFec] := fecundLife.levelFecundabilityAge [ageFec];
 		o.fecundLife.stopping := fecundLife.stopping;
@@ -2368,6 +2708,115 @@ procedure GenericName.copyMeTo (var toObj: GenericName);
 			aParam.setChanged;
 			aParam := aParam.next;
 		end;
+	end;
+
+	{The range each parameter accepts, by the name it carries in a configuration file.
+	 Every entry is the range the dialog already applies to that field, transcribed on
+	 18 September from the CreateComponentChange calls of LazConfig, LazOutput and LazLowlevel,
+	 so that the dialog and the reader of a configuration file refuse the same values. The dialog
+	 keeps its own copy for now, and it is the place where a range is stated to the user; when the
+	 two are brought together, it is this table the dialog should read.
+	 Every name was checked against the parameter it names on 18 September. Four of the fields
+	 that carry a range in the dialog are arrays, APRIORI_PPR, EFF_STOPPING_CONTRACEP,
+	 PROP_USING_SPACING and WAITING_TIME_SPACING, whose readers take a whole row at a time and
+	 test nothing yet, so they are not here. CTFR is computed and read only. The 1 to 50 that the
+	 dialog attaches to FIXED_AGE_UNION belongs to the checkbox rather than to a value.
+	 A dialog range is not always the range a parameter should take. The two mean ages at union
+	 are bound here by the range of an individual age at union, 10 to 59 for women and 10 to 69
+	 for men, which is deliberate; the narrower range a mean requires is applied where the two
+	 means arrive in Nuptiality, which is N53.}
+	type
+		TParameterRange = record
+			name: string;
+			lo, hi: double;
+		end;
+	const
+		kParameterRange: array [0..40] of TParameterRange = (
+		(name: 'NSTEP_CONTRACEPTION';               lo: kMinNStepInterpolation;            hi: kMaxNStepInterpolation),
+		(name: 'NWOMEN';                            lo: kMinPopulationSize;                hi: kMaxPopulationSize),
+		(name: 'NEGO';                              lo: kMinPopulationSize;                hi: kMaxPopulationSize),
+		(name: 'LIFE_EXPECTANCY_AT_BIRTH_WOMEN';    lo: kMinLifeExpectancy;                hi: kMaxLifeExpectancy),
+		(name: 'LIFE_EXPECTANCY_AT_BIRTH_MEN';      lo: kMinLifeExpectancy;                hi: kMaxLifeExpectancy),
+		(name: 'MEAN_AGE_UNION';                    lo: kMinMeanAgeUnion;                  hi: kMaxMeanAgeUnion),
+		(name: 'MEAN_AGE_UNION_HIGH';               lo: kMinMeanAgeUnion;                  hi: kMaxMeanAgeUnion),
+		(name: 'NSTEP_UNION_MEAN';                  lo: kMinNStepInterpolation;            hi: kMaxNStepInterpolation),
+		(name: 'EVER_INUNION_PROP';                 lo: kMinEverInUnionProp;               hi: kMaxEverInUnionProp),
+		(name: 'EVER_INUNION_PROP_HIGH';            lo: kMinEverInUnionProp;               hi: kMaxEverInUnionProp),
+		(name: 'NSTEP_UNION_PROP';                  lo: kMinNStepInterpolation;            hi: kMaxNStepInterpolation),
+		(name: 'STD_DEV_AGE_UNION';                 lo: kMinStdDevAgeUnion;                hi: kMaxStdDevAgeUnion),
+		(name: 'NSTEP_UNION_STDDEV';                lo: kMinNStepInterpolation;            hi: kMaxNStepInterpolation),
+		(name: 'MEAN_AGE_UNION_MEN';                lo: kMinMeanAgeUnionMen;               hi: kMaxMeanAgeUnionMen),
+		(name: 'EVER_INUNION_PROP_MEN';             lo: kMinEverInUnionProp;               hi: kMaxEverInUnionProp),
+		(name: 'SEPARATION';                        lo: kMinSeparationProp;                hi: kMaxSeparationProp),
+		(name: 'SEPARATION_ADJUSTED';               lo: kMinSeparationProp;                hi: kMaxSeparationProp),
+		(name: 'NSTEP_SEPARATION';                  lo: kMinNStepInterpolation;            hi: kMaxNStepInterpolation),
+		(name: 'SECOND_SEPARATION_REL_RISK';        lo: kMinSecondSeparationRelRisk;       hi: kMaxSecondSeparationRelRisk),
+		(name: 'REPARTNERING_WOMEN';                lo: kMinRepartneringProp;              hi: kMaxRepartneringProp),
+		(name: 'REPARTNERING_MEN';                  lo: kMinRepartneringProp;              hi: kMaxRepartneringProp),
+		(name: 'REPARTNERING_WIDOWHOOD_WOMEN';      lo: kMinRepartneringProp;              hi: kMaxRepartneringProp),
+		(name: 'REPARTNERING_WIDOWHOOD_MEN';        lo: kMinRepartneringProp;              hi: kMaxRepartneringProp),
+		(name: 'AMENO_ALPHA';                       lo: kMinAmenorrheaParam;               hi: kMaxAmenorrheaParam),
+		(name: 'AMENO_BETA';                        lo: kMinAmenorrheaParam;               hi: kMaxAmenorrheaParam),
+		(name: 'NSTEP_AMENORRHEA';                  lo: kMinNStepInterpolation;            hi: kMaxNStepInterpolation),
+		(name: 'ZERO_FIXED_AMENORRHEA_';            lo: kMinFixedAmenorrheaMonths;         hi: kMaxFixedAmenorrheaMonths),
+		(name: 'EFF_CONTRACEP_BEFORE_UNION';        lo: kMinContraceptionProp;             hi: kMaxContraceptionProp),
+		(name: 'CONTRACEP_TIME_AFTER_FIRST_UNION';  lo: kMinWaitingTimeYears;              hi: kMaxWaitingTimeYears),
+		(name: 'NSTEP_CONTRACEP_BEFORE_FIRST_CHILD'; lo: kMinNStepInterpolation;            hi: kMaxNStepInterpolation),
+		(name: 'PROP_CONTRACEP_AFTER_FIRST_UNION';  lo: kMinContraceptionProp;             hi: kMaxContraceptionProp),
+		(name: 'PROP_WOMEN_AT_BIRTH';               lo: kMinPropWomenAtBirth;              hi: kMaxPropWomenAtBirth),
+		(name: 'BOOTSTRAP_NRUNS';                   lo: kMinBootstrapRuns;                 hi: kMaxBootstrapRuns),
+		(name: 'FLOATING_POINT_PRECISION';          lo: kMinFloatingPointPrecision;        hi: kMaxFloatingPointPrecision),
+		(name: 'FLOATING_POINT_DIGITS';             lo: kMinFloatingPointDigits;           hi: kMaxFloatingPointDigits),
+		(name: 'FERT_SURVEY_MIN';                   lo: kMinFertSurveyAge;                 hi: kMaxFertSurveyAgeMin),
+		(name: 'FERT_SURVEY_MAX';                   lo: kMinFertSurveyAge;                 hi: kMaxFertSurveyAgeMax),
+		(name: 'OUTPUT_MAXNUMUNION';                lo: kMinOutputMaxNumUnion;             hi: kMaxOutputMaxNumUnion),
+		(name: 'OUTPUT_MAXNUMBIRTHS';               lo: kMinOutputMaxNumBirths;            hi: kMaxOutputMaxNumBirths),
+		(name: 'MAX_THREADS';                       lo: kMinThreadsUsed;                   hi: kMaxThreadsUsed),
+		(name: 'AGE_FIXED_DEFINITIVE_STERILITY_';   lo: kMinAgeFixedSterility;             hi: kMaxAgeFixedSterility)
+		);
+	var
+		gParameterRangeFound: array [0..40] of boolean;
+
+	function applyParameterRanges (head: GenericName): longint;
+	var
+		aParam: GenericName;
+		ind: longint;
+	begin
+		result := 0;
+		aParam := head;
+		while aParam <> nil do begin
+			for ind := low (kParameterRange) to high (kParameterRange) do
+				if (aParam.name = kParameterRange [ind].name) then begin
+					aParam.setRange (kParameterRange [ind].lo, kParameterRange [ind].hi);
+					gParameterRangeFound [ind] := true;
+					Inc (result);
+					break;
+				end;
+			aParam := aParam.next;
+		end;
+	end;
+
+	procedure forgetParameterRangesFound;
+	var
+		ind: longint;
+	begin
+		for ind := low (kParameterRange) to high (kParameterRange) do
+			gParameterRangeFound [ind] := false;
+	end;
+
+	procedure reportParameterRangesNotFound;
+	var
+		ind: longint;
+		missing: string;
+	begin
+		if (g_GENPARAM.TALKATIVE = nil) or (not g_GENPARAM.TALKATIVE.value) then exit;
+		missing := '';
+		for ind := low (kParameterRange) to high (kParameterRange) do
+			if not gParameterRangeFound [ind] then
+				missing := missing + ' ' + kParameterRange [ind].name;
+		if (missing <> '') then
+			writeAndWaitConst (['===> WARNING: no parameter answers to these names of the table of ranges:',
+					missing]);
 	end;
 	
 	procedure LookMemory;

@@ -1,0 +1,28 @@
+# Line endings. The repository stores text as LF; a checkout on Windows may
+# still use CRLF locally where the tooling asks for it. Without this file the
+# same unit committed from macOS and from Windows differs in every line, and a
+# real change disappears inside a whole-file diff.
+
+*.pas   text eol=lf
+*.pp    text eol=lf
+*.lpr   text eol=lf
+*.inc   text eol=lf
+*.lfm   text eol=lf
+*.lpi   text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.cfg   text eol=lf
+*.example text eol=lf
+.gitignore    text eol=lf
+.gitattributes text eol=lf
+
+# Binary, never touched.
+*.png   binary
+*.jpg   binary
+*.pdf   binary
+*.docx  binary
+*.zip   binary
+*.res   binary
+*.ico   binary
+*.icns  binary
+*.exe   binary

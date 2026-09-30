@@ -128,7 +128,6 @@ TGraphsForm = class(TForm)
 	procedure SexCreate;
 	procedure ChildGroomCreate;
 	procedure ChildGroomChange(Sender: TObject);
-// >>> Claude 2026-09-12 start
 	procedure drawUnionsByGroomCohort;
 	procedure drawSearchBoth;
 	procedure drawSearchByGeneration (const total, miss: array of arrayOfLongint; what: string;
@@ -141,7 +140,6 @@ TGraphsForm = class(TForm)
 	procedure setChart5Axis (title, labelX, labelY: string; first, last: longint; yMax: double);
 	procedure noSearchRecorded (what: string);
 	function searchSummary (nSearches, nMissed: longint): string;
-// <<< Claude 2026-09-12 end
 	procedure ChildGroomEnter(Sender: TObject);
 	procedure ChildGroomClose(Sender: TObject);
 	procedure KinTypesChange(Sender: TObject);
@@ -1339,7 +1337,6 @@ const
 		OutputsKinshipChange(Sender);
 	end;
 
-// >>> Claude 2026-09-12 start
 	{The Children-Grooms tab, rebuilt.
 
 	 One question is asked here, and these charts exist to answer it: does the pre-simulation
@@ -1379,7 +1376,6 @@ const
 		end;
 		ChildGroomChange(self);
 	end;
-// <<< Claude 2026-09-12 end
 
 	function cLabelsX (minVal, maxVal: longint): arrayOfDouble;
 	var
@@ -1400,7 +1396,6 @@ const
 		end;
 	end;
 
-// >>> Claude 2026-09-12 start
 	{Decades covering [first, last], for a chart drawn over an arbitrary span of cohorts.
 	 cLabelsX above always widens by kStateRangeLengthLimit on each side, which these charts
 	 cannot use because they trim the span they draw.}
@@ -1751,7 +1746,6 @@ const
 			drawUnionsByGroomCohort;
 		end;
 	end;
-// <<< Claude 2026-09-12 end
 
 	procedure TGraphsForm.ChildGroomEnter(Sender: TObject);
 	begin

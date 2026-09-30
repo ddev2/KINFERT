@@ -31,7 +31,7 @@ uses
 							param_ageUnion: double;
 							param_currentUnionNumber: longint;
 							var unionStates: TUnionsType;
-							out ageChildren: TabCompFertAge;
+							var ageChildren: TabCompFertAge;
 							var pChild: pInfoChildType;
 							var fecundLife: FecundLifeType;
 							objOutputFert: TOutputFertility;
@@ -53,7 +53,6 @@ uses
 
 implementation
 
-// >>> Claude 2026-09-12 start
 const
 	{The parity progression adjustment of computeGenFert. Four passes was the fixed count before
 	 N7 was fixed and is kept as the ceiling; the loop now leaves as soon as the cohort total
@@ -62,7 +61,6 @@ const
 	 rounds its result to three decimals.}
 	kMaxIterationsPPR = 4;
 	kPPRTargetTolerance = 0.01;
-// <<< Claude 2026-09-12 end
 
 	function compute_aprioriDF(pDemReg: pStructDemographicRegimeSettings): double;
 	var
@@ -746,28 +744,17 @@ end;
 			result := monthStart;
 	end;
 
-// BUG  **N49**  addChild declares its table as out and then accumulates into it
-// An out parameter promises that the routine writes the whole thing and reads nothing of what
-// was there. This one does the opposite: both lines read the current value and add to it. It
-// works only because Free Pascal does not clear a plain array passed as out, which is an
-// implementation detail and not a promise. The compiler is entitled to clear it, and a future
-// version that does would silently reset the whole table of children by age at every birth.
-// The same declaration appears on fixedNumChildren and calcCompleteFertilityWoman, which pass
-// the table down to here.
-// Proposed fix: declare the parameter var in all three, since the routine accumulates. No
-// behaviour changes today; what changes is that the declaration stops lying.
-	procedure addChild (age: FecundAges; order: DistribChildrenCalc; number: longint; out ageChildren: TabCompFertAge);
+	procedure addChild (age: FecundAges; order: DistribChildrenCalc; number: longint; var ageChildren: TabCompFertAge);
 	begin
 		ageChildren[age, 0] := ageChildren[age, 0] + number;
 		ageChildren[age, order] := ageChildren[age, order] + number;
 	end;
-// END BUG
 				
 	function fixedNumChildren (
 							randomGenerator: TRandomNumberGenerator;							
 							pDemReg: pStructDemographicRegimeSettings;
 							var unionStates: TUnionsType;
-							out ageChildren: TabCompFertAge;
+							var ageChildren: TabCompFertAge;
 							var pChild: pInfoChildType;
 							var fecundLife: FecundLifeType;
 							objOutputFert: TOutputFertility;
@@ -843,7 +830,7 @@ which will prevent some things, like the use of the time profiler as well as wri
 							param_ageUnion: double;
 							param_currentUnionNumber: longint;
 							var unionStates: TUnionsType;
-							out ageChildren: TabCompFertAge;
+							var ageChildren: TabCompFertAge;
 							var pChild: pInfoChildType;
 							var fecundLife: FecundLifeType;
 							objOutputFert: TOutputFertility;
@@ -863,8 +850,11 @@ which will prevent some things, like the use of the time profiler as well as wri
 		{Number of children in current union}
 		var
 			aleaFecundability: double;
+			fecundabilityThisCycle: double;	{RESHUFFLED_FECUNDABILITY}
 			pPreviousChild: pInfoChildType;
 			currAge: FecundAges;
+			ageThisCycle: longint;	{the age at the current cycle, before it is tested and
+									 brought inside the bounds of FecundAges}
 			{monthStart, monthEnd and currMonth count lunar months since the woman's birth,
 			 so lunarMonthsToAge turns any of them into an age}
 			monthStart, monthEnd, currMonth: longint;
@@ -1132,30 +1122,6 @@ which will prevent some things, like the use of the time profiler as well as wri
 						pregnancy := nonSusceptibleLiveBirth;
 				end;
 				
-// BUG  **N4c**  the redraw after each birth discards the woman's own age schedule
-// With RESHUFFLED_FECUNDABILITY on, this rebuilds levelFecundabilityAge for every age from
-// gFecundability, the plain age schedule. That throws away what initFecundLife had put
-// there: the Leridon taper, which lowers fecundability linearly over the 12.5 years before
-// the woman's own age at sterility, and the adjustment made when that age falls below 33.
-// After the first birth the woman is back on the untapered schedule and stays fecund at
-// ages where the model says she should not be.
-// It is also a different model of heterogeneity. Drawing a new level at every interval
-// turns variation BETWEEN women into variation WITHIN a woman, so the between-woman
-// variance the Leridon parameterisation asks for is lost, and the check on the
-// heterogeneity distribution still passes because the draws themselves are correct.
-// Proposed fix: redraw the level only, then rebuild the schedule the way initFecundLife
-// does, taper included, or leave the routine alone and state in the manual that this
-// switch means within-woman variation and is not Leridon's model. **Decide which**, since
-// the two answers are different models rather than a right and a wrong version.
-				if g_GENPARAM.fixedParameters [reshuffledFecundability].state.value then begin
-				// Relative level of fecundability changes for each interval
-					fecundLife.relativeFecundabilityLevel := fecundabilityLevel (randomGenerator);
-					for currAge := kMinAgeFert to kMaxAgeFert do
-					begin
-						fecundLife.levelFecundabilityAge[currAge] :=  fecundLife.relativeFecundabilityLevel * gFecundability[currAge];
-					end;
-				end;
-// END BUG
 			end; {pregnancy}
 			
 			var
@@ -1225,18 +1191,47 @@ try // 2
 			ageDurationEvents.monthStart := currMonth;
 			while (currMonth <= monthEnd) and (not endUnion) do
 			begin
-				currAge := trunc ( lunarMonthsToAge (currMonth) );
-				{on currAge, which is the index used below, and not on the fractional age: the last
-				 month of the fertile life is 719, whose fractional age is 59.92, above kMaxAgeFert,
-				 so a test on the fraction would report a failure for every woman still in a union
-				 at that age. What has to hold is that the index into the fecundability tables is
-				 inside their bounds.}
+				ageThisCycle := trunc ( lunarMonthsToAge (currMonth) );
+				{The test is on the index into the fecundability tables and not on the fractional
+				 age. The last month of the fertile life is 719, whose fractional age is 59.92,
+				 above kMaxAgeFert, so a test on the fraction would report a failure for every
+				 woman still in a union at that age. What has to hold is that the index is inside
+				 the bounds of the tables.
+				 The value tested is ageThisCycle, a plain longint, and not currAge, whose type
+				 FecundAges has kMinAgeFert and kMaxAgeFert as its own bounds. Written on currAge
+				 the test could never report anything: with range checking on, an age outside the
+				 bounds raises a range error on the assignment, before the test is reached, and
+				 with range checking off the two comparisons are constantly false. The value is
+				 brought inside the bounds only after the test, so that a run which is not stopped
+				 at the failure carries on with a legal index instead of failing on the assignment.}
 				if checkFalse (chk_currAgeInFecundRange,
-					(currAge < kMinAgeFert) or (currAge > kMaxAgeFert),
-					['month ', currMonth, ', age ', currAge]) then breakOnFailure;
+					(ageThisCycle < kMinAgeFert) or (ageThisCycle > kMaxAgeFert),
+					['month ', currMonth, ', age ', ageThisCycle]) then breakOnFailure;
+				currAge := max (kMinAgeFert, min (kMaxAgeFert, ageThisCycle));
 				aleaFecundability := randomGenerator.alea0 ();
 try // 2-1
-				if fecundLife.levelFecundabilityAge [currAge] >= aleaFecundability then
+				{The fecundability that governs this cycle. With RESHUFFLED_FECUNDABILITY off,
+				 it is the woman's own schedule read at her age, as before, and no draw is added,
+				 so the sequence of random numbers and every result are unchanged.
+				 With the switch on, the heterogeneity multiplier is drawn again for this cycle and
+				 nothing else changes: invRelativeFecundabilityLevel takes out the multiplier the
+				 schedule was built with, leaving the general schedule of fecundability by age and
+				 the woman's own Leridon taper, and the new multiplier is applied to that. The unit
+				 of the redraw is the cycle of exposure, which is where this test sits, so the
+				 months of a non susceptible period, which the loop steps over, draw nothing.
+				 This is a different model of heterogeneity and not a correction of the other one:
+				 a multiplier drawn afresh each cycle turns variation between women into variation
+				 within a woman. The between-woman variance the Leridon parameterisation asks for
+				 is then absent, and with it the selection by which the most fecund conceive first,
+				 so waiting times and parity progression differ from a run made with the switch
+				 off. The switch is off by default.}
+				if g_GENPARAM.fixedParameters [reshuffledFecundability].state.value then
+					fecundabilityThisCycle := fecundabilityLevel (randomGenerator)
+							* fecundLife.invRelativeFecundabilityLevel
+							* fecundLife.levelFecundabilityAge [currAge]
+				else
+					fecundabilityThisCycle := fecundLife.levelFecundabilityAge [currAge];
+				if fecundabilityThisCycle >= aleaFecundability then
 				{we have a fecundation!}
 				begin
 					if (not fecundLife.stopping) and testStopping then
@@ -1267,7 +1262,7 @@ try // 2-1
 				begin
 					{we go to the next month}
 					monthIncrement := 1;
-				end; {fecundLife.levelFecundabilityAge [currAge] >= aleaFecundability then}
+				end; {fecundabilityThisCycle >= aleaFecundability then}
 except // 2-1
 	on E: Exception do begin
 		if not isThreaded then begin
@@ -2979,12 +2974,10 @@ temp : double;
 	idWomanTemp: longint = 1;
 	factHighOrder: double;
 	iterFec: longint;
-// >>> Claude 2026-09-12 start
 	targetCTFR, distanceCTFR, bestDistance: double;
 	bestIteration, nParityNotReached: longint;
 	bestPPR: array of double;
 	keptDiffers: boolean;
-// <<< Claude 2026-09-12 end
 
 	begin {computeGenFert}
 try
@@ -3011,7 +3004,6 @@ end;
 		// adjust a priori PPR in order to get them closer to the input values
 		// we do it only in a few passes but do not iterate until converging, like we do for separation risk
 			
-// >>> Claude 2026-09-12 start
 			{**N7 fixed here.** The adjustment nudges the a priori parity progression ratios so
 			 that the ratios the simulation produces come closer to the ones asked for. Three
 			 faults are corrected.
@@ -3140,7 +3132,6 @@ end;
 						'. Parities skipped for want of anyone reaching them: ', nParityNotReached]);
 			end;
 			SetLength (bestPPR, 0);
-// <<< Claude 2026-09-12 end
  
  			pDemReg^.CTFR.value := computeTFRfromPPRs (pDemReg^.aPrioriPPR);
  			pDemReg^.CTFR_adjusted.value := computeTFRfromPPRs (pDemReg^.aPrioriPPR_adjusted);
@@ -3184,18 +3175,7 @@ end;
 		for ageWomen := kMinAgeFert to kMaxAgeFert do
 			begin
 				Total_NetFertility := objUnionTable.pGenFert^[0, any, endedAge50, ageWomen] * pDemReg^.mortalityInfo.survivalAdult_women[ageWomen];
-// BUG  **N10**  the net reproduction rate hardcodes the sex ratio at birth
-// 0.488 is the DEFAULT value of PROP_WOMEN_AT_BIRTH, created in DemographicRegime with
-// exactly that number. A user who changes the parameter changes the sex of the children
-// simulated, since sexAtBirth reads pDemReg^.dp[propWomenAtBirth], but not this line, so
-// the reported net reproduction rate keeps describing a population the run did not
-// simulate. Mortality.pas has the same constant as a documented default and does read the
-// parameter where it matters.
-// Proposed fix:
-//     tnr := tnr + Total_NetFertility * pDemReg^.dp[propWomenAtBirth].value;
-// The same parameter is what N9 says is missing from the intrinsic rate itself.
-				tnr := tnr + Total_NetFertility * 0.488;
-// END BUG
+				tnr := tnr + Total_NetFertility * pDemReg^.dp[propWomenAtBirth].value;
 				screenFileWriteLn(cStringOf([ageWomen, tab, Total_NetFertility]));
 				pDemReg^.distribStableFert^[ageWomen] := Total_NetFertility * exp(-pDemReg^.r * (ageWomen + 0.5));
 				sum := sum + pDemReg^.distribStableFert^[ageWomen];

@@ -1,11 +1,13 @@
 object LowLevelForm: TLowLevelForm
   Left = 100
-  Height = 683
+  Height = 660
   Top = 117
   Width = 495
   Caption = 'LowLevel'
-  ClientHeight = 683
+  ClientHeight = 660
   ClientWidth = 495
+  Position = poScreenCenter
+  AutoScroll = True
   LCLVersion = '4.6.0.0'
   OnActivate = FormActivate
   OnCloseQuery = FormCloseQuery
@@ -99,7 +101,7 @@ object LowLevelForm: TLowLevelForm
   object OKBtn: TButton
     Left = 405
     Height = 25
-    Top = 640
+    Top = 616
     Width = 75
     Caption = 'OK'
     Default = True
@@ -109,7 +111,7 @@ object LowLevelForm: TLowLevelForm
   object LowLevelOthersGroup: TGroupBox
     Left = 16
     Height = 120
-    Top = 520
+    Top = 488
     Width = 464
     Caption = 'KINSHIP'
     ClientHeight = 100
@@ -164,11 +166,11 @@ object LowLevelForm: TLowLevelForm
   end
   object LowLevelFertilityGroup: TGroupBox
     Left = 16
-    Height = 120
-    Top = 400
+    Height = 112
+    Top = 368
     Width = 464
     Caption = 'FERTILITY'
-    ClientHeight = 100
+    ClientHeight = 92
     ClientWidth = 460
     TabOrder = 4
     object FORCE_PPR_TARGET: TCheckBox
@@ -198,11 +200,11 @@ object LowLevelForm: TLowLevelForm
   end
   object GroupBox1: TGroupBox
     Left = 16
-    Height = 105
+    Height = 73
     Top = 280
     Width = 464
     Caption = 'INTRAUTERINE AND STILLBIRTH'
-    ClientHeight = 85
+    ClientHeight = 53
     ClientWidth = 460
     TabOrder = 5
     object INTRA_LERIDON_MAGNUS: TCheckBox
