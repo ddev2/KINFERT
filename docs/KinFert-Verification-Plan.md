@@ -187,9 +187,10 @@ and S3 above are what most of them were waiting for. The ones this plan already 
 ## Part B. What lies between here and a release
 
 Nothing in the code stops a fresh clone from compiling: the repository is already public at
-`github.com/ddev2/KINFERT`, and the two gaps a newcomer meets are chores rather than defects,
-**P3**, the two missing `.cfg.example` files, and **P4**, the Lazarus and FPC versions the project
-is known to build under. What would make a release hard to defend is the list of defects that can
+`github.com/ddev2/KINFERT`, and the one gap a newcomer meets is a chore rather than a defect,
+**P4**, the Lazarus and FPC versions the project is known to build under. (**P3**, which asked for
+two `.cfg.example` templates, was withdrawn on 1 October: the program writes those two files
+itself.) What would make a release hard to defend is the list of defects that can
 still change results. In the order I would take them:
 
 ### B.1 Inheritance, the module you take up next month

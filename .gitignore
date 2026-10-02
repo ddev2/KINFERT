@@ -49,7 +49,12 @@ heapTrace.log
 /KinFert.app/
 
 # --- Machine-specific config (absolute paths / email) --------
-# Created by the app at runtime; provide *.example templates instead.
+# The program's own state, not input: it writes these itself and a fresh
+# installation has neither. Since 1 October 2026 they live in the per-user
+# state folder of each system, outside this folder altogether. The two names
+# below are where they were kept before that, next to the executable; the
+# files are still read once, to carry the paths across, so they are still
+# ignored here.
 KinFert ConfigDir.cfg
 KinFert OutputDir.cfg
 
@@ -68,3 +73,8 @@ backup/
 JASS/
 KINFERT_runs/
 chatgpt/
+
+# --- Release staging -----------------------------------------
+# The packaged binaries for a GitHub release. Built from the
+# tagged commit and attached there, never committed.
+release/

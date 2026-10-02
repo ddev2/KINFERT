@@ -20,6 +20,10 @@ function edStatus(randomGenerator: TRandomNumberGenerator;
 				  p: pStructDemographicRegimeSettings;
 				  pRelative: pRelativeType;
 				  eduStatusKind: EduStatusKinds): string;
+{Says once, at the start of a run, where the educational distributions come from, and warns when a
+ mode meant to follow observed levels is drawing from the values built into the program. Called
+ after the cohort file has been read and the cohorts between the ones read have been interpolated.}
+procedure reportEduDataSource;
 
 implementation
 
@@ -396,6 +400,148 @@ implementation
 			edStatusIntraFamily := edStatusCohort (randomGenerator, pRelative);
 	end;
 	
+	procedure reportEduDataSource;
+	{Every one of the 51 probabilities the two observed modes read has a value built into the
+	 program, a plausible set written when the module was made. A cohort file can replace any of
+	 them, column by column, and each value it supplies is marked as read from the file.
+
+	 Nothing ever checked whether any of them had been. A run with EDUCATION set to one of the two
+	 observed modes and a cohort file with no EDU_ column drew every person from the built-in
+	 values, and its output looked exactly like a run that followed observed data. There was no
+	 error at any point, because there is no missing value to trip over: the defaults are always
+	 there. That silence is what this ends.
+
+	 Supplying part of a family and not the rest is worse than supplying none, since the row then
+	 mixes two sources, so that case is named separately. The report is made through writeAndWait,
+	 which lights the error indicator and keeps the message in verification.txt: a run whose
+	 education does not come from where the user thinks it comes from is worth stopping to read,
+	 but it is a fault in the inputs and not in the program, so the run goes on.}
+	var
+		pDemReg: pStructDemographicRegimeSettings;
+		indCohort, nOwn, nPartner, nChildren: longint;
+		edLevel, edLevelIn, edLevelOut, edLevelMen, edLevelWomen: EduLevels;
+		vSex: Sex;
+		fromFile: boolean;
+
+		function partly (got, wanted: longint; columns, what: string): boolean;
+		{true when the run can be left alone, that is when every column of the family is there}
+		begin
+			result := (got = wanted);
+			if result then exit;
+			if (got = 0) then
+				writeAndWait ('===> WARNING: EDUCATION is set to a mode that draws from observed ' +
+						'educational levels, but the cohort file carries none of the ' +
+						IntToStr (wanted) + ' ' + columns + ' columns, which hold ' + what +
+						'. The values built into the program are used instead, so this run does ' +
+						'NOT follow observed data. Add those columns to the cohort file, or set ' +
+						'EDUCATION to one of the two modes that give the three levels equal ' +
+						'chances, which claim nothing about observed levels.')
+			else
+				writeAndWait ('===> WARNING: the cohort file carries ' + IntToStr (got) + ' of the ' +
+						IntToStr (wanted) + ' ' + columns + ' columns, which hold ' + what +
+						'. The rest keep the values built into the program, so the distributions ' +
+						'this run uses mix two sources and do not sum to what was intended. Supply ' +
+						'the whole family of columns or none of it.');
+		end;
+
+	begin
+		if (g_GENPARAM.eduKind.value <> eduCohort) and
+			(g_GENPARAM.eduKind.value <> eduIntraFamily) then exit;
+		if (g_pCOHORT_COLLECTION = nil) then exit;
+
+		{the first cohort the file supplied, since the flags are set on those rows; with no file
+		 there is one regime and none of its values is marked}
+		pDemReg := nil;
+		for indCohort := 0 to g_pCOHORT_COLLECTION^.nCohorts do
+			if (g_pCOHORT_COLLECTION^.data [indCohort] <> nil) and
+				(g_pCOHORT_COLLECTION^.data [indCohort]^.readInConfig) then begin
+				pDemReg := g_pCOHORT_COLLECTION^.data [indCohort];
+				break;
+			end;
+		if (pDemReg = nil) then pDemReg := g_pCOHORT_COLLECTION^.data [0];
+		if (pDemReg = nil) then exit;
+
+		nOwn := 0;
+		for edLevel := eduLow to eduHigh do
+			for vSex := man to woman do
+				if pDemReg^.eduEgo [edLevel, vSex].readInConfigFile then Inc (nOwn);
+		nPartner := 0;
+		for edLevelIn := eduLow to eduHigh do
+			for vSex := man to woman do
+				for edLevelOut := eduLow to eduHigh do
+					if pDemReg^.eduEgoPartner [edLevelIn, vSex, edLevelOut].readInConfigFile then
+						Inc (nPartner);
+		nChildren := 0;
+		for edLevelWomen := eduLow to eduHigh do
+			for edLevelMen := eduLow to eduHigh do
+				for edLevelOut := eduLow to eduHigh do
+					if pDemReg^.eduEgoPartnerChildren [edLevelWomen, edLevelMen, edLevelOut].readInConfigFile then
+						Inc (nChildren);
+
+		fromFile := partly (nOwn, 6, 'EDU_<level>_<sex>',
+					'the level of a person of that sex, by cohort');
+		if (g_GENPARAM.eduKind.value = eduIntraFamily) then begin
+			if not partly (nPartner, 18, 'EDUPARTNER_<level>_<sex>_<level>',
+					'the level of the partner of a person of that level and sex') then
+				fromFile := false;
+			if not partly (nChildren, 27, 'EDUPARTNERCHILDREN_<level>_<level>_<level>',
+					'the level of a child of a mother and a father of those two levels') then
+				fromFile := false;
+		end;
+		if fromFile then
+			memoWriteLn (['Education: the distributions of this run are read from the cohort file, ',
+					'as the mode asks.']);
+	end;
+
+	function edStatusStochaFamily (randomGenerator: TRandomNumberGenerator;
+									pRelative: pRelativeType): string;
+	{Equal chances for the three levels, with the family taken into account. It is the only mode
+	 that makes the members of a family resemble one another without observed data behind it,
+	 which is what a DemoCare file wants when there is no cohort file carrying the EDU_
+	 distributions.
+
+	 The rule is one line. With probability kEduFamilyCorrelation a person takes a level that is
+	 already in the family, and otherwise the level is drawn from the three with equal chances.
+	 The level taken is the partner's for a partner, and the level of one of the two parents,
+	 chosen at random, for a person whose parents are both in the network with a status of their
+	 own. Anyone else, which is a person at the top of a line of descent, is drawn with equal
+	 chances.
+
+	 The marginal distribution stays exactly uniform at every generation, whatever the value of
+	 the correlation: copying a level that is uniform, and drawing one with equal chances, both
+	 give a uniform level. The mode therefore adds association inside families and changes nothing
+	 else, which is what makes its output readable: a departure from a third in the totals is
+	 sampling noise and not an effect of the mode.
+
+	 One asymmetry is worth knowing. giveEdStatus assigns the two parents of a person before the
+	 person, so a child always has its parents' levels to copy, but it does not do the same for a
+	 partner: when the partner is reached first there is nothing to copy yet and the level is drawn
+	 with equal chances. The correlation between partners is therefore weaker than the one between
+	 parent and child. Making the two symmetric would mean assigning a person before the partner in
+	 giveEdStatus, which would change eduIntraFamily as well.}
+	var
+		pSource, pPartner: pRelativeType;
+		rank: longint;
+	begin
+		pSource := nil;
+		if (pRelative^.typeOfKin = kt_partner) then begin
+			pPartner := findPartner (pRelative, false, rank);
+			if (pPartner <> nil) and (pPartner^.status <> '') then
+				pSource := pPartner;
+		end else if bothParentsAssigned (pRelative) then begin
+			if (randomGenerator.alea0 < 0.5) then
+				pSource := pRelative^.father
+			else
+				pSource := pRelative^.mother;
+		end;
+		if (pSource = nil) then
+			exit (edStatusStocha (randomGenerator));
+		if (randomGenerator.alea0 < kEduFamilyCorrelation) then
+			result := pSource^.status
+		else
+			result := edStatusStocha (randomGenerator);
+	end;
+
 	function edStatus(randomGenerator: TRandomNumberGenerator;
 					  p: pStructDemographicRegimeSettings;
 					  pRelative: pRelativeType;
@@ -406,6 +552,7 @@ implementation
 			eduStochastic: edStatus := edStatusStocha(randomGenerator);
 			eduCohort: edStatus := edStatusCohort(randomGenerator, pRelative);
 			eduIntraFamily: edStatus := edStatusIntraFamily(randomGenerator, p, pRelative);
+			eduStochasticFamily: edStatus := edStatusStochaFamily(randomGenerator, pRelative);
 		end;
 	end;
 

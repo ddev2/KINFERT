@@ -13,6 +13,69 @@ result on an ordinary run except the decision left at `Kinship.pas:5070`; everyt
 is a guardrail against bad input, a fault on a path through the dialogs, a threading question, or a
 decision. That is the basis on which the program is committed and published.
 
+**1 October 2026, the manual.** Two pieces of it are new. The two target searches are
+documented in §8.8 of `docs/KinFert-Manual.md`, in three subsections: what each one matches, how
+the step is computed, when it stops, which pass or trial is kept, and how to read every line each
+one prints in the log. And chapters 13 and 14, the two guided parts, are in place as a scaffold:
+every heading, a note under each one saying what belongs there, and thirty-two figure slots with a
+description of what each capture must show, registered in `docs/img/README.md`. The didactic text
+is yours to write; `M8` below is what is left.
+
+**1 October 2026, the two state files.** `P13` is done. `KinFert ConfigDir.cfg` and
+`KinFert OutputDir.cfg` no longer sit next to the executable, where on macOS they fell inside the
+application bundle and where a folder shared between a Mac and a Windows PC made each system
+overwrite the other's paths. They are in the per-user state folder of each system now, under names
+that say which system wrote them, and the first run after the change moves the old values across by
+itself. The change is in `LazMain.pas`, it carries review markers, and `KinFert-FIXED.md` says what
+was checked and what only a build in Lazarus can check.
+
+**1 October 2026, the counts in the verification report.** One fault was being announced as three.
+The groom cohort range was caught by its check, once per union, and summarised again through
+`writeAndWait`, and the one line of the memo added the two kinds together while the table
+subtracted them. The counts are now `verificationFailedChecks`, `verificationFailures` and
+`verificationReports`, kept apart and documented, the memo line follows the table, and the groom
+range summary is attached to its check as a note instead of being reported a second time. Two
+lines of the same log that said something untrue went with it: the post-phase timer of
+`simulateKinship`, which printed the time of day when `TALKATIVE` was off, and the explanation
+under `Searches for a mother: none recorded`. `KinFert-FIXED.md` has the detail; the changes are
+in `Verification.pas`, `Kinship.pas` and `LazMain.pas` and carry review markers.
+
+**1 October 2026, the Children-Grooms tab.** A released build now offers only the first entry of
+that tab, the unions produced by cohort of the groom, which describes a result; the rest describe
+the machinery and appear only when the program runs from the IDE. The three charts that drew the
+share of searches answered from another cell, and which in an ordinary run are an empty frame, are
+joined by two maps of the pools themselves: one cell per cohort and year of age, blue where the
+index has candidates nothing used, green where searches drew from it, red where a search asked and
+found nothing. `KinFert-FIXED.md` has the detail. `LazGraph.pas` cannot be compiled outside
+Lazarus, so that unit is the one piece of this audit that rests on reading alone: expect the
+possibility of an ordinary compile error on the first build.
+
+**1 October 2026, dead code.** Groups A and D of the inventory are gone or settled: the
+grooms for brides arrays, the two lookup counters split by generation, the four ego counters, two
+routines never called, and `cLabelsX` in `LazGraph.pas`; `gCheckRelativesMax`, a switch nothing
+could set, is removed and its test says what it does; and the two child shortfall counters are
+reported in the index coverage line where they mean something, which is under variable regimes.
+The state arrays and `checkKinship` are kept, as you asked. One thing the inventory turned up is
+not dead code at all and is now `N54` in section 7: the fertility of ego's partners is computed
+from arrays that nothing fills, so those columns are zero in every run.
+
+**1 October 2026, DemoCare.** Two faults from your reading of the DemoCare output. The status
+column was empty in every row, because it carries the educational level and `EDUCATION` defaults to
+none; the mode is now forced to stochastic when a DemoCare file is written with it unset, with a
+line in the log saying so. And `Check DemoCare` failed with `fert is not a valid number`, because
+the cohort of the egos was read from the fourth to the seventh character of the file name; it is
+now the first four digits in the name that read as a year, and a name without one is reported
+rather than raising. `KinFert-FIXED.md` has both, and §8.5 of the manual now describes the four
+education modes, which answers one of the open questions of Appendix F.
+
+**1 October 2026, a fourth education mode.** `eduStochasticFamily`, the three levels with equal
+chances and the members of one family resembling one another, which is the one combination that was
+missing and the only way to give a DemoCare file a plausible family structure without a cohort file
+behind it. The four modes are renamed on screen so that they read as the square they are, with the
+values in a configuration file unchanged, and §8.5 of the manual sets them out. The strength of the
+association is a constant, `kEduFamilyCorrelation`, which is one line in `Init.pas` away from being a
+parameter if you want to vary it.
+
 **Review markers.** Done. You have read and accepted every marked region and the markers are
 gone from the source. One deliberate marker is left, at `Kinship.pas:5070`, and it is a decision
 rather than a change: item 6 of section 0 below, and the reasoning is in
@@ -27,8 +90,7 @@ The numbers were last re-derived for sections 2 and 3 on 18 and 29 September and
 ## 0. Now, in order
 
 1. **Commit, then cut the release.** The build is done on both platforms and the repository is
-   ready: `.gitattributes` fixes the line endings, `KinFert ConfigDir.cfg.example` and
-   `KinFert OutputDir.cfg.example` give a fresh clone something to start from, the working folders
+   ready: `.gitattributes` fixes the line endings, the working folders
    `JASS/`, `KINFERT_runs/` and `chatgpt/` are ignored, the README states the verification phase
    and pins Lazarus 4.6 with FPC 3.2.2, and `docs/KinFert-Verification-Plan.md` ships with the
    source. What is left of section 11 after the commit: tag it, attach the macOS and Windows
@@ -318,6 +380,7 @@ fixed, `N44` by you;
 
 | | where | what |
 |---|---|---|
+| **N54** | `Kinship.pas`, the ego loop that follows `egoAddPersonsAndBirths` | **The fertility of ego's partners is reported as zero in every run.** `egoPartnerAddPersonsAndBirths` fills `g_fertilityEgoPartners` and `g_NumChildrenEgoPartners`, from which `TFR_egoPartners`, `TFR_egoPartners_NC` and the sums beside them are computed and written out. Nothing calls it. The loop that walks ego's unions gets each partner and checks that it is not nil, and then does nothing with it, so those columns are all zeros and have been for as long as the routine has been there. It came to light while looking for dead code: the routine looked unused, and it is, but the fault is the missing call rather than the routine. The repair is one line in that loop, `egoPartnerAddPersonsAndBirths (partner, 50 or 60 by the partner's sex, indCohort)`, following what is done for ego two lines above, where a woman is followed to 50 and a man to 60. It changes results, in the sense that a column of zeros becomes a column of numbers, so it is yours to decide; the comparison between ego, ego's mother and ego's partner is the point of that table |
 | **N46** | `Nuptiality.pas:1293` to `1314` | **Re-read on 30 September, and the earlier description was wrong: it is not the argument count.** The whole `{$IFDEF DEBUG_SEPARATION}` block is written against an earlier `TFileType`, which was a pointer to a record. `TFileType` is a class now, with a `Create` constructor, so `new (f)`, `f^.filenameWithPath`, `assignFile` and `rewrite` are all wrong and the unit will not compile with that define on. The file is never closed either, and the second block, which writes the table after it has been scaled, is not guarded by the `checkDirResult` test that the first one makes, so it would write to an unopened file. `DEBUG_SEPARATION` is not defined anywhere in `Defines.pas`, so this is harmless until someone turns it on to look at the separation tables, which is exactly when they would meet it. The repair is the pattern the rest of the unit uses: `openFileOut`, then `cWriteLn`, then `Destroy`, with one guard around both blocks |
 | **Small things in `Nuptiality.pas`**, none of them affecting a result, found while tidying the documentation of the schedule on 30 September | | Three dead computations and one stale constant. `CoaleFirstUnion` accumulates `mean` over the schedule it builds and never reads it, and `RodTrussFirstUnion` does the same with `meanCalc`; both are useful in the debugger beside the mean that was asked for, and the second is now documented as such, but neither is used and a reader has to work that out. `calcNuptScaleFactorRT` has no caller, and `std_unionLinear` has none either. And `kCoaleStandardMean` is 11.37 while `std_Coale_Rodriguez_Trussel` divides by 11.36 and the header of `CoaleFirstUnion` says the scale factor corresponds to `(SMAM - kMinAgeUnion) / 11.36`: two values for the same quantity, one of them written out twice. Deciding which is right is a five minute job and it belongs with the 20 per cent discrepancy recorded in `docs/KinFert-FIXED.md` under N51, since both concern the same equivalence between the two parameterisations |
 | **Bride selection** | `Kinship.pas:5343` | `caseSelect` is assigned the constant 2 immediately above the `case` that reads it. The third algorithm is the right one and the other two are kept for comparison, which is deliberate. Worth a comment at that line saying so, since the two branches read as live code and their checks are reported as never run |
@@ -475,19 +538,22 @@ document: neither this one nor the companion replaces it.
 
 | | what |
 |---|---|
-| **M1** | Answer the ten questions in Appendix F: the conception model, the repartnering hazard, the mapping from life expectancy to survival, the B, M and A education levels, the default backward variant, the country inheritance rules, the exact file grammars, the drop-down values, and a worked regression example |
+| **M1** | Answer the nine questions left in Appendix F: the conception model, the repartnering hazard, the mapping from life expectancy to survival, the country inheritance rules, the exact file grammars, the two remaining drop-down lists, and a worked regression example. The education levels and their four modes were settled on 1 October and are in §8.5 |
 | **M2** | Bring the manual up to the work of this year: kin sets per output format, the DemoCare field dialog, `DEMOCARE_LARGE_FIELDS`, the `dead` and `secondUnions` values of `partnershipStatus`, relatives dead before the reference age now excluded from the DemoCare file, the `kt_total` row, and the removal of the BATCH option |
 | **M3** | Document the DemoCare format and its link file |
 | **M4** | Release notes: `DEMOCARE_LARGE_FIELDS` replaces the `DUMPALL` binding; an old DemoCare configuration carries a wide `OUTPUT_KINTYPES` that is now honoured; the DemoCare file no longer contains relatives dead before the reference age; BATCH is gone; `MULTITHREADING_SIMKIN` is now saved |
 | **M5** | Fold the cleared findings, which are listed in `KinFert-FIXED.md`, into developer notes, so that the reasoning survives the documents |
 | **M6** | The model description, not only the code, changes with the fecundability parameterisation and with the effect of infant death on the birth interval. The manual must say what the code now does: a constant multiplier per woman, so the coefficient of variation is the same at every age by construction, and the realised rather than the nominal moments of that distribution |
-| **M7** | Document the parameter sweep semantics: which parameters step, that steps and cohort sequences are mutually exclusive, that selecting both silently resets all seven step counts with a message, and what the KEYS file decodes |
+| **M7** | Done, in §13.5 and §13.6 of the manual: the seven sweeps in the order in which they nest, the range each one spans, the product of steps as the number of simulations, the two places where the step counts are reset and the fact that only one of them says so in the log, the step indices in the output names, and the KEYS file as the lookup table that joins the step values to the individual records. One thing the entry assumed is not so: the reset in `checkStepsAndStablePopulation` is silent, and the message is printed only by `openFileKeys`, that is only when an individual file was also requested |
+| **M8** | Write the didactic text of chapters 13 and 14 and take the screenshots. The scaffold, the verified facts and the figure slots are in place since 1 October; every gap carries a note headed **To write** saying what belongs there, and `docs/img/README.md` lists each of the thirty-two new captures and what it must show. The two worked examples, one per chapter, are the pieces that matter most: each should name the numbers a reader must obtain, so that the manual doubles as the regression check asked for in `P6` |
+| **M9** | Three things the documentation of the targets turned up, each of which is a decision rather than a defect. (a) `STABLE_POPULATION` is a configuration parameter with no control on any form and no reader anywhere in the simulation: it is set to false when a cohort file is read, it can be set from a command file, and nothing consults it. Retire it or give it back its meaning. (b) The on-screen help of `NSTEP_AMENORRHEA` says the sweep takes values "from 0 to the value in AMENO_ALPHA"; the code takes α to α + 2.4, and the default α is negative. One of the two is wrong. (c) With `SEP_TARGET` on and `FORCE_SEP_ITER` off, `SEPARATION_ADJUSTED` is applied without being checked; since that parameter is optional and defaults to zero, such a configuration switches separation off altogether while `SEPARATION` still shows a positive target. A zero could fall back to running the search, with a message |
 
 **Publication.** The repository is already public at `github.com/ddev2/KINFERT`.
 
 | | what |
 |---|---|
-| **P3** | `KinFert ConfigDir.cfg.example` and `KinFert OutputDir.cfg.example`. The real files are gitignored, so a fresh clone has nothing to start from |
+| **P3** | Withdrawn on 1 October, and the two `.example` files with it. `KinFert ConfigDir.cfg` and `KinFert OutputDir.cfg` are not input: the program writes each of them itself, in `WriteStdPath`, whenever the matching folder is chosen in the interface, and a fresh installation having neither is the normal state. Shipping templates invited the user to create and edit files that are the program's own state, which is the opposite of what should happen. The README and §2.6 of the manual now say so |
+| **P13** | Done on 1 October, and recorded in `KinFert-FIXED.md`. Both files now live in the folder each system sets aside for an application's own per-user state, `~/Library/Application Support/KinFert/` on macOS and `%APPDATA%\KinFert\` on Windows, and each carries the name of the system that wrote it, `ConfigDir-macOS.cfg` against `ConfigDir-Windows.cfg`, so that a shared folder cannot make one pass for the other. `ReadStdPath` falls back to the old file next to the executable and writes the new one at once, so the move is made on the first run and nothing has to be copied by hand. The change is in `LazMain.pas` and carries review markers. It cannot be compiled outside Lazarus, so it was checked by lifting the new routines out and compiling them against stubs in all three platform branches; what is left is to build it in Lazarus on each machine and confirm that the first run finds its two folders already set |
 | **P4** | Pin the versions. `kinfert.lpi` carries `Version Value="12"`; state the Lazarus version it was saved with and the FPC version it is known to build under. FPC 3.2.2 is verified for the engine |
 | **P5** | Decide how the binaries are built and released. `KinFert`, `KinFert.exe` and `KinFert.app` are in the folder and gitignored, which is right; they belong in a Release built from a tagged commit. Both platforms have to be there, since neither can be produced from the other without the matching toolchain. Two practical points: the macOS binary is unsigned and not notarised, so Gatekeeper refuses it on a first open and the release notes have to say how to allow it (right click, Open, or `xattr -d com.apple.quarantine`); and the Windows binary should say which Lazarus and FPC produced it, since nothing in the file does |
 | **P11** | The macOS build instructions have to carry what was learnt on 30 September. FPC 3.2.2 emits Objective-C metadata that Apple's current linker rejects once the deployment target is macOS 11 or later, because that turns on chained fixups: `-WM11.0` produces `ld: malformed method list atom` in an LCL Cocoa unit. The build therefore leaves the deployment target at its default, and the several hundred `ld: warning: object file was built for newer macOS version (11.0) than being linked (10.15)` warnings, and the `-macosx_version_min has been renamed` line that Lazarus counts as an error, are cosmetic. A newer FPC is the proper fix and is worth doing before anyone else tries to build on a recent Mac |

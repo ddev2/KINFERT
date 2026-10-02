@@ -800,11 +800,9 @@ implementation
 		bWriteLn (outFile, [kEndDoc]);
 	end;
 	
-// >>> Claude 2026-09-30 start
 	{outFile is out and not var: the routine opens the file itself and never reads the
 	 handle it was given. The three callers each declare a local and pass it unset.}
 	procedure DumpCmdFile ( path, filename: string; out outFile: TFileType; closeFile: boolean = true );
-// <<< Claude 2026-09-30 end
 	var
 		pd: paramDemReg_double;
 		pl: runtimeParam_longint;

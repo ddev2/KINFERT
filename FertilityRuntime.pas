@@ -2975,7 +2975,12 @@ temp : double;
 	factHighOrder: double;
 	iterFec: longint;
 	targetCTFR, distanceCTFR, bestDistance: double;
-	bestIteration, nParityNotReached: longint;
+	{bestParityNotReached belongs to the pass that was kept. nParityNotReached used to be
+	 cleared once, before the loop over passes, and added to inside it, so the figure the
+	 report printed was the sum over every pass: a cohort that took four passes showed four
+	 times the number of parities, which reads as nonsense beside a maximum of
+	 kMaxNbChildrenCalc + 1, that is 16.}
+	bestIteration, nParityNotReached, bestParityNotReached: longint;
 	bestPPR: array of double;
 	keptDiffers: boolean;
 
@@ -3038,9 +3043,12 @@ end;
 			targetCTFR := computeTFRfromPPRs (pDemReg^.aPrioriPPR);
 			bestDistance := kNotDefined;
 			bestIteration := 0;
-			nParityNotReached := 0;
+			bestParityNotReached := 0;
 			SetLength (bestPPR{%H-}, kMaxNbChildren + 1);
 			for iterFec := 1 to kMaxIterationsPPR do begin
+				{counted afresh for each pass: each pass asks the same question of the same parities,
+				 and the answer belongs to the pass}
+				nParityNotReached := 0;
 				if g_GENPARAM.TALKATIVE.value then
 					memoWriteLn (['Iteration CTFR: ', iterFec, ', cohort: ', pDemReg^.yearOfBirth.value]);
 				factHighOrder := 1.0;	{the factor of the last parity actually reached}
@@ -3105,6 +3113,7 @@ end;
 				if (bestIteration = 0) or (distanceCTFR < bestDistance) then begin
 					bestDistance := distanceCTFR;
 					bestIteration := iterFec;
+					bestParityNotReached := nParityNotReached;
 					for ind := 0 to kMaxNbChildren do
 						bestPPR[ind] := pDemReg^.aPrioriPPR_adjusted.value[ind];
 				end;
@@ -3129,7 +3138,7 @@ end;
 				memoWriteLn (['PPR adjustment, cohort ', pDemReg^.yearOfBirth.value,
 						': pass ', bestIteration, ' of ', iterFec, ' kept, cohort total fertility ',
 						str_float (bestDistance), ' from the target of ', str_float (targetCTFR),
-						'. Parities skipped for want of anyone reaching them: ', nParityNotReached]);
+						'. Parities skipped for want of anyone reaching them: ', bestParityNotReached]);
 			end;
 			SetLength (bestPPR, 0);
  

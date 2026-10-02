@@ -503,6 +503,362 @@ illegal parameter on a non-Darwin target, so it belongs in a macOS build mode or
 Conditionals page rather than in the options shared by the three platforms.
 
 
+## The inheritance module, documented (1 October)
+
+`inheritance.pas` carried its own repair history. Every change of 30 September was still wrapped
+in review markers, and the comments inside them were written for the reviewer of a bug rather than
+for a reader of the program: they said what the code used to do and why that was wrong, which is
+of no use once the fix is accepted. The same was true of the `// BUG` block on `N25`. All of it is
+replaced by documentation of what the unit does.
+
+**A unit header.** The module now opens with an account of what it is for: the two questions it
+answers, the two algorithms that answer each of them and why both are kept, the order of
+preference each applies, the succession rules as settled on 29 and 30 September with article 810
+among them, which fields of the relative record each algorithm writes, what the two referees do,
+and what is not modelled. The note on the English rules of intestacy that stood at the head of the
+file is kept below it, marked as the source material it is, since it is the list the module was
+first written against.
+
+**Every routine.** All 87 of them carry a comment saying what they do, and the ones whose logic is
+not evident from their name carry more: `possible_heirFound` and the year comparison it rests on,
+`lookForChildHeir` and why it cannot go more than three generations down, the pair
+`findHeir_childTree` and `findHeir_descendancy` as the place where representation is implemented,
+`computeShareInheritanceTree` as the chain of multipliers that carries a share down a line,
+`commonAncestor` and what a nil answer means, `checkEgoIsHeir` and the shape its blocks share, the
+explore and allocate pairs of the second algorithm, and `Colaterals_2` and the rule of the degree.
+Four section banners separate the first algorithm, the shared bookkeeping, the second algorithm
+and the referees.
+
+**The places where a bug was fixed** now say what the code does and why, with no reference to what
+it did before. Where the reasoning is worth keeping, it is kept as reasoning: why only the side of
+ego's family that has an ancestor in common with a dead collateral relative contributes heirs, why
+the blocks that collect the dead person's own brothers and sisters need no such filter, and why
+the ascendants are explored one generation at a time.
+
+**`N25`** keeps its substance and loses its form. The comment above `lookForDecedents_Spain` now
+documents an empty routine and a parameter that selects nothing, and points at the TODO for the
+decision, instead of proposing a fix in place.
+
+The markers are gone from the unit. Since the change is entirely in comments, it was checked
+mechanically rather than by eye: both versions were stripped of comments, with string literals and
+compiler directives preserved, and the remaining token streams are identical, 6576 tokens each.
+
+## The two state files, moved out of the program's folder (1 October)
+
+KinFert remembers two folders from one session to the next, the folder configuration files were
+last read from and the folder results were last written to, in a text file of one line each. Both
+sat next to the executable, as `KinFert ConfigDir.cfg` and `KinFert OutputDir.cfg`. `ReadStdPath`
+and `WriteStdPath` in `LazMain.pas` were the only two places that computed the location, as
+`ExtractFilePath (Application.ExeName)`.
+
+**Why that was the wrong place.** On macOS the two files fell inside
+`KinFert.app/Contents/MacOS/`. An application bundle is meant to be read only and signed:
+replacing the bundle with a new build loses the two paths, and an application installed in a folder
+the user cannot write to cannot save them at all. On Windows they sat in the folder of the program
+itself, in plain view and of interest to nobody. And when that folder is shared between machines,
+which is how this project is kept in step between a Mac and a Windows PC, each system overwrote the
+other's file with a path that means nothing on the other.
+
+**Where they are now.** In the folder each system sets aside for an application's own per-user
+state, under a name that says which system wrote it:
+
+| System | File |
+|---|---|
+| macOS | `~/Library/Application Support/KinFert/ConfigDir-macOS.cfg` |
+| Windows | `%APPDATA%\KinFert\ConfigDir-Windows.cfg` |
+| other Unix | `$XDG_CONFIG_HOME`, or `~/.config` when it is unset, then `KinFert/ConfigDir-Linux.cfg` |
+
+and the same three with `OutputDir` in place of `ConfigDir`. Two files written by different systems
+can therefore never be taken for one another, even if the state folder itself were ever put in a
+synchronised location.
+
+**What changed in the source.** Three functions new to the implementation of `LazMain.pas`:
+`kinFertStateDir`, which computes the folder for the platform from the environment variable, with a
+fallback for the case where it is unset; `stateFilePath`, which adds the base name and the platform
+name; and `legacyStateFilePath`, which gives the old location. Two constants, `kStateConfigDir` and
+`kStateOutputDir`, replace the four literal file names at the call sites, so the names now exist in
+one place. `ReadStdPath` and `WriteStdPath` take a base name rather than a file name, and
+`WriteStdPath` creates the folder on first use with `ForceDirectories`.
+
+**Nothing has to be copied by hand.** When the new file is absent, `ReadStdPath` reads the old one
+next to the executable and writes the new one at once, so the move is made on the first run after
+this change and made only once. The old file is left where it is, and is never written again.
+
+**Two incidental corrections.** The old `ReadStdPath` read straight into its `var` parameter, so a
+file that existed but was empty replaced whatever the caller had already put there; and `readLn` on
+an empty file was an unguarded input error. It now reads into a local variable, tests for the end of
+the file first, and leaves the caller's value alone unless it has something to put in its place.
+
+**How it was checked.** `LazMain.pas` cannot be compiled outside Lazarus, since TAChart reaches
+`IDEOptionsIntf`. The three new functions and the two rewritten procedures were therefore lifted out
+verbatim and compiled under FPC 3.2.2 against stubs for `TFileType` and `Application.ExeName`, in
+the macOS, the Windows and the Unix branch in turn: no warnings and no hints in any of the three.
+Run against those stubs they produce the paths in the table above, create
+`Library/Application Support/KinFert` where neither level existed, read a legacy file and write its
+path to the new place, and leave the caller's path untouched when there is no file or the file is
+empty. Two things that check cannot reach, because only Lazarus can link the unit: that it still
+compiles in place, and that `IS_MACOS` and `WINDOWS` are defined as expected in your project. On
+each machine the first run after the change should find its two folders already set, which is the
+sign that the migration worked.
+
+## One fault counted three times, and two misleading lines (1 October)
+
+A run of 1 October reported **3 verification failures** on the one line of the memo, while the
+table at the end of the same run said **30 checks ran, 1 of them failed, 2 failures in all** and
+**1 problem was reported through writeAndWait**. Behind all of those numbers there was one fault:
+the range of groom birth cohorts was six years too narrow, and two unions of 518419 fell outside
+it.
+
+**Where the three came from.** The fault was caught twice over, by design, and then added up
+once too often.
+
+- `chk_kin_groomCohortRange`, in `addGroomsInfo`, sees each union whose implied groom cohort falls
+  outside the range, so it counted two failures, one per union. That is right for an invariant:
+  the report names the first cases and counting occurrences is how a reader judges the size of
+  the fault.
+- `reportIndexCoverage`, at the end of `initMotherhood`, summarises the same unions and says which
+  constant to widen and by how much. It wrote that through `writeAndWait`, which records the
+  message in the verification table under `chk_reportedProblem`. One more count, for the same
+  two unions.
+- `verificationFailures` then summed every entry of the table, `chk_reportedProblem` among them,
+  giving 2 + 1 = 3, and the one line of the memo printed that. The table, meanwhile, subtracted
+  the reported problems and showed them apart. The two disagreed by construction.
+
+**What changed.** Three things, none of which removes information.
+
+- `verificationFailures` now counts the checks only. Two new functions stand beside it:
+  `verificationFailedChecks`, the number of checks with at least one failure, and
+  `verificationReports`, the number of messages that came through `writeAndWait`. The three are
+  documented together in the interface of `Verification.pas`, with the reason they are kept apart.
+- The one line of the memo is built from those and follows the table exactly. It counts checks and
+  not occurrences, since one invariant that failed twice is one problem: the run above now says
+  **1 check failed (2 cases)**. A run with both kinds says `2 checks failed (5 cases) and 1 problem
+  reported`.
+- The groom range summary no longer goes through `writeAndWait`. It is written to the memo as an
+  ordinary warning, with the same text, and the same text is attached to
+  `chk_kin_groomCohortRange` as its note, through a new `setCheckNote`, so it appears in
+  `verification.txt` under the check and beside the two cases the check kept. The red indicator is
+  lit by the check, which is where the fault was seen, so nothing is lost by not routing the
+  summary through `writeAndWait`. In the report a note is now labelled *note* rather than
+  *measured* unless the check is a quantity against a target, where *measured* is what it is.
+
+**Two lines of the same log that said something untrue.**
+
+- `===== post-phase of simulateKinship lasted: 14 h, 35 min, 21 sec` in a run of one minute
+  fifty-eight. Every other interim timer of `simulateKinship` is printed only when `TALKATIVE` is
+  on, and `tStart_interm` is set only then as well; this one call was not guarded, so with
+  `TALKATIVE` off it measured from an unset `TDateTime`, that is from 30 December 1899, and
+  `stopTime` prints the hours, minutes and seconds of the difference. The result was the time of
+  day. The call is now guarded like the others.
+- `Searches for a mother: none recorded. These counts are filled while the kinship is built, so a
+  run that built no kinship leaves them empty`, printed by a run that built ten thousand trees.
+  The reason was the wrong one: the selected kin were ego, partner, children and grandchildren, so
+  the run asked for no ancestors and never looked for a mother. The line now gives both reasons.
+
+**How it was checked.** `Kinship.pas` and `Verification.pas` compile under FPC 3.2.2 with the
+flags of `kinfert.lpi`, in the session container, with `Forms`, `Dialogs`, `LazFileUtils`,
+`LazMain` and `LazUtiles` replaced by stubs, since this container's LCL is missing
+`FastHTMLParser`, which `Clipbrd` needs. No diagnostic falls on any line written for this change
+except four of the 836 instances of `Type size mismatch, possible loss of data`, a class this
+project produces throughout under `-Cr`; a two-line test program shows the identical expression
+shape produced the same warning before the change. `LazMain.pas` cannot be compiled outside
+Lazarus, so the new block of `endSimulation` was lifted out and compiled against stubs of the
+three counting functions, then run over six combinations of counts to read the line it builds in
+each.
+
+## The Children-Grooms tab: two maps of the pools, and a released build that says less (1 October)
+
+Four entries of that tab drew the same measure, the share of searches answered from a cell other
+than the one asked for. In an ordinary run that share is of the order of a twentieth of one per
+cent, so three of the four charts were an empty frame with a sentence in the title, and one of
+them, the mother search, had nothing to draw at all whenever the selected kin include no
+ascendants. The one entry that carried information was the fourth, the unions the simulation
+produced by cohort of the groom.
+
+**What a released build now shows.** The first entry only. It describes what the pre-simulation
+built, which is a result: a user who widens a cohort range reads it to see what the change did.
+The rest describe the machinery, so they are offered only when `gRunFromIDE` is true, the same
+test the debugger traps and the dump files use. The entries of the list are now identified by a
+number of their own rather than by their position, since the list is shorter outside the IDE.
+
+**Two maps, in place of the three charts that said nothing.** The two indexes the kinship
+reconstruction draws on are now drawn cell by cell, a cell being one cohort by one year of age:
+the age of the mother at that birth for the birth index, the man's age at union for the bride
+index. Three exclusive colours: blue where the index has candidates no search ever used, green
+where searches drew from it, with the shade saying how often, and red where a search asked for a
+cell and found it empty. The shade is logarithmic within each colour, so that a cell with one
+candidate is visible beside one with ten thousand. The picture answers the question the tab exists
+for, and the earlier charts answered only as a percentage: where the model went looking for
+someone, was there anyone there.
+
+The mother map has no red by construction. The birth index is keyed by the year of the birth
+alone, so a search that finds nothing moves to a neighbouring cohort rather than to another cell
+of the same column, and that move is already counted by cohort.
+
+**The data.** Five arrays in `Kinship.pas`, each a cohort by age table of longints, some tens of
+kilobytes each. The supply cells are filled in the main thread as the indexes are built; the
+chosen and the missed cells are filled from the worker threads while the kinship is built, so they
+are incremented atomically through one bounds-checking helper, `countPoolCell`. They are
+statistics and nothing reads them back into the model. They outlive the indexes themselves, which
+are freed at the end of the run, because the graph window is opened afterwards.
+
+**The drawing.** A `TUserDrawnSeries`, which hands a canvas and leaves the drawing to the unit, so
+one pass over the cells fills one rectangle each. Such a series carries no points, so the extent
+of the chart comes from an `OnGetBounds` handler rather than from the data.
+
+**What could not be checked.** `Kinship.pas` compiles with the new counters, under FPC 3.2.2 with
+the flags of `kinfert.lpi` and the stubs described above, and adds no diagnostic of its own beyond
+three more instances of the `Type size mismatch` class this project produces throughout under
+`-Cr`. `LazGraph.pas` cannot be compiled outside Lazarus at all, since TAChart reaches
+`IDEOptionsIntf`, so the drawing is the first change of this audit that rests on reading alone.
+Every symbol it uses was checked against the installed TAChart and LCL sources: `TUserDrawnSeries`
+and its two events, `TDoubleRect` and its fields, `GraphToImage`, `RGBToColor` and the four
+argument form of `FillRect`. The counts of `begin` and `end` match, fifteen of each. What remains
+possible is a compile error of the ordinary kind on the first build in the IDE.
+
+## Dead code removed, and two switches that could not be turned on (1 October)
+
+Everything below was found by counting references: every global declared in `Kinship.pas` and
+every routine of `Kinship.pas` and `LazGraph.pas` was looked up across all the live sources, with
+comments and string literals stripped so that prose could not pass for a use.
+
+**Removed because nothing reads them.**
+
+| | |
+|---|---|
+| `g_RangeGroomsForBrides_Nb`, `_Info`, `_NotFound` | Grooms classified by the bride's cohort and age at union, the mirror image of the index that is in use. Declared with a comment and touched nowhere. The compiler had been saying so, with three notes a build |
+| `gChildLookupsSeenByGen`, `gChildLookupsClampedByGen` | The lookups for a mother split by generation: two declarations, four atomic increments in `lookInChildrenRange` and a reset loop. They fed the per-generation lookup charts, which went when the Children-Grooms tab was rebuilt. The three scalars beside them, `gChildLookupsSeen`, `gChildLookupsClamped` and `gChildClampWorst`, are reported and stay |
+| `gNumEgoMen`, `gNumEgoWomen`, `gChildrenEgoMen`, `gChildrenEgoWomen` | Four counters incremented as each ego tree is built and zeroed at the start of a run, read nowhere. They were also incremented without an atomic operation from the worker threads, so they were a race as well as a waste |
+| `aliveAtAgeWithPartner`, `scanChildrenList` | Two routines never called. The second says in its own comment that it is for looking at a children list in the debugger, and it is still in the history if that is ever wanted |
+| `cLabelsX`, in `LazGraph.pas` | The axis label helper of the removed charts, nineteen lines. `cLabelsXSpan`, which replaced it, is the one in use, and its comment no longer refers to a function that is not there |
+
+**Two switches that could not be turned on, now settled.**
+
+`gCheckRelativesMax` was never assigned anywhere, so `gCheckRelativesCount <= gCheckRelativesMax`
+was false from the first ego and the block it guards, which dumps a tree and its kin counts, was
+reached only when the consistency test above it had already failed. The variable is gone and the
+test now reads `if errorKin then`. Nothing is lost: the two lines below it dump the trees of a
+range of egos chosen in the Utiles window, which is the same facility with a way of setting it.
+
+`gChildShortfallBelow` and `gChildShortfallAbove` were accumulated and never reported, which is
+what made them look like dead counters. They are reported now, in the index coverage line, and
+only where they mean something. Under a stable population the birth index covers one cohort on
+purpose and almost every child is born outside it, so the share says nothing and the line says so,
+as before. Under variable regimes a child born outside the range is a child the kinship
+reconstruction can never pick, and the line now says by how many years the range would have to
+widen, below and above, to take them all.
+
+**What was left alone.** `gStateBrides`, `gStateMothers` and `gStateYearUnions` are filled on every
+lookup and read only by two commented-out lines of `writeStates`, and `lookInMothersRange`, which
+is never called, is the only thing that ever read the second of them. `checkKinship`, which counts
+the relatives on a tree and compares the total with the count the caller holds, has its only call
+inside a commented-out block. Both are kept at your request: the first could be drawn again, and
+the second is a real invariant better revived as a check than deleted. `g_RangeYearUnions*`,
+`g_RangeBrides*` and `CAMSIM_RangeBirths*` are not dead at all; they belong to the alternate bride
+and mother algorithms that `MOTHER_ALGORITHM` reaches.
+
+**How it was checked.** `Kinship.pas` compiles under FPC 3.2.2 with the flags of `kinfert.lpi` and
+the stubs described above. The removal subtracts diagnostics and adds none: four notes and two
+warnings fewer than before it, and the one note it did create, an unused local left behind by the
+reset loop, was removed with it. The deletions carry no review markers, since a marker has nowhere
+to sit once the code is gone; the two changed regions carry them as usual, and this entry is the
+record of what went.
+
+## DemoCare: an empty status column, and a reader that fell over a file name (1 October)
+
+**The status column was empty in every row.** A DemoCare file carries the educational level in its
+`status` column, and `EDUCATION` defaults to none, under which `edStatus` returns an empty string
+for everyone. A file written that way is of no use to DemoCare, and nothing said what was missing.
+
+The mode is now forced to **stochastic** when, and only when, the individual kinship file is on,
+its format is DemoCare, and `EDUCATION` is none. The stochastic mode is the right one to force
+because it is the only one that needs no input of its own: the other two read the `EDU_` and
+`EDUPARTNER_` distributions by cohort from the cohort file, and a run without such a file would
+either draw every person from a neighbouring cohort's distribution or leave the status empty after
+all. A mode the user chose is never overridden, and a line in the log says what happened and how
+to choose a better one, so a run cannot change the meaning of its own output in silence. The test
+sits in `initGeneral`, beside the line that already names the stochastic mode when it is in force,
+so it covers a run started from a command file as well as one started from the window.
+
+**`Check DemoCare` failed with 'fert is not a valid number'.** `lookForCohortInName` read the
+birth cohort of the egos from the fourth to the seventh character of the file name, which assumes
+that every name begins with exactly three characters and then the year. Any other name reached
+`StrToInt` with something that is not a number: a file called `V14fert2000.txt` failed on the word
+`fert`, and the window reported the exception with no hint of what was wrong.
+
+It now takes the first run of exactly four digits that reads as a year, wherever it sits in the
+name, and returns `kNotDefined` when there is none. The caller says so instead of stopping, and
+what it says depends on the layout, because the cohort is needed only by the short one: the
+extended layout carries a cohort column and a name without a year costs nothing there, while the
+short layout has none, so the read goes on with the default cohort and the log says that the ages
+and the distances between generations are right while the absolute years are wrong by the
+difference.
+
+**Also settled on the way.** The three educational levels are `B`, `M` and `A`, from the lowest to
+the highest, the initials of the Spanish words, and every mode uses the same three, so the status
+column means the same thing whichever mode wrote it. The difference between the modes called
+*Individual* and *Intrafamily* on screen is the family and nothing else: both draw from the
+distributions observed by cohort and sex, and only the second lets the level of one member of a
+family depend on another's. That was one of the ten open questions of the manual and it is now
+§8.5, with a table of the four modes and what each one needs as input.
+
+**One thing that does not exist and might be wanted.** There is no correlated mode that works
+without observed data. A family correlation needs modes 2 or 3, which need the `EDU_` columns in a
+cohort file; the mode that needs nothing, the stochastic one, draws every person independently. A
+fourth mode, a family correlation on top of a uniform distribution, would be a small addition if
+the DemoCare files are to carry a plausible family structure of education without a cohort file
+behind them.
+
+## A fourth education mode, and names that say what the modes are (1 October)
+
+The education mode answers two questions at once, and the list of four on screen said only half of
+each. The level comes either from the three levels with equal chances, which needs no input, or
+from the distribution observed for the person's cohort and sex, which has to be in the cohort file.
+Separately, the family is either taken into account or not. Written as a square:
+
+| | the family does not count | the family counts |
+|---|---|---|
+| **equal chances** | 1, stochastic | 4, stochastic with family |
+| **observed levels** | 2, observed by cohort | 3, observed with family |
+
+The fourth corner did not exist, so a run without a cohort file could have no family correlation at
+all. That is the corner a DemoCare file wants most: the levels inside one family should resemble one
+another even when there is no observed distribution to draw them from.
+
+**`eduStochasticFamily`, value 4.** With probability `kEduFamilyCorrelation` a person takes a level
+already in the family, and otherwise one of the three levels with equal chances. The level taken is
+the partner's for a partner, and the level of one of the two parents, chosen at random, for a person
+whose parents are both in the network with a status of their own. Anyone else, which means a person
+at the top of a line of descent, is drawn with equal chances.
+
+The marginal distribution is exactly uniform in every generation whatever the correlation, since
+copying a uniform level and drawing one with equal chances both give a uniform level. The mode
+therefore adds association inside families and changes nothing else, so a departure from a third in
+the totals of a run is sampling noise rather than an effect of the mode. At the default correlation
+of one half, a child carries the level of one of its parents two times in three, against one time in
+three under independence. The correlation between partners is weaker than the one between parent and
+child, because `giveEdStatus` gives a person's two parents a level before the person but does not do
+the same for a partner: when the partner is reached first there is nothing to copy. Making the two
+symmetric would change `eduIntraFamily` as well, so it is left as it is and said in the comment.
+
+`kEduFamilyCorrelation` is a constant in `Declarations.pas` rather than a parameter, because the mode
+exists to give a file a plausible family structure and not to reproduce a measured association.
+Promoting it is one entry in `Init.pas` and one line in the configuration reader.
+
+**The names on screen.** *Individual* and *Intrafamily* became *Observed by cohort* and *Observed,
+with family*, beside *Stochastic* and the new *Stochastic, with family*, so that the four read as the
+square they are. The values a configuration file carries are unchanged, so an existing file reads as
+it did.
+
+**The DemoCare default.** The mode forced when a DemoCare file is written with the education mode
+unset is now the new one rather than plain stochastic, since a plausible family structure is the
+point of forcing anything at all. The log line says which mode was set and why.
+
+**How it was checked.** `Declarations.pas`, `EducationalLevel.pas` and `Init.pas` compile with the
+flags of `kinfert.lpi` and the stubs described above, and the diagnostics are identical to the build
+before them. `ComponentHelper.pas` reaches the LCL and is not in that set: its two changes are a
+fifth entry in the list of the combo and a fifth case label beside it.
+
 ## Crashes, hangs and dead ends
 
 | | |

@@ -140,6 +140,12 @@ TGraphsForm = class(TForm)
 	procedure setChart5Axis (title, labelX, labelY: string; first, last: longint; yMax: double);
 	procedure noSearchRecorded (what: string);
 	function searchSummary (nSearches, nMissed: longint): string;
+	procedure addChildGroomItem (aCaption: string; item: longint);
+	procedure drawPoolMap (kind: longint);
+	procedure drawOneMap (ACanvas: TCanvas;
+						const supplyMap, chosenMap, missedMap: array of arrayOfLongint);
+	procedure PoolMapDraw (ACanvas: TCanvas; const ARect: TRect);
+	procedure PoolMapGetBounds (var ABounds: TDoubleRect);
 	procedure ChildGroomEnter(Sender: TObject);
 	procedure ChildGroomClose(Sender: TObject);
 	procedure KinTypesChange(Sender: TObject);
@@ -153,6 +159,17 @@ TGraphsForm = class(TForm)
 	procedure SaveToFileChildGroomInfoClick(Sender: TObject);
 
 	private
+	{Which entry of the Children-Grooms list is at each position. The list is shorter outside
+	 the IDE, so the position cannot be used as the entry.}
+	fChildGroomItem: arrayOfLongint;
+	{What the two handlers of the pool map draw. They are given no parameters of their own by
+	 TAChart, so drawPoolMap leaves here what they need: which map, the span it covers, and
+	 the largest cell of each of the three layers, which set the colour scales.}
+	fPoolKind: longint;
+	fPoolFirstCohort, fPoolLastCohort, fPoolFirstAge, fPoolLastAge: longint;
+	fPoolMaxSupply, fPoolMaxChosen, fPoolMaxMissed: longint;
+	{an empty map, passed where one of the three layers does not exist}
+	fNoMap: array of arrayOfLongint;
 
 	public
 	prop_colors: arrayOfLongint;
@@ -1359,46 +1376,49 @@ const
 	 years of a search that missed, which is now in the memo and in verification.txt where it
 	 can be read as a number instead of estimated off a chart.}
 	const
-		kItemSearchBoth = 0;
-		kItemMotherByGeneration = 1;
-		kItemBrideByGeneration = 2;
-		kItemUnionsOffered = 3;
+		{The entries of the list. The numbers are identities and not positions: everything but
+		 the first entry is offered only when the program runs from the IDE, so the position of
+		 an entry depends on the build. fChildGroomItem maps one to the other.}
+		kItemUnionsOffered = 0;
+		kItemPoolMothers = 1;
+		kItemPoolBrides = 2;
+		kItemSearchBoth = 3;
+		kItemMotherByGeneration = 4;
+		kItemBrideByGeneration = 5;
 
+	procedure TGraphsForm.addChildGroomItem (aCaption: string; item: longint);
+	begin
+		ChildGroomList.Items.Add (aCaption);
+		setLength (fChildGroomItem, length (fChildGroomItem) + 1);
+		fChildGroomItem [high (fChildGroomItem)] := item;
+	end;
+
+	{What a released build shows of this tab, and why.
+
+	 The first entry describes what the pre-simulation built, which is a result: it says over
+	 which cohorts the unions the model produced actually fall, and whether the index could hold
+	 them all. A user who widens a cohort range reads it to see what the change did.
+
+	 The rest are diagnostics of the machinery underneath, written to answer a question about
+	 the program rather than about the population, so they are offered only when the program
+	 runs from the IDE. gRunFromIDE is the same test the debugger traps and the dump files use.}
 	procedure TGraphsForm.ChildGroomCreate;
 	begin
-		with ChildGroomList do begin
-			Items.Clear;
-			Items.Add('Searches that did not find their candidate');
-			Items.Add('Mother search, by generation');
-			Items.Add('Bride search, by generation');
-			Items.Add('Unions produced, by groom cohort');
-			ItemIndex := 0;
+		setLength (fChildGroomItem, 0);
+		ChildGroomList.Items.Clear;
+		addChildGroomItem ('Unions produced, by groom cohort', kItemUnionsOffered);
+		if gRunFromIDE then begin
+			addChildGroomItem ('The pool of mothers, as a map', kItemPoolMothers);
+			addChildGroomItem ('The pool of brides, as a map', kItemPoolBrides);
+			addChildGroomItem ('Searches that did not find their candidate', kItemSearchBoth);
+			addChildGroomItem ('Mother search, by generation', kItemMotherByGeneration);
+			addChildGroomItem ('Bride search, by generation', kItemBrideByGeneration);
 		end;
+		ChildGroomList.ItemIndex := 0;
 		ChildGroomChange(self);
 	end;
 
-	function cLabelsX (minVal, maxVal: longint): arrayOfDouble;
-	var
-		n, int, first, last, ind, val: longint;
-
-	begin
-		first := trunc ((minVal - kStateRangeLengthLimit) / 10) * 10;
-		last := trunc ((maxVal + kStateRangeLengthLimit) / 10) * 10;
-		int := 10;
-		last := trunc (last / int);
-		first := trunc (first / int);
-		n := last - first + 1;
-		setLength (result{%H-}, n);
-		ind := 0;
-		for val := first to last do begin
-			result[ind] := val * int;
-			inc (ind);
-		end;
-	end;
-
-	{Decades covering [first, last], for a chart drawn over an arbitrary span of cohorts.
-	 cLabelsX above always widens by kStateRangeLengthLimit on each side, which these charts
-	 cannot use because they trim the span they draw.}
+	{Decades covering [first, last], for a chart drawn over an arbitrary span of cohorts.}
 	function cLabelsXSpan (first, last: longint): arrayOfDouble;
 	var
 		n, ind, val, firstTen, lastTen: longint;
@@ -1728,10 +1748,220 @@ const
 		setLength (labels, 0);
 	end;
 
-	procedure TGraphsForm.ChildGroomChange(Sender: TObject);
+	{THE TWO POOLS, DRAWN AS MAPS
+
+	 The kinship reconstruction does not simulate a relative from nothing: it asks the
+	 pre-simulation for one. Two indexes answer, and each has a shape of its own, described
+	 beside the five arrays in Kinship.pas. These two entries draw those indexes as they stand
+	 at the end of a run, so that the question behind this tab can be read off a picture
+	 instead of a percentage: where the model went looking for someone, was there anyone there?
+
+	 One cell is one cohort by one year of age. Its colour says which of three states it is in,
+	 and the three are exclusive, so that nothing is hidden under anything else:
+
+	   blue    the index has candidates here and no search ever used them. This is the part
+	           of the pool the run paid for and did not need.
+	   green   the index has candidates here and searches drew from them. This is where the
+	           model actually lived, and the shade says how often.
+	   red     a search asked for this cell and found it empty, so it had to take someone from
+	           a neighbouring age at union. This is the failure the tab exists to show, and it
+	           is drawn last so that it is never covered.
+
+	 The shade within each colour is on a log scale, because a cell with one candidate and a
+	 cell with ten thousand are both worth seeing and a linear scale would hide the first.
+
+	 The mother map has no red: the birth index is keyed by the year of the birth alone, so a
+	 search that finds nothing moves to a neighbouring cohort rather than to another cell of the
+	 same column. That move is counted by cohort and is what the search entries of this tab
+	 draw.}
+
+	function poolByte (v: double): byte;
+	begin
+		if (v < 0.0) then v := 0.0;
+		if (v > 255.0) then v := 255.0;
+		result := byte (round (v));
+	end;
+
+	function poolShade (n, maxN: longint; r, g, b: byte): TColor;
+	{white for an empty cell, and from a pale tint to the full colour as the count rises. The
+	 floor of 0.15 keeps a cell with a single candidate visible.}
+	var
+		f: double;
+	begin
+		if (n <= 0) or (maxN <= 0) then exit (clWhite);
+		f := ln (1.0 + n) / ln (1.0 + maxN);
+		if (f < 0.15) then f := 0.15;
+		if (f > 1.0) then f := 1.0;
+		result := RGBToColor (poolByte (255.0 - f * (255.0 - r)),
+							poolByte (255.0 - f * (255.0 - g)),
+							poolByte (255.0 - f * (255.0 - b)));
+	end;
+
+	function poolMapScan (const m: array of arrayOfLongint;
+						var firstUsed, lastUsed: longint): longint;
+	{the largest cell of this map, and the span of cohorts that carry anything, widened to take
+	 this map in. The caller sets firstUsed above lastUsed to start with, so that a run of
+	 empty maps leaves the span empty.}
+	var
+		cohortInd, ageInd, v: longint;
+	begin
+		result := 0;
+		for cohortInd := 0 to length (m) - 1 do
+			for ageInd := 0 to length (m [cohortInd]) - 1 do begin
+				v := m [cohortInd, ageInd];
+				if (v <= 0) then continue;
+				if (v > result) then result := v;
+				if (cohortInd < firstUsed) then firstUsed := cohortInd;
+				if (cohortInd > lastUsed) then lastUsed := cohortInd;
+			end;
+	end;
+
+	procedure TGraphsForm.drawOneMap (ACanvas: TCanvas;
+						const supplyMap, chosenMap, missedMap: array of arrayOfLongint);
+	{One pass over the cells. FillRect uses the brush alone, so the pen is left as it is. A cell
+	 is often less than a pixel wide, hence the widening to one pixel at the end: a map of three
+	 hundred cohorts on a chart eight hundred pixels across must not drop every other column.}
+	var
+		cohortInd, ageInd: longint;
+		supply, chosen, missed: longint;
+		g1, g2: TDoublePoint;
+		p1, p2: TPoint;
+		x1, y1, x2, y2: longint;
+	begin
+		ACanvas.Brush.Style := bsSolid;
+		for cohortInd := 0 to length (supplyMap) - 1 do begin
+			g1.x := fPoolFirstCohort + cohortInd;
+			g2.x := g1.x + 1.0;
+			for ageInd := 0 to length (supplyMap [cohortInd]) - 1 do begin
+				supply := supplyMap [cohortInd, ageInd];
+				chosen := 0;
+				if (cohortInd < length (chosenMap)) then
+					if (ageInd < length (chosenMap [cohortInd])) then
+						chosen := chosenMap [cohortInd, ageInd];
+				missed := 0;
+				if (cohortInd < length (missedMap)) then
+					if (ageInd < length (missedMap [cohortInd])) then
+						missed := missedMap [cohortInd, ageInd];
+				if (supply = 0) and (chosen = 0) and (missed = 0) then continue;
+				if (missed > 0) then
+					ACanvas.Brush.Color := poolShade (missed, fPoolMaxMissed, 200, 0, 0)
+				else if (chosen > 0) then
+					ACanvas.Brush.Color := poolShade (chosen, fPoolMaxChosen, 0, 130, 0)
+				else
+					ACanvas.Brush.Color := poolShade (supply, fPoolMaxSupply, 0, 60, 190);
+				g1.y := fPoolFirstAge + ageInd;
+				g2.y := g1.y + 1.0;
+				p1 := Chart5.GraphToImage (g1);
+				p2 := Chart5.GraphToImage (g2);
+				x1 := min (p1.x, p2.x);
+				x2 := max (p1.x, p2.x);
+				y1 := min (p1.y, p2.y);
+				y2 := max (p1.y, p2.y);
+				if (x2 <= x1) then x2 := x1 + 1;
+				if (y2 <= y1) then y2 := y1 + 1;
+				ACanvas.FillRect (x1, y1, x2, y2);
+			end;
+		end;
+	end;
+
+	procedure TGraphsForm.PoolMapDraw (ACanvas: TCanvas; const ARect: TRect);
+	{TAChart hands a user drawn series the canvas and the chart's clipping rectangle. Which map
+	 to draw is in fPoolKind, left there by drawPoolMap.}
+	begin
+		if (fPoolKind = kItemPoolMothers) then
+			drawOneMap (ACanvas, gPoolMotherSupply, gPoolMotherChosen, fNoMap)
+		else
+			drawOneMap (ACanvas, gPoolBrideSupply, gPoolBrideChosen, gPoolBrideMissed);
+	end;
+
+	procedure TGraphsForm.PoolMapGetBounds (var ABounds: TDoubleRect);
+	{A user drawn series has no points, so the chart cannot work out the extent by itself and
+	 would draw an empty frame. The map covers whole cells, hence the one added at each end.}
+	begin
+		ABounds.a.x := fPoolFirstCohort;
+		ABounds.a.y := fPoolFirstAge;
+		ABounds.b.x := fPoolLastCohort + 1;
+		ABounds.b.y := fPoolLastAge + 1;
+	end;
+
+	procedure TGraphsForm.drawPoolMap (kind: longint);
+	var
+		serie: TUserDrawnSeries;
+		firstUsed, lastUsed, nCohorts, firstCohort, firstAge, lastAge: longint;
+		what, title: string;
 	begin
 		Chart5.ClearSeries;
-		case ChildGroomList.ItemIndex of
+		fPoolKind := kind;
+		firstUsed := high (longint);
+		lastUsed := -1;
+		if (kind = kItemPoolMothers) then begin
+			what := 'The pool of mothers';
+			firstCohort := gPoolMotherFirstCohort;
+			firstAge := kMinAgeFert;
+			lastAge := kMaxAgeFert;
+			nCohorts := length (gPoolMotherSupply);
+			fPoolMaxSupply := poolMapScan (gPoolMotherSupply, firstUsed, lastUsed);
+			fPoolMaxChosen := poolMapScan (gPoolMotherChosen, firstUsed, lastUsed);
+			fPoolMaxMissed := 0;
+		end else begin
+			what := 'The pool of brides';
+			firstCohort := gPoolBrideFirstCohort;
+			firstAge := kMinAgeUnion_men;
+			lastAge := kMaxAgeUnion_men;
+			nCohorts := length (gPoolBrideSupply);
+			fPoolMaxSupply := poolMapScan (gPoolBrideSupply, firstUsed, lastUsed);
+			fPoolMaxChosen := poolMapScan (gPoolBrideChosen, firstUsed, lastUsed);
+			fPoolMaxMissed := poolMapScan (gPoolBrideMissed, firstUsed, lastUsed);
+		end;
+		if (nCohorts = 0) or (lastUsed < firstUsed) then begin
+			noSearchRecorded (what);
+			exit;
+		end;
+		{a margin of five cohorts on each side, so that a pool that reaches the edge of its own
+		 index can be told from one that stops short of it}
+		firstUsed := max (0, firstUsed - 5);
+		lastUsed := min (nCohorts - 1, lastUsed + 5);
+		fPoolFirstCohort := firstCohort + firstUsed;
+		fPoolLastCohort := firstCohort + lastUsed;
+		fPoolFirstAge := firstAge;
+		fPoolLastAge := lastAge;
+
+		title := what + ', as a map. Blue: held and never used. Green: drawn from';
+		if (kind = kItemPoolBrides) then begin
+			title := title + '. Red: asked for and empty';
+			if (fPoolMaxMissed = 0) then
+				title := title + ' (none)';
+		end;
+		setChart5Axis (title, 'Birth cohort', 'Age at union', fPoolFirstCohort, fPoolLastCohort, 1.0);
+		if (kind = kItemPoolMothers) then
+			Chart5.LeftAxis.Title.caption := 'Age of the mother at that birth';
+		{the vertical axis of a map is a span of ages and not a count from zero, which is what
+		 setChart5Axis leaves behind}
+		Chart5.LeftAxis.Range.Min := fPoolFirstAge;
+		Chart5.LeftAxis.Range.Max := fPoolLastAge + 1;
+		Chart5.LeftAxis.Range.UseMin := true;
+		Chart5.LeftAxis.Range.UseMax := true;
+
+		serie := TUserDrawnSeries.Create (Chart5);
+		serie.OnDraw := @PoolMapDraw;
+		serie.OnGetBounds := @PoolMapGetBounds;
+		Chart5.AddSeries (serie);
+	end;
+
+	procedure TGraphsForm.ChildGroomChange(Sender: TObject);
+	var
+		item: longint;
+	begin
+		Chart5.ClearSeries;
+		{the position in the list is not the entry: see ChildGroomCreate}
+		item := kItemUnionsOffered;
+		if (ChildGroomList.ItemIndex >= 0) and (ChildGroomList.ItemIndex <= high (fChildGroomItem)) then
+			item := fChildGroomItem [ChildGroomList.ItemIndex];
+		case item of
+		kItemPoolMothers:
+			drawPoolMap (kItemPoolMothers);
+		kItemPoolBrides:
+			drawPoolMap (kItemPoolBrides);
 		kItemSearchBoth:
 			drawSearchBoth;
 		kItemMotherByGeneration:

@@ -8,6 +8,22 @@ The kin network is built by combining two directions of simulation. Forward, a w
 
 Each ego therefore ends with a genealogical tree spanning descendants, ancestors, and their collateral relatives.
 
+## Documentation
+
+**[The KinFert manual](docs/KinFert-Manual.md)** is the place to start. It describes every window
+and every option, the demographic model behind them, the kin taxonomy and the file formats, and it
+has two guided chapters on using the fertility model and the kinship model. It is a first draft
+reconstructed from the source, and the points where the code alone does not settle the intended
+demographic meaning are marked and collected in its Appendix F.
+
+The other documents are in [`docs/`](docs):
+
+| Document | What it is |
+|---|---|
+| [`KinFert-Verification-Plan.md`](docs/KinFert-Verification-Plan.md) | What has to be verified: one entry per check, with the run to make, the file to look at and the answer to expect |
+| [`KinFert-TODO.md`](docs/KinFert-TODO.md) | What remains before a finished release |
+| [`KinFert-FIXED.md`](docs/KinFert-FIXED.md) | What has been corrected since the audit began, and why |
+
 ## Status
 
 **KinFert is in its verification phase. It is published so that the code, its documentation and
@@ -85,17 +101,28 @@ Pascal is the proper remedy and is on the list.
 
 ### The two configuration files
 
-The program keeps the folder it reads configurations from, and the folder it writes results to, in
-two small text files beside the executable. Each holds one line, a path ending in a separator. They
-are specific to the machine, so the repository carries templates instead:
+The program keeps two small text files of one line each: the folder configurations were last read
+from, and the folder results were last written to. It writes them itself, the first whenever a
+configuration file is read and the second whenever an output directory is chosen with the
+**Output directory** button.
 
-```
-cp "KinFert ConfigDir.cfg.example" "KinFert ConfigDir.cfg"
-cp "KinFert OutputDir.cfg.example" "KinFert OutputDir.cfg"
-```
+**They are the program's own state. They are not input, and are not meant to be created or edited
+by hand.** A fresh installation has neither, which is not an error: the two paths start empty, and
+the program writes the files as soon as the folders have been chosen in the interface.
 
-Then edit each one to a folder that exists on your machine. On Windows the line looks like
-`C:\Users\yourname\kinfert\`.
+Each system keeps them in the folder it sets aside for an application's per-user state, under a name
+that says which system wrote it, so that a Mac and a Windows PC never overwrite each other's paths:
+
+| System | Files |
+|---|---|
+| macOS | `~/Library/Application Support/KinFert/ConfigDir-macOS.cfg` and `OutputDir-macOS.cfg` |
+| Windows | `%APPDATA%\KinFert\ConfigDir-Windows.cfg` and `OutputDir-Windows.cfg` |
+| other Unix | `$XDG_CONFIG_HOME`, or `~/.config` when it is unset, then `KinFert/ConfigDir-Linux.cfg` and `OutputDir-Linux.cfg` |
+
+Before 1 October 2026 both files sat next to the executable instead, which on macOS meant inside
+the application bundle. A version from before that date leaves its two files there; the first run of
+a later version reads them, writes the new ones, and from then on uses only the new ones. Nothing
+has to be moved by hand, and the old files can be deleted once a run has been made.
 
 ## Binaries
 
@@ -119,7 +146,6 @@ xattr -d com.apple.quarantine /path/to/KinFert.app
 | `docs/KinFert-Manual.md` | User and reference manual: every window and option, the demographic model, the kin taxonomy, and the file formats. A first draft, with open questions collected in its Appendix F. |
 | `docs/KinFert-TODO.md` | The working list of what remains before a finished release. |
 | `docs/KinFert-Verification-Plan.md` | What has to be verified, one entry per check, with the run to make, the file to look at and the answer to expect. The program is in its verification phase and this is the record of it. |
-| `*.cfg.example` | Templates for the two machine-specific configuration files. |
 | `docs/KinFert-FIXED.md` | What has been corrected since the audit began, and why. |
 | `tools/` | `compareruns.lpr`, which compares two results folders, and the small scripts described in `tools/README.md`. |
 
@@ -140,10 +166,6 @@ xattr -d com.apple.quarantine /path/to/KinFert.app
 | `Utilities.pas`, `StringOfLib.pas` | File handling, formatting and messages. |
 | `RandomNumbers.pas` | The random number generator, one instance per thread. |
 | `Laz*.pas`, `lazkin*.pas` | The GUI windows and dialogs. |
-
-## Documentation
-
-`docs/KinFert-Manual.md` is the place to start. It is a first draft reconstructed from the source, and the points where the code alone does not settle the intended demographic meaning are marked and collected in its Appendix F.
 
 ## Citation
 

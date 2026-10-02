@@ -98,9 +98,13 @@ type
 	public
 		constructor Create(AOwner: TComponent); override;
 		destructor Destroy; override;
-		procedure ReadStdPath (fileName: string; var path: string);
+		{Both now take the base name of a state file, 'ConfigDir' or 'OutputDir', rather than
+		 a complete file name: where the file goes, and what it is called, depend on the
+		 system. THE TWO STATE FILES, in the implementation, says why and gives the paths.
+		 setOutputPath between them is unchanged.}
+		procedure ReadStdPath (baseName: string; var path: string);
 		procedure setOutputPath(path:string);
-		procedure WriteStdPath (fileName, path: string);
+		procedure WriteStdPath (baseName, path: string);
         procedure saveLog (fileNameWithPath: string);
 		procedure ClearLog;
         procedure myCloseFiles(Data: PtrInt);
@@ -140,6 +144,101 @@ uses
 
 var
 	deltaLogWidth, deltaLogHeight: longint;
+
+{THE TWO STATE FILES
+
+ KinFert remembers two folders from one session to the next: the folder configuration
+ files were last read from, and the folder results were last written to. Each is kept in a
+ text file of one line, which the program writes itself. They are state and not input: the
+ user never has to create or edit them, and a fresh installation has neither.
+
+ Until 1 October 2026 both files sat next to the executable, under the names
+ 'KinFert ConfigDir.cfg' and 'KinFert OutputDir.cfg'. That location is wrong on both
+ platforms. On macOS it falls inside KinFert.app/Contents/MacOS/, and an application
+ bundle is meant to be read only and signed: replacing the bundle with a new build loses
+ the two paths, and an application installed where the user cannot write cannot save them
+ at all. On Windows it leaves two files of no interest to anyone in the folder of the
+ program itself. Worse, when that folder is shared between two machines, which is how this
+ project is kept in step between a Mac and a Windows PC, each system overwrites the other's
+ paths, and a path written by one of them means nothing on the other.
+
+ Both files now live in the folder the system sets aside for an application's own per-user
+ state, and each carries the name of the system that wrote it, so that the two cannot be
+ taken for one another even if the folder itself is ever shared:
+
+     macOS     ~/Library/Application Support/KinFert/ConfigDir-macOS.cfg
+     Windows   %APPDATA%\KinFert\ConfigDir-Windows.cfg
+     other     $XDG_CONFIG_HOME, or ~/.config when it is unset, then
+               KinFert/ConfigDir-Linux.cfg
+
+ and the same three with OutputDir in place of ConfigDir. ReadStdPath falls back to
+ the old file next to the executable when the new one is absent, and writes the new one as
+ soon as it has read the old, so the move is made by itself on the first run and nothing
+ has to be copied by hand. The old file is left where it is.}
+
+const
+	{The base names of the two state files, which is what ReadStdPath and WriteStdPath take}
+	kStateConfigDir = 'ConfigDir';
+	kStateOutputDir = 'OutputDir';
+
+	{The name of the system that wrote the file, which becomes part of the file name.
+	 IS_MACOS is set from DARWIN in Defines.pas. The third branch covers any Unix other
+	 than macOS.}
+	{$IFDEF IS_MACOS}
+	kStatePlatform = 'macOS';
+	{$ELSE}
+	{$IFDEF WINDOWS}
+	kStatePlatform = 'Windows';
+	{$ELSE}
+	kStatePlatform = 'Linux';
+	{$ENDIF}
+	{$ENDIF}
+
+	function kinFertStateDir: string;
+	{The folder this system sets aside for an application's own per-user state, with
+	 KinFert's own folder inside it. The result ends with a path separator. The folder is
+	 not created here: WriteStdPath creates it on the first write.}
+	var
+		base: string;
+	begin
+		{$IFDEF IS_MACOS}
+		base := GetEnvironmentVariable ('HOME');
+		if (base = '') then base := GetUserDir;
+		result := IncludeTrailingPathDelimiter (base) + 'Library' + PathDelim +
+					'Application Support' + PathDelim + 'KinFert' + PathDelim;
+		{$ELSE}
+		{$IFDEF WINDOWS}
+		base := GetEnvironmentVariable ('APPDATA');
+		if (base = '') then
+			{APPDATA is always set on Windows, so this is a last resort}
+			result := IncludeTrailingPathDelimiter (GetAppConfigDir (false))
+		else
+			result := IncludeTrailingPathDelimiter (base) + 'KinFert' + PathDelim;
+		{$ELSE}
+		base := GetEnvironmentVariable ('XDG_CONFIG_HOME');
+		if (base = '') then begin
+			base := GetEnvironmentVariable ('HOME');
+			if (base = '') then base := GetUserDir;
+			base := IncludeTrailingPathDelimiter (base) + '.config';
+		end;
+		result := IncludeTrailingPathDelimiter (base) + 'KinFert' + PathDelim;
+		{$ENDIF}
+		{$ENDIF}
+	end;
+
+	function stateFilePath (baseName: string): string;
+	{Where the state file of this base name belongs on this system}
+	begin
+		result := kinFertStateDir + baseName + '-' + kStatePlatform + '.cfg';
+	end;
+
+	function legacyStateFilePath (baseName: string): string;
+	{Where the same file was kept before 1 October 2026, next to the executable. It is read
+	 once, so that a user who already had the two folders set does not have to set them
+	 again, and it is never written.}
+	begin
+		result := ExtractFilePath (Application.ExeName) + 'KinFert ' + baseName + '.cfg';
+	end;
 
  	function MessageBoxTwoChoices (option1, option2: PChar): boolean;
 	var 
@@ -181,16 +280,37 @@ begin
 	inherited;
 end;
 
-procedure TKinFertForm.ReadStdPath (fileName: string; var path: string);
+procedure TKinFertForm.ReadStdPath (baseName: string; var path: string);
 var
 	f: TFileType; // used in the main thread only
 	res: longint;
+	aLine: string;
+	fromLegacy: boolean;
 begin
-	f := TFileType.Create (ExtractFilePath (Application.ExeName) + fileName, res, 'READSTDPATH', f_reset);
-	if res = 0 then begin
-		readLn (f.fileHandle, path);
+	aLine := '';
+	fromLegacy := false;
+	f := TFileType.Create (stateFilePath (baseName), res, 'READSTDPATH', f_reset);
+	if (res <> 0) then begin
+		{nothing kept in the folder this version uses: look where these files were kept
+		 before, next to the executable}
+		f.Destroy;
+		f := TFileType.Create (legacyStateFilePath (baseName), res, 'READSTDPATH', f_reset);
+		fromLegacy := (res = 0);
 	end;
+	if (res = 0) then
+		if not eof (f.fileHandle) then
+			readLn (f.fileHandle, aLine);
 	f.Destroy;
+	{No file, or an empty one, leaves path as the caller had it, which is what the
+	 constructor and defaultConfigFile put there. The old routine read straight into path
+	 and so could not make that distinction.}
+	if (aLine <> '') then begin
+		path := aLine;
+		if fromLegacy then
+			{the old file is read once and its path written to the new place at once, so that
+			 the move is made on the first run after this version and made only once}
+			self.WriteStdPath (baseName, path);
+	end;
 end;
 
 procedure TKinFertForm.saveLog (fileNameWithPath: string);
@@ -227,8 +347,8 @@ begin
 	setLength (gConfigFileCollection, 0);
 	simulationRan := False;
 	memoWriting := false;
-	self.ReadStdPath ('KinFert ConfigDir.cfg', gPathToConfig);
-	self.ReadStdPath ('KinFert OutputDir.cfg', gMainPathToResult);
+	self.ReadStdPath (kStateConfigDir, gPathToConfig);
+	self.ReadStdPath (kStateOutputDir, gMainPathToResult);
 	g_GENPARAM.OUTPUT_DIRECTORY.value := gMainPathToResult;
 	OutputDirName.Caption := gMainPathToResult;
 	gPathToResult := gMainPathToResult;
@@ -318,7 +438,7 @@ begin
 					gMainPathToResult := g_GENPARAM.OUTPUT_DIRECTORY.value;
 				OutputDirName.Caption := gMainPathToResult;
 			end;
-			WriteStdPath ('KinFert ConfigDir.cfg', gPathToConfig);
+			WriteStdPath (kStateConfigDir, gPathToConfig);
 		end else
 			self.statusCaption ('Error while reading config file');
 		self.FlushString({%H-}PtrInt(nil));
@@ -462,13 +582,34 @@ begin
 	simulationRan := True;
 	if gDebugError then begin
 		errorShape.brush.color := clRed;
-		{a failed check sets gDebugError, so say how many failed and where to read them. A
-		 message written the old way, through writeAndWait, leaves the count at zero and
-		 keeps the wording it had before.}
-		if (verificationFailures > 0) then
-			errorMessage := IntToStr (verificationFailures) +
-				' verification failures. See the table at the end of the memo, and verification.txt in the results folder'
-		else
+		{A failed check sets gDebugError, so say what failed and where to read it. The wording
+		 follows the table at the end of the memo exactly, which the old line did not: it
+		 printed verificationFailures, which at that time counted the messages from
+		 writeAndWait as well as the failures of checks, while the table counted them apart. A
+		 single fault caught twice, once by the check that saw each case and once by the
+		 routine that summarised it, was announced as three failures.
+
+		 Checks are counted here by check and not by occurrence, since one invariant that
+		 failed twice is one problem and not two; the number of occurrences is given in
+		 brackets.}
+		if (verificationFailedChecks > 0) or (verificationReports > 0) then begin
+			errorMessage := '';
+			if (verificationFailedChecks > 0) then begin
+				errorMessage := IntToStr (verificationFailedChecks) + ' check';
+				if (verificationFailedChecks > 1) then errorMessage := errorMessage + 's';
+				errorMessage := errorMessage + ' failed';
+				if (verificationFailures > verificationFailedChecks) then
+					errorMessage := errorMessage + ' (' + IntToStr (verificationFailures) + ' cases)';
+			end;
+			if (verificationReports > 0) then begin
+				if (errorMessage <> '') then errorMessage := errorMessage + ' and ';
+				errorMessage := errorMessage + IntToStr (verificationReports) + ' problem';
+				if (verificationReports > 1) then errorMessage := errorMessage + 's';
+				errorMessage := errorMessage + ' reported';
+			end;
+			errorMessage := errorMessage +
+				'. See the table at the end of the memo, and verification.txt in the results folder';
+		end else
 			errorMessage := 'Error in the code. Look at the debug file...';
 		errorShape.Hint := errorMessage;
 		errorShape.ShowHint := true;
@@ -510,7 +651,7 @@ begin
 	gMainPathToResult := path;
 	g_GENPARAM.OUTPUT_DIRECTORY.value := gMainPathToResult;
 	OutputDirName.Caption := gMainPathToResult;
-	self.WriteStdPath ('KinFert OutputDir.cfg', gMainPathToResult);
+	self.WriteStdPath (kStateOutputDir, gMainPathToResult);
 end;
 
 procedure TKinFertForm.OutputDirButtonClick(Sender: TObject);
@@ -528,14 +669,23 @@ begin
 	end;
 end;
 
-procedure TkinFertForm.WriteStdPath (fileName, path: string);
+procedure TkinFertForm.WriteStdPath (baseName, path: string);
 var
 	f: TFileType; // used in the main thread only
 	aDir: string;
 	res: longint;
 begin
-	aDir := ExtractFilePath (Application.ExeName);
-	f := TFileType.Create (aDir + fileName, res, 'WRITESTDPATH');
+	aDir := kinFertStateDir;
+	{The folder belongs to KinFert and does not exist until the first write, so it is made
+	 here, with every level of it. There is deliberately no message when that fails:
+	 WriteStdPath can be reached from ReadStdPath during FormCreate, and at that moment
+	 myBufferStr has not been created yet, so the log of the main window cannot be written
+	 to. A failure leaves the two folders unremembered from one session to the next, which
+	 is plain enough to the user, and this is a folder the user always owns.}
+	if not DirectoryExists (aDir) then
+		if not ForceDirectories (ExcludeTrailingPathDelimiter (aDir)) then
+			exit;
+	f := TFileType.Create (stateFilePath (baseName), res, 'WRITESTDPATH');
 	if res = 0 then begin
 		cWriteLn (f, path);
 	end;

@@ -99,7 +99,6 @@ const
 	kMaxLifeExpectancy = 112;		{kMaxAgeLife is 130, so this is a judgement about what a life
 									 table should be asked to deliver, not an array bound}
 
-// >>> Claude 2026-09-30 start
 	{Mean age at first union, the parameter of the nuptiality schedule. The two pairs below are
 	 the bounds of an individual age at union, which is what the dialog has always applied to
 	 these two parameters and which is wider than a mean can take. The narrower range a schedule
@@ -112,7 +111,6 @@ const
 	kMaxMeanAgeUnion = 59;			{women}
 	kMinMeanAgeUnionMen = 10;
 	kMaxMeanAgeUnionMen = 69;		{men}
-// <<< Claude 2026-09-30 end
 
 	{Proportion ever in union, by the end of the ages at which a union can start}
 	kMinEverInUnionProp = 0;
@@ -428,10 +426,35 @@ const
 	eduCohort = 2; {educational level is determined in a stochastic way at the individual level,
 					but based on observed distribution of educational level for the cohort, with NO intrafamily correlation}
 	eduIntraFamily = 3; {same at eduCohort, but with intrafamily correlation}
+	{The four modes make a square: the level comes either from the three levels with equal
+	 chances or from a distribution observed by cohort and sex, and the family is either taken
+	 into account or not.
+
+	                         no family                with family
+	   no data required      eduStochastic            eduStochasticFamily
+	   observed data         eduCohort                eduIntraFamily
+
+	 The fourth corner was missing. The two modes that read observed data need the EDU_ and
+	 EDUPARTNER_ distributions in a cohort file, so a run without such a file could have no family
+	 correlation at all, which is what a DemoCare file wants above everything: the levels inside
+	 one family should resemble one another even when there is no observed distribution to draw
+	 them from.}
+	eduStochasticFamily = 4; {equal chances for the three levels, with members of one family
+							  resembling one another: see edStatusStochaFamily}
+
+	{How often a person takes a level already in the family rather than drawing one with equal
+	 chances, under eduStochasticFamily. At zero the mode is eduStochastic; at one every family is
+	 of one level throughout. One half gives a child the level of one of its parents two times in
+	 three, against one time in three when the draws are independent. It is a constant rather than
+	 a parameter because the mode exists to give a file a plausible family structure and not to
+	 reproduce a measured association; making it a parameter is one entry in Init and one line in
+	 the configuration reader.}
+	kEduFamilyCorrelation = 0.5;
 type
-	EduStatusKinds = eduNone..eduIntraFamily;
+	EduStatusKinds = eduNone..eduStochasticFamily;
 const
-	strEduStatusKinds: array [EduStatusKinds] of string = ('none', 'stochastic', 'cohort observed', 'intra family');
+	strEduStatusKinds: array [EduStatusKinds] of string = ('none', 'stochastic', 'observed by cohort',
+			'observed with family', 'stochastic with family');
 
 {DECLARATIONS_TYPE}
 type
@@ -719,10 +742,8 @@ type
 		destructor Destroy; override;
 		procedure initUnion (indUnion: longint; initAges: boolean = true);
 		function mySize: longint;
-// >>> Claude 2026-09-30 start
 		procedure copyMe(out o: TUnionsType);	{out, not var: the routine creates the object
 												 and never reads what it was given}
-// <<< Claude 2026-09-30 end
 		procedure newUnion(initAges: boolean = true);
 		procedure visualizeIncoherentUnions(forceWrite: boolean = false);
 		function checkMe (pRelative: pRelativeType): boolean;
@@ -832,8 +853,7 @@ type
 		inKinSet: boolean; {whether that person is linked to at least another relative in the output file with information for each individual}
 
 		typeHeir: typeOfHeirs;
-// >>> Claude 2026-09-30 start
-		{N26: the first algorithm of the inheritance module answers with one branch of the
+		{the first algorithm of the inheritance module answers with one branch of the
 		 kinship tree in typeHeir, and the partner is one of those branches, so a relative whose
 		 heirs are the children cannot at the same time be recorded as leaving a surviving
 		 partner who inherits. The succession rules the second algorithm applies do give the
@@ -843,7 +863,6 @@ type
 		 relative it examines, whatever branch typeHeir ends up naming. It is read by checkHeirs
 		 and by nothing else, so it changes no simulated quantity.}
 		partnerCanInherit: boolean;
-// <<< Claude 2026-09-30 end
 		//egoAsHeir: typeEgoAsHeir;
 		// First algorithm, with incomplete information on heirs (complete only for ego)
 		nHeirs: longint;
@@ -1687,9 +1706,7 @@ end;
 				sizeOf (nUnions) +
 				sizeOf (partnershipStatusAt50) +
 				sizeOf (typeOfHeirs) +
-// >>> Claude 2026-09-30 start
 				sizeOf (partnerCanInherit) +
-// <<< Claude 2026-09-30 end
 				sizeOf (nHeirs) +
 				sizeOf (heirs) +
 				sizeOf (nInheritances) +
@@ -2482,9 +2499,7 @@ procedure GenericName.copyMeTo (var toObj: GenericName);
 		result := InstanceSize + length (Unions) * sizeOf (UnionAgeDurationsType);
 	end;
 
-// >>> Claude 2026-09-30 start
 	procedure TUnionsType.copyMe(out o: TUnionsType);
-// <<< Claude 2026-09-30 end
 	var
 		indUnion: longint;
 		ageFec: FecundAges;

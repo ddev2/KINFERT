@@ -193,15 +193,14 @@ type
 		chk_edu_relativeMissing,
 		chk_edu_cohortNotAssigned,
 		chk_edu_parentStatusMissing,
-// >>> Claude 2026-09-30 start
-		{Inheritance: what the two algorithms of the module agree about, N26}
+{Inheritance: what the two algorithms of the module agree about == start}
 		chk_inh_partnerTestsDiffer,
 		chk_inh_heirsFoundByOneOnly,
 		chk_inh_heirKinTypes,
 		chk_inh_heirNotConfirmed,
 		chk_inh_ascendantsSameDegree,
 		chk_inh_noCommonAncestor,
-// <<< Claude 2026-09-30 end
+{Inheritance: what the two algorithms of the module agree about == end}
 		{everything reported through writeAndWait, which has no check id of its own}
 		chk_reportedProblem
 	);
@@ -241,7 +240,29 @@ type
 	 main thread at the end of a run.}
 	procedure checkDistribution (id: TCheckId; const counts: array of longint; const probabilities: array of double);
 
+	{The three counts the end of run report and the error indicator are built from. They are
+	 kept apart because one fault can show up in more than one of them, and adding them
+	 together said three problems where there was one.
+
+	   verificationFailedChecks  how many checks failed, each counted once however many
+	                             times it failed
+	   verificationFailures      how many times checks failed in all, which for an invariant
+	                             is the number of occurrences
+	   verificationReports       how many messages came through writeAndWait, which are
+	                             messages the program wrote itself and not checks
+
+	 verificationFailures no longer includes the writeAndWait messages. It used to, so the
+	 error indicator added them to the check failures while the table below subtracted them,
+	 and the two disagreed.}
+	function verificationFailedChecks: longint;
 	function verificationFailures: longint;
+	function verificationReports: longint;
+
+	{Attaches a line to a check, printed under it in the report. It is how a routine that
+	 summarises a fault at the end of a run puts its summary and its advice where the check
+	 that caught each case is, instead of writing a second message that would be counted as a
+	 second problem. Called from the main thread.}
+	procedure setCheckNote (id: TCheckId; note: string);
 	procedure verificationReport;
 
 implementation
@@ -350,14 +371,14 @@ const
 		'eduRelativeMissing',
 		'eduCohortNotAssigned',
 		'eduParentStatusMissing',
-// >>> Claude 2026-09-30 start
+{Inheritance: what the two algorithms of the module agree about == start}
 		'inhPartnerTestsDiffer',
 		'inhHeirsFoundByOneOnly',
 		'inhHeirKinTypes',
 		'inhHeirNotConfirmed',
 		'inhAscendantsSameDegree',
 		'inhNoCommonAncestor',
-// <<< Claude 2026-09-30 end
+{Inheritance: what the two algorithms of the module agree about == end}
 		'reportedProblem'
 	);
 
@@ -462,14 +483,14 @@ const
 		'the person, the partner or the parent whose education level is needed is in the network',
 		'the cohort of a person whose education level is drawn is assigned',
 		'a status conditional on the parents, or on the partner, is drawn only once they have one',
-// >>> Claude 2026-09-30 start
+{Inheritance: what the two algorithms of the module agree about == start}
 		'the two algorithms that look for the heirs of a relative make the same test on the surviving partner',
 		'the two algorithms that look for the heirs of a relative either both find heirs or both find none',
 		'the kin types of the heirs found by the second algorithm lie in the branch of the tree named by the first',
 		'every heir found by the first algorithm is also found by the second',
 		'the ascendants who inherit all belong to the same generation, so that the nearest degree excludes the rest',
 		'ego and a lateral relative of ego have at least one ancestor in common on one of the two sides of ego''s family',
-// <<< Claude 2026-09-30 end
+{Inheritance: what the two algorithms of the module agree about == end}
 		'no problem was reported through writeAndWait anywhere in the program'
 	);
 
@@ -524,12 +545,10 @@ const
 		 points, N20, N18 and the five writeAndWait sites of EducationalLevel}
 		ck_value,
 		ck_failurePoint, ck_failurePoint, ck_failurePoint, ck_failurePoint,
-// >>> Claude 2026-09-30 start
-		{inheritance: the four comparisons between the two algorithms, N26, the one degree of
-		 the ascendant heirs, N22, and the ancestor shared with a lateral relative, N24}
+		{inheritance: the four comparisons between the two algorithms, the one degree of
+		 the ascendant heirs, and the ancestor shared with a lateral relative}
 		ck_failurePoint, ck_failurePoint, ck_failurePoint, ck_failurePoint,
 		ck_failurePoint, ck_failurePoint,
-// <<< Claude 2026-09-30 end
 		ck_failurePoint
 	);
 
@@ -742,13 +761,41 @@ var
 		end;
 	end;
 
-	function verificationFailures: longint;
+	function verificationFailedChecks: longint;
+	{checks with at least one failure, which is the number the error indicator should name:
+	 one check that failed twice is one problem, not two}
 	var
 		id: TCheckId;
 	begin
 		result := 0;
-		for id := low (TCheckId) to high (TCheckId) do
+		for id := low (TCheckId) to high (TCheckId) do begin
+			if (id = chk_reportedProblem) then continue;
+			if (nFailed [id] > 0) then Inc (result);
+		end;
+	end;
+
+	function verificationFailures: longint;
+	{failures in all, over the checks only. chk_reportedProblem counts messages that
+	 writeAndWait produced, not a property of the model, and verificationReports returns
+	 those.}
+	var
+		id: TCheckId;
+	begin
+		result := 0;
+		for id := low (TCheckId) to high (TCheckId) do begin
+			if (id = chk_reportedProblem) then continue;
 			result := result + nFailed [id];
+		end;
+	end;
+
+	function verificationReports: longint;
+	begin
+		result := nFailed [chk_reportedProblem];
+	end;
+
+	procedure setCheckNote (id: TCheckId; note: string);
+	begin
+		checkNote [id] := note;
 	end;
 
 	function padRight (s: string; n: longint): string;
@@ -845,8 +892,9 @@ var
 		else if (nBad = 0) then
 			line ([nRan, ' checks ran and all of them passed.'])
 		else
+			{no subtraction here any more: verificationFailures counts the checks only}
 			line ([nRan, ' checks ran, ', nBad, ' of them failed, ',
-					verificationFailures - nReported, ' failures in all.']);
+					verificationFailures, ' failures in all.']);
 		if (nReported > 0) then
 			line ([nReported, plural (nReported, ' problem was', ' problems were'),
 					' reported through writeAndWait, listed below.']);
@@ -863,8 +911,13 @@ var
 				line ([padRight ('   what it watches', 22), kCheckWhat [id]]);
 				if (kCheckKindOf [id] in [ck_value, ck_distribution]) then
 					line ([padRight ('   worst deviation', 22), str_float (worstDeviation [id])]);
+				{'measured' is right for a quantity against a target, and wrong for the note a
+				 summary attaches to an invariant, which is a remark and not a measurement}
 				if (checkNote [id] <> '') then
-					line ([padRight ('   measured', 22), checkNote [id]]);
+					if (kCheckKindOf [id] in [ck_value, ck_distribution]) then
+						line ([padRight ('   measured', 22), checkNote [id]])
+					else
+						line ([padRight ('   note', 22), checkNote [id]]);
 				for i := 0 to nKept [id] - 1 do
 					if (i = 0) then
 						line ([padRight ('   first cases', 22), keptContext [id, i]])

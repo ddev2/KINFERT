@@ -792,10 +792,17 @@ uses
 	begin
 		myCombo:= TComboBox(Component);
 		myCombo.Items.Clear;
+		{The four modes make a square, and the names now say which corner each one is: the level
+		 comes either from the three levels with equal chances or from a distribution observed by
+		 cohort and sex, and the family is either taken into account or not. The old names were
+		 'Individual' and 'Intrafamily', which named the second half of that and left the first
+		 half to be remembered. The position of each entry is its value in a configuration file,
+		 which has not changed, so an existing file reads as it did.}
 		myCombo.Items.Add('None');
 		myCombo.Items.Add('Stochastic');
-		myCombo.Items.Add('Individual');
-		myCombo.Items.Add('Intrafamily');
+		myCombo.Items.Add('Observed by cohort');
+		myCombo.Items.Add('Observed, with family');
+		myCombo.Items.Add('Stochastic, with family');
 		myCombo.ItemIndex := ord(eduStatusName(myVal).value);
 	end;
 
@@ -806,6 +813,7 @@ uses
 			1: eduStatusName(myVal).value := eduStochastic;
 			2: eduStatusName(myVal).value := eduCohort;
 			3: eduStatusName(myVal).value := eduIntraFamily;
+			4: eduStatusName(myVal).value := eduStochasticFamily;
 		end;
 	end;
 

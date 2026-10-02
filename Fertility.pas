@@ -38,7 +38,6 @@ uses
 	function stillbirthRiskModelName: string;
 
 	procedure init_temporary_sterility (p: pStructDemographicRegimeSettings; alpha, beta: double);
-// >>> Claude 2026-09-30 start
 	{This was declared as a function returning the median of the distribution, but the
 	 result was never set, so what the caller read was whatever the return register held.
 	 None of the six call sites used the value. It is now a procedure. The median can be
@@ -49,7 +48,6 @@ uses
 			var arrayDurationAcc: array of double;
 			mean, propContraception: double;
 			lambda_erlang: double = 1);
-// <<< Claude 2026-09-30 end
 	procedure noStoppingContraception (p: pStructDemographicRegimeSettings);
 	procedure adjustContraception (p: pStructDemographicRegimeSettings);
 
@@ -365,14 +363,12 @@ const
 	end;
 	
 
-// >>> Claude 2026-09-30 start
 	procedure init_waiting_time_distribution (
 			maxDuration: longint;
 			var arrayDurationAcc: array of double;
 			mean, propContraception: double;
 			lambda_erlang: double = 1);
 	{the two local variables of the earlier function, ind and median, were never used}
-// <<< Claude 2026-09-30 end
 	begin
 		if ( g_GENPARAM.fixedParameters [waitingTimeErlangPoisson].state.value = true ) then
 			init_waiting_time_distribution_Erlang (maxDuration, arrayDurationAcc, mean, propContraception, lambda_erlang)

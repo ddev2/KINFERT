@@ -1,8 +1,6 @@
 {$I Defines.pas}
 unit Kinship;
-
 interface
-
 uses
 	{$IFDEF UNIX}
 	cthreads,
@@ -12,7 +10,6 @@ uses
 	{$IFDEF VerboseProfiler}Profiler,{$ENDIF}
     StringOfLib, Declarations, Parenthood, DemographicRegime, Fertility, FertilityRuntime, Inheritance, Nuptiality, Mortality,
 	EducationalLevel, RandomNumbers, Utilities, Init, StringResources, Verification;
-
 var
 		gAllBirths: array of longint;
     g_endInitMotherhood: boolean;
@@ -54,31 +51,26 @@ var
 	{Both are now kept by generation as well as by cohort. The first index is the row that holds
 	 one generation, from the great grandchildren to the great grandparents, see kinGeneration
 	 and kinGenerationRow in Declarations; the second is the cohort over the widened range.
-
 	 Pooling the generations made these two charts very hard to read: the lookups for ego fall
 	 in the cohorts being simulated, those for the parents, the grandparents and the great
 	 grandparents roughly one, two and three mean ages at childbearing earlier, and those for
 	 the children and the grandchildren as much later. The sum of seven such curves has no
 	 natural reading. Kept apart, each curve is the cohort distribution of one generation, and
 	 the point mass at ego's own cohort is visible as such.
-
 	 The descendants have their own rows rather than being counted with ego. On the groom side
 	 they are most of what is looked up, since the men whose unions are simulated are ego's own
 	 line, the siblings and the descendants, so folding them into ego put three quite different
 	 cohort distributions into one curve.
-
 	 The lower margin is wider than kStateRangeLengthLimit for children, because the deepest
 	 ascendants are looked up several generations before the first cohort of the range; see
 	 gChildStateMarginBelow.}
 	gStateChildren, gStateGrooms: array of arrayOfLongint;
-
 	{The question these charts exist to answer is not how many lookups were made but whether
 	 each one found what it asked for: whether a child, or an ascendant of a child, found a
 	 mother in its own birth cohort, and whether a man found a bride of the cohort and age at
 	 union he was looking for. A search that misses is answered from a neighbouring cell, so the
 	 relative is drawn from a slightly different regime, and the number of years between what
 	 was asked for and what was used is the size of the error.
-
 	 Three arrays for each search, all with the geometry of gStateChildren and gStateGrooms
 	 respectively, first index the generation, second the cohort the search was keyed by:
 	   ...Search       one count per search made;
@@ -90,16 +82,44 @@ var
 	{The groom index is indexed by cohort AND by age at union, so a one dimensional count
 	 by cohort cannot tell a shortage concentrated at particular ages at union from one
 	 spread evenly across them. gStateGroomsByAge keeps both dimensions.
-
 	 Unlike gStateGrooms, which lookInRange fills on the READ side with queries that were
 	 clamped into the range, this one is filled by addGroomsInfo on the WRITE side, with
 	 every union the simulation actually produced, whether or not it could be indexed. That
 	 is the quantity N35 is about: what the kinship reconstruction never gets to see.
-
 	 First index: cohort of the groom, over the range widened by kStateRangeLengthLimit on
 	 each side, as gStateGrooms is, and clamped into that span at the two ends.
 	 Second index: the band his age at union falls in, see kGroomAgeBandFirst.}
 	gStateGroomsByAge: array of array of longint;
+	{THE TWO POOLS, DRAWN AS MAPS
+	 The kinship reconstruction asks two questions of what the pre-simulation built, and each
+	 is answered from an index with a shape of its own.
+	   the birth index   a child, or an ascendant of a child, asks for a woman who gave birth
+	                     in the child's own year. The index is keyed by the year of the birth,
+	                     and what it carries for that year is a list of births, one entry per
+	                     birth, each of a woman of a known cohort.
+	   the bride index   a man asks for a woman who entered a union with a man of his cohort at
+	                     his age at union. That index is keyed by the two together.
+	 The five arrays below describe those indexes as maps, so that the Children-Grooms tab can
+	 draw them. Each is a cohort by age table:
+	   gPoolMotherSupply  births the index holds, by year of the birth and age of the mother
+	   gPoolMotherChosen  how often each of those cells was drawn from
+	   gPoolBrideSupply   women the index holds, by cohort of the groom and his age at union
+	   gPoolBrideChosen   how often each of those cells was drawn from
+	   gPoolBrideMissed   how often a cell was asked for and found empty, so that the search
+	                      had to move to a neighbouring age at union
+	 They are statistics and nothing reads them back into the model. They are kept after the
+	 indexes themselves are freed, because the graph window is opened once the run is over, and
+	 they cost (cohorts times ages) longints each, which is some tens of kilobytes.
+	 The supply cells are filled in the main thread, as the indexes are built. The chosen and
+	 missed cells are filled from the worker threads while the kinship is built, so they are
+	 incremented atomically.
+	 First index: the cohort, counted from gPoolMotherFirstCohort or gPoolBrideFirstCohort.
+	 Second index: the age, counted from kMinAgeFert for the mothers and from kMinAgeUnion_men
+	 for the grooms.}
+	gPoolMotherSupply, gPoolMotherChosen: array of arrayOfLongint;
+	gPoolBrideSupply, gPoolBrideChosen, gPoolBrideMissed: array of arrayOfLongint;
+	gPoolMotherFirstCohort: longint = 0;
+	gPoolBrideFirstCohort: longint = 0;
 	{How far outside the groom cohort range the run actually went, filled by addGroomsInfo
 	 and reported once at the end of initMotherhood. The counts say how many unions could
 	 not be indexed; the shortfalls say by how many years the range would have to widen to
@@ -128,10 +148,6 @@ var
 	gChildLookupsSeen: longint = 0;
 	gChildLookupsClamped: longint = 0;
 	gChildClampWorst: longint = 0;
-	{the same two counts split by the generation the lookup was made for, so that the report can
-	 say which set of kin the clamped queries belong to}
-	gChildLookupsSeenByGen: array [0..kNbKinGenerations-1] of longint;
-	gChildLookupsClampedByGen: array [0..kNbKinGenerations-1] of longint;
 	// OBSOLETE
 	gStateBrides, gStateMothers, gStateYearUnions: array of longint;
 	gAgeChildbearing, gAgeChildbearingBACKFOR, gAgeChildbearingBACKFOR_post: array [FecundAges] of longint;
@@ -156,7 +172,6 @@ const
 	 the last band runs to kMaxAgeUnion_men.}
 	kNbGroomAgeBands = 6;
 	kGroomAgeBandFirst: array [0..kNbGroomAgeBands-1] of longint = (0, 20, 25, 30, 35, 45);
-
 var
 	{margins actually used by gStateChildren and gStateGrooms, in years below the first cohort of
 	 the index and above the last. Set in initMotherhood from the depth of the kinship tree the
@@ -169,7 +184,6 @@ var
 	gGroomStateMarginAbove: longint = kStateRangeLengthLimit;
 	{deepest ascendant generation the current kin set requires, from maxAscendantGeneration}
 	gMaxGenerationSimulated: longint = 0;
-
 	{Sets the five algorithm flags from MOTHER_ALGORITHM and CAMSIM_1993_ANY_AGE_UNION when the
 	 configuration file gave the algorithm, and the other way round when it did not, so that
 	 whichever of the two said it, the parameter written to a dumped configuration file is the
@@ -177,7 +191,6 @@ var
 	procedure applyMotherAlgorithm;
 	{The name of the algorithm in force, as str_motherAlgorithm spells it}
 	function motherAlgorithmInForce: longint;
-
 	procedure initMotherhood (randomGenerator: TRandomNumberGenerator);
 	procedure disposeMotherhood;
 	procedure disposeMotherhood_DemReg;
@@ -188,26 +201,20 @@ var
 	procedure simulateKinship (randomGenerator: TRandomNumberGenerator; cohortToSimulate: longint; bootstrap_ind: longint; loopPhase: loopTypes);
 	procedure computeStatesKinship;
 	procedure computeMenWomen2WaysTable;
-
 	function readDemocareFile (path, filename: string): boolean;
 	procedure setChildren (pMain, pKinOf: pRelativeType; kinTypeChild, kinTypeGrandChild: KinTypes);
 	procedure setPartners (pMain, pKinOf: pRelativeType; kinTypeChild, kinTypeGrandChild: KinTypes);
-
 	function byUnion (pEgo, pRelative: pRelativeType): boolean;
 	function getNumChildren (pRelative: pRelativeType): longint;
 	function getChildFromRelative (pRelative: pRelativeType; ind: longint): pRelativeType;
-
 	procedure addToCohortSet (cohort: longint; var sC: setCohorts);
-
 var
 	gViewFromEgo: longint = 0;
 	gViewToEgo: longint = 0;
 	gViewEgos: array of longint;
 	gIndEgo: longint = 0;
-
 implementation
 	uses LazUtiles;
-
 	const
 		kMaxAgeUnionMale = 71;
 		// value used to grow RangeBirthsXXX arrays by SetLength
@@ -220,7 +227,6 @@ implementation
 		kSetLengthUnions = 50;
 		// value used to grow gBig_ArrayWomen by SetLength
 		kSetWomen = 1000;
-
 	Type
 		CohortDataType = record
 			pDemReg: pStructDemographicRegimeSettings;
@@ -233,7 +239,6 @@ implementation
 			womenType: string;
 			womenCollection: TPersonMemoryManager;
 		end;
-
 		pThreadCohortData = ^ThreadCohortData;
 		ThreadCohortData = record
 			pDemReg: pStructDemographicRegimeSettings;
@@ -241,7 +246,6 @@ implementation
 			womenType: string;
 			womenCollection: TPersonMemoryManager;
 		end;
-
 		TBigCohortsWomenSet = class(TThread)
 		private
 			FAFinished: boolean;
@@ -255,7 +259,6 @@ implementation
 			procedure Execute; override;
 			property AFinished: boolean read FAFinished write FAFinished;
 		end;
-
 		TCohortWomenSet = class(TThread)
 		private
 			FAFinished: boolean;
@@ -268,12 +271,10 @@ implementation
 			procedure Execute; override;
 			property AFinished: boolean read FAFinished write FAFinished;
 		end;
-
 		pEgoTreeData = ^EgoTreeData;
 		EgoTreeData = record
 			yearOfBirthEgo: longint;
 		end;
-
 		TSimulEgoTree = class(TThread)
 		private
 			FAFinished: boolean;
@@ -299,14 +300,12 @@ implementation
 			function UpdateKinNumber (offsetNumber: longint): boolean;
 			property AFinished: boolean read FAFinished write FAFinished;
 		end;
-
 		arrayOfSimulEgoTree = array of TSimulEgoTree;
 		
 		TSimulEgoTreeCleanUp = class(TThread)
 		private
 			myObjs: array of TSimulEgoTree;
 			myThreadsUsed: longint;
-
 		public
 			Constructor Create(objs: arrayOfSimulEgoTree; nThreadsUsed: longint); overload;
 			Destructor Destroy; override;
@@ -320,12 +319,10 @@ implementation
 					cm_secondUnionAfterSeparation, cm_secondUnionAfterWidowhood,
 					cm_death_single, cm_death_firstUnion, cm_death_firstSeparation, cm_death_firstWidowhood,
 					cm_death_secondUnionAfterSeparation, cm_death_secondUnionAfterWidowhood);
-
 		KinshipInfo = record
 			pEgo: pRelativeType;
 			nKin: longint;
 		end;
-
 		arraySexCatUnionAgeType = array [Sex] of array [catMulti] of array [agesLife] of longint;
 		arraySexCatUnionDurationType = array [Sex] of array [catMulti] of array [durationsUnion] of longint;
 		resMultipleType = (mu_never, mu_FirstWidowhood, mu_FirstSeparation, mu_SecondUnionWidowhood, mu_SecondUnionSeparation);
@@ -334,17 +331,13 @@ implementation
 		{column order of the DemoCare individual file, as written by header_democare and writeKinDemoCare.
 		 The short layout stops after dt_ego; the extended layout writes all of them.}
 		DemocareTypes = (dt_idFamily, dt_id,dt_sex,dt_age,dt_ageDef,dt_status,dt_tickIn,dt_tickOut,dt_ego,dt_partnershipStatus,dt_cohort,dt_cohortRegDem,dt_relative,dt_alliance,dt_ageAtTickZero,dt_nChildren);
-
 	var
 		gThisIsNotAnArrayOfBrides: boolean = true; // this is a mothers' array!!
 		
         gMyThreadObjects: array of TSimulEgoTree; // for multithreading when simulating kinship
         gNumThreadsUsed: longint = 0;
-
 	var
 gCheckRelativesCount: longint = 0;
-gCheckRelativesMax: longint = 0;
-gNumEgoMen, gNumEgoWomen, gChildrenEgoMen, gChildrenEgoWomen: longint;
 gIndMother: longint = 0;
 		// DemoCare file does not have info for ego's mother or father so 'g_InfoParents' keeps track of that...
 		// if false then we don't keep track of info about parents and siblings
@@ -421,12 +414,6 @@ gIndMother: longint = 0;
 		g_RangeBridesForGrooms_Info: array of array of array of longint; // global used in MAIN THREAD only
 		// one array of statistical nature to keep track of grooms by cohort and age at union with no corresponding bride
 		g_RangeBridesForGrooms_NotFound: array of array of longint; // written from the worker threads (using InterlockedIncrement)
-		// GROOMS FOR BRIDES
-		{Two arrays to keep track of grooms classified by brides' birth cohort and age at union}
-		g_RangeGroomsForBrides_Nb: array of array of longint; // global used in MAIN THREAD only
-		g_RangeGroomsForBrides_Info: array of array of array of longint; // global used in MAIN THREAD only
-		// one array of statistical nature to keep track of brides by cohort and age at union with no corresponding groom
-		g_RangeGroomsForBrides_NotFound: array of array of longint; // global used in MAIN THREAD only
 		{======== END ==============}
 		{******* ALTERNATE AND OBSOLETE *****}
 		{Two more arrays to keep track of possible brides according to year of union and age at union of grooms}
@@ -440,7 +427,6 @@ gIndMother: longint = 0;
 		g_RangeBridesNb: array of array of longint; // global used in MAIN THREAD only
 		g_RangeBridesInfo: array of array of array of longint; // global used in MAIN THREAD only
 		{******* END *****}
-
 		{Keep track of mothers according to year of birth of their children, and age at current union (in order to test Le Bras's BACKFOR algorithm)}
 		RangeBirthsBACKFORNb: array of array of longint;
 		RangeBirthsBACKFORInfo: array of array of array of longint;
@@ -448,10 +434,8 @@ gIndMother: longint = 0;
 		the year of birth of their children, the age at childbearing and the number of births (for CAMSIM1993)}
 		CAMSIM_RangeBirthsNb: array [DistribChildrenCalc] of array of longint;
 		CAMSIM_RangeBirthsInfo: array [DistribChildrenCalc] of array of array of longint;
-
 		{First union of men by birth cohort, age at union and age at union of bride}
 		gMen_Women : array of array of array of longint; // MADE THREAD SAFE (using InterlockedIncrement)
-
 	function getWomanFromBigArray (personInd: longint; arrayMothers: boolean = true): TPersonMemoryBlock;
 	begin
 		if arrayMothers then begin
@@ -461,7 +445,6 @@ gIndMother: longint = 0;
 		end;
 		
 	end;
-
 	function isChildAlreadyInList (pRelative, pChild: pRelativeType): boolean;
 {$IFDEF OLDCHILDRENLIST}
 	var
@@ -484,7 +467,6 @@ gIndMother: longint = 0;
 			writeAndWait ('===> ERROR: Problem isChildAlreadyInList');
 {$ENDIF}
 	end;
-
 	function getNumChildren (pRelative: pRelativeType): longint;
 {$IFDEF OLDCHILDRENLIST}
 	var
@@ -500,7 +482,6 @@ gIndMother: longint = 0;
 			writeAndWait ('ERROR ==> Problem getNumChildren');
 {$ENDIF}
 	end;
-
 	procedure emptyRelativeChildList (pRelative: pRelativeType);
 {$IFDEF OLDCHILDRENLIST}
 	var
@@ -637,7 +618,6 @@ gIndMother: longint = 0;
 					end; // end case
 					if checkFalse (chk_kin_diffEndUnionEvenAfter, abs (getYearEndUnion(pRelative, indUnion) - getYearEndUnion(pPartner, indUnionPartner)) > 0.00001,
 							['ego ', pEgo^.indNumber, ', kin ', pRelative^.indNumber]) then breakOnFailure;
-
 				end;
 			end;
 			pRelative := pRelative^.nextRelative;
@@ -669,7 +649,6 @@ gIndMother: longint = 0;
         if gRunFromIDE then
         	checkEndUnions (pEgo);
 	end;
-
 	procedure unScan (pRelative: pRelativeType);
 	// reset scanned flag to false for all the kinship network
 	begin
@@ -678,7 +657,6 @@ gIndMother: longint = 0;
 			pRelative := pRelative^.nextRelative;
 		end;
 	end;
-
 	procedure addLastPartner (pRelative, pPartner: pRelativeType);
 	var
 		Uinfo: pUnionInfoType = nil;
@@ -714,7 +692,6 @@ if (pRelative^.ageDeath < 1) or (pPartner^.ageDeath < 1) then
 			writeAndWait ('ERROR ==> BAD BAD: partner wrong');
 {$ENDIF}
 	end;
-
 	procedure addChildToParent (pRelative, pChild: pRelativeType);
 	var
 		indCh: longint;
@@ -736,7 +713,6 @@ begin
 end;
 		addChildToRelative (pRelative, pChild);
 	end;
-
 {returns the first blood relative of kin pBaseKin, of gender genderRelative, of kin type kinType, that we have not yet scanned. If there is none, we return nil}
 	function LookingForRelative (	pBaseKin: pRelativeType;
 									kinType: KinTypes;
@@ -767,7 +743,6 @@ end;
 			result := nil;
 {$IFDEF VerboseProfiler} timeProfile_end_proc('LookingForRelative'); {$ENDIF}
 	end;
-
 	function inCohortSet (cohort: longint; sC: setCohorts): longint;
 	var
 		ind: longint;
@@ -780,7 +755,6 @@ end;
 				exit;
 			end;
 	end;
-
 	procedure addToCohortSet (cohort: longint; var sC: setCohorts);
 	var
 		nC: longint;
@@ -836,7 +810,6 @@ end;
 		aSex: Sex;
 		aUnionState: catUnion;
 		aUnionMultiState: catMulti;
-
 	begin
 		nCohorts := length (sCohorts);
 		gCohortSet := sCohorts;
@@ -856,7 +829,6 @@ end;
 		SetLength (g_Union, nCohorts);
 		SetLength (g_UnionMultiState, nCohorts);
 		SetLength (g_UnionDurationMultiState, nCohorts);
-
 		// Is it necessary to zero the arrays after a SetLength? Anyway we get on the safe side...
 		for indCohort := 0 to nCohorts-1 do begin
 			for aSex := man to woman do begin
@@ -911,14 +883,6 @@ end;
 		ageEndUnion := pRelativeTwo^.ageDeath - pRelativeTwo^.ageAtBirthOfEgo + pRelativeOne^.ageAtBirthOfEgo;
 		relativeDiedBefore := ageEndUnion < pRelativeOne^.ageDeath;
 	end;
-	
-	function aliveAtAgeWithPartner (pWoman: pRelativeType; ageLimit: longint): boolean;
-	// woman alive at age ageLimit and still in union
-	var
-		ageWomanEndUnion: double;
-	begin
-	   result := (pWoman^.ageDeath >= ageLimit) and (getAgeEndUnion (pWoman, pWoman^.nUnions) >= ageLimit);
- 	end;
 	
 	procedure addToTFRtables(pEgo: pRelativeType);
 	var
@@ -1062,7 +1026,6 @@ end;
 				Inc ( g_fertilityEgoPartners[indCohort, cf_births, pPartner^.gender, ageChildbearing] );
 			end;
 		end; {procedure egoPartnerAddPersonsAndBirths}
-
 		procedure egoAddPersonsAndBirths (pEgo: pRelativeType; ageLimit: longint; indCohort: longint);
 		var
 			ageFecund: longint;
@@ -1108,7 +1071,6 @@ pRelative, pMother: pRelativeType;
 				pEgo^.nUnions,
 				pEgo^.ageDeath,
 				getAgeEndUnion (pEgo, 1));
-
 		end; {procedure egoAddPersonsAndBirths}
 		
 	begin {addToTFRtables}
@@ -1141,7 +1103,6 @@ pRelative, pMother: pRelativeType;
 		end else
 			if checkFalse (chk_kin_noMother, g_InfoParents,
 					[]) then breakOnFailure;
-
 		// Fertility of egos
 		// in order to compare with egos' mother
 		// First we set the whole kinship network to unscanned state in order to find relatives
@@ -1150,7 +1111,6 @@ pRelative, pMother: pRelativeType;
 			egoAddPersonsAndBirths (pEgo, 50, indCohort)
 		else
 			egoAddPersonsAndBirths (pEgo, 60, indCohort);
-
 		// Fertility of ego's partners
 		if (pEgo^.nUnions > 0) then begin
 			for indUnion := 1 to pEgo^.nUnions do begin
@@ -1160,14 +1120,12 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 			end;
 		end;
 	end; {addToTFRtables}
-
 	procedure addToNuptialityTables(pEgo: pRelativeType);
 	var
 		aSex: Sex;
 		indCohort: longint;
 		ageUnionInt: longint;
 		causeEndPartnership: CausesEndUnionType;
-
 	begin {addToNuptialityTables}
 		if pEgo^.ageDeath < 50 then exit;
 		indCohort := inCohortSet (pEgo^.cohort, gCohortSet);
@@ -1189,7 +1147,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 		//end_by_death = 1;
 		//end_by_widowhood = 2;
 		//end_by_separation = 3;
-
 		Inc ( g_Union [indCohort, aSex, cu_person] );
 		if pEgo^.nUnions > 0 then begin
 			Inc ( g_Union [indCohort, aSex, cu_firstUnion] );
@@ -1206,13 +1163,11 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 			end;
 		end;
 	end; {addToNuptialityTables}
-
 	procedure addToStatesKinship (pEgo: pRelativeType);
 	begin
 		addToTFRtables(pEgo);
 		addToNuptialityTables(pEgo);
 	end;
-
 	procedure writeAgeMultiState (cohort: longint; table: arraySexCatUnionAgeType; writeToFile: boolean; writeToScreen: boolean = true);
 	// arraySexCatUnionAgeType = array [Sex] of array [catMulti] of array [agesLife] of longint;
 {			catMulti = (cm_person, cm_firstUnion, cm_firstSeparation, cm_firstWidowhood,
@@ -1330,7 +1285,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 					cm_death_single, cm_death_firstUnion, cm_death_firstSeparation, cm_death_firstWidowhood,
 					cm_death_secondUnionAfterSeparation, cm_death_secondUnionAfterWidowhood);
 }
-
 	type
 		personAgeUnionStates = (pa_Total, pa_Single, pa_FirstUnion, pa_FirstSep, pa_FirstWid, pa_2ndUnionSep, pa_2ndUnionWid);
 		AgeLifeTableUnionStates = (pu_FirstUnion, pu_FirstWid, pu_FirstSep, pu_2ndUnionSep, pu_2ndUnionWid);
@@ -1444,7 +1398,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 															(1 - ageRates[aSex, eu_secondUnionWid, age - 1]);
 			end;
 		end; {aSex}
-
 		// UNION BY DURATION
 		for aSex := man to woman do begin
 			// observed life table of union states by duration
@@ -1474,7 +1427,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 					g_UnionDurationMultiState [indCohort, aSex, cm_secondUnionAfterWidowhood, duration] +
 					g_UnionDurationMultiState [indCohort, aSex, cm_death_firstWidowhood, duration];
 			end;
-
 			// duration rates
 			for duration := (low(durationsUnion)) to high(durationsUnion) do begin
 				persons :=
@@ -1535,7 +1487,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 				durMultiLifeTable[aSex, eu_secondUnionWid, duration] := durMultiLifeTable[aSex, eu_secondUnionWid, duration - 1] *
 															(1 - durRates[aSex, eu_secondUnionWid, duration - 1]);
 			end;
-
 		end;
 		
 		// results...
@@ -1574,7 +1525,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 	begin
 		nCohorts := length(gCohortSet);
 		writeToFile := g_GENPARAM.OUTPUT_AGGREGATE_KINSHIP.value;
-
 		// UNION FORMATION AND SEPARATION
 		setLength (PropSingle{%H-}, nCohorts);
 		setLength (PropSeparation{%H-}, nCohorts);
@@ -1700,7 +1650,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 		MotherLookup := str_motherAlgorithm [motherAlgorithmInForce];
 		if gCAMSIM_1993 and gCAMSIM_1993_unbounded then
 			MotherLookup := MotherLookup + '_unbounded';
-
         writeToFile := true;
 		fileScreenWriteLn (gOutFileKin, ['======================================================================'], col_none, writeToFile);
 		fileScreenWriteLn (gOutFileKin, ['Demographic statistics computed on kinship networks'], col_none, writeToFile);
@@ -1794,7 +1743,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 						], col_table, writeToFile);
 		end;
 		EndTableWithHeader();
-
 		if g_GENPARAM.DEBUG.value then begin		
 			fileScreenWriteLn (gOutFileKin, ['=========== distNbChildren ========================'], col_none, writeToFile);
 			fileScreenWriteLn (gOutFileKin,
@@ -1821,9 +1769,7 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 		end;
 		
 		EndTableWithHeader();
-
 		fileScreenWriteLn (gOutFileKin, ['======================================================================'], col_none, writeToFile);
-
 		setLength (PropSingle, 0);
 		setLength (meanAgeUnion_egos, 0);
 		setLength (meanAgeUnion_egoParents, 0);
@@ -1850,16 +1796,13 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 		SetLength (g_UnionMultiState, 0);
 		SetLength (g_UnionDurationMultiState, 0);
 	end;
-
 	procedure stuffStringsInRelative (Header, A: TStringArray; cohortEgo, offset_idFamily: longint; var pRelative: pRelativeType);
 	var
 		s: string;
 		longHeader: boolean = true;
 		age, ageDef, tickIn, tickOut, cohortIn: longint;
-
 	begin
 	// idFamily,id,sex,age,ageDef,status,tickIn,tickOut,linked,ego,useful
-
 		longHeader := (length (Header) > 12);
 		age := StrToInt (A[ord(dt_age) + offset_idFamily]);
 		ageDef := StrToInt (A[ord(dt_agedef) + offset_idFamily]);
@@ -1898,12 +1841,10 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 			//children: array [1..kMaxNbChildren] of pRelativeType; {only biological children}
 		end;
 	end;
-
 	function lookForCohortInName (filename: string): longint;
 	begin
 		result := StrToInt ( copy (filename, 4, 4) );
 	end;
-
 	function lookForRelativeById (pRelative: pRelativeType; id: longint): pRelativeType;
 	begin
 		result := nil;
@@ -1915,7 +1856,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 			pRelative := pRelative^.nextRelative;
 		end;
 	end;
-
 	procedure setPartners (pMain, pKinOf: pRelativeType;  kinTypeChild, kinTypeGrandChild: KinTypes);
 	var
 		pPartner: pRelativeType;
@@ -1952,7 +1892,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 	function readDemocareFile (path, filename: string): boolean;
 	const
 		kRelativeNetworks = 100;
-
 	var
 		f: TFileType;  // Main thread only
 		pEgo, pLastRelative, pId, pIdLink: pRelativeType;
@@ -2066,7 +2005,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 			end;
 		end;
 		f.Destroy;
-
 		for indKinship := 0 to nRel-1 do begin
 			pEgo := pRels[indKinship].pEgo;
 			setChildren (pEgo, pEgo, kt_child, kt_grandChild);
@@ -2078,11 +2016,9 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 			addToStatesKinship (pRels[ind-1].pEgo);
 		end;
 		computeStatesKinship;
-
 		SetLength (pRels, 0);
 		result := true;
 	end;
-
 	procedure calcDateBirth (var yearBirthToCompute: double; yearBirthRef: double; ageObjective, ageRef: double);
 	// yearBirthRef is a known year of birth and age 'ageRef' is age at a precise moment of time
 	// we are going to compute year of birth 'yearBirthToCompute' of a person who is aged 'ageObjective' at the same moment
@@ -2092,28 +2028,6 @@ if checkFalse (chk_kin_partnerNilAddWoman, partner = nil,
 		diffAge := ageRef - ageObjective;
 		yearBirthToCompute := yearBirthRef + diffAge;
 	end;
-
-procedure scanChildrenList (pChildrenList: pInfoChildType);
-// good for having a look inside the debugger...
-var
-	pCh: pInfoChildType;
-	n: longint;
-begin
-	pCh := pChildrenList;
-	n := 0;
-	while (pCh <> nil) do begin
-		Inc (n);
-		pCh := pCh^.next;
-	end;
-	pCh := pChildrenList;
-	n := 0;
-	gotoToFirstLiveBornChild(pCh);
-	while (pCh <> nil) do begin
-		Inc (n);
-		gotoToNextLiveBornChild(pCh);
-	end;
-end;
-
 	function isBloodKin (pRelative: pRelativeType): boolean;
 	begin
 		result := (pRelative^.kinOf^.typeOfKin = kt_ego);
@@ -2124,7 +2038,6 @@ end;
 		//all kin by union except ego's partner who has ego as 'kinOf'
 		result := (pRelative^.kinOf <> pEgo);
 	end;
-
 	function fieldEnabled (fn: FieldNamesTypes): boolean;
 	begin
 		result := fn in g_GENPARAM.OUTPUT_FIELDS.value;
@@ -2148,14 +2061,12 @@ end;
 		end;
 		result := min (maxVal, max (minVal, index)) - minVal;
 	end;
-
 	{Row of the diagnostic arrays for the person the lookup is made for: ego's own generation in
 	 the middle, the ascendants above it and the descendants below.}
 	function generationRowOfKin (typeOfKin: KinTypes): longint;
 	begin
 		result := kinGenerationRow (kinGeneration [typeOfKin]);
 	end;
-
 	{Records one search and how far it had to go from what it asked for. 'cell' is the cohort
 	 asked for, already turned into an index of the array, and is clamped here because a search
 	 can be for a cohort outside even the widened span. 'distance' is in years, zero when the
@@ -2173,21 +2084,17 @@ end;
 			InterLockedExchangeAdd (years [gen, cell], abs (distance));
 		end;
 	end;
-
 	function lookInChildrenRange (cohortChild: longint; typeOfKin: KinTypes = kt_ego): longint;
 	var
 		gen: longint;
 	begin
 		gen := generationRowOfKin (typeOfKin);
 		InterLockedIncrement (gChildLookupsSeen);
-		InterLockedIncrement (gChildLookupsSeenByGen [gen]);
 		if (cohortChild < gFirstCohortAncestorsChildren) then begin
 			InterLockedIncrement (gChildLookupsClamped);
-			InterLockedIncrement (gChildLookupsClampedByGen [gen]);
 			gChildClampWorst := max (gChildClampWorst, gFirstCohortAncestorsChildren - cohortChild);
 		end else if (cohortChild > gLastCohortAncestorsChildren) then begin
 			InterLockedIncrement (gChildLookupsClamped);
-			InterLockedIncrement (gChildLookupsClampedByGen [gen]);
 			gChildClampWorst := max (gChildClampWorst, cohortChild - gLastCohortAncestorsChildren);
 		end;
 		if (length (gStateChildren) > gen) then
@@ -2197,7 +2104,6 @@ end;
 			result := min (gLastCohortAncestorsChildren, max (gFirstCohortAncestorsChildren, cohortChild))
 						- gFirstCohortAncestorsChildren;
 	end;
-
 	function lookInMothersRange (cohortMother: longint): longint;
 	begin
 		result := lookInRange (cohortMother, gFirstCohortWomen, gLastCohortWomen, gStateMothers);
@@ -2241,7 +2147,6 @@ end;
 				f.Destroy;
 				exit;
 			end;
-
 			for cohortWomanInd := 0 to (gLastCohortBrides - gFirstCohortBrides) do begin
 				cohortWoman := cohortWomanInd + gFirstCohortBrides;
 				for ageUnionWomanInd := 0 to kMaxAgeUnion_women-kMinAgeUnion_women do begin
@@ -2283,7 +2188,6 @@ end;
 			f.Destroy;
 		end;
 end;
-
 procedure checkChildren (where: string);
 	var
 		cohortChildInd, ind, size, res: longint;
@@ -2331,7 +2235,6 @@ procedure checkChildren (where: string);
 			f.Destroy;
 		end;
 end;
-
 	function findEgo (pRelative: pRelativeType): pRelativeType;
 	begin
 		while (pRelative^.prevRelative <> nil) do
@@ -2403,7 +2306,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 		 walked it off the end, a range error with checking on and a read out of bounds
 		 without. selectMother does the same kind of search for a neighbouring cohort and
 		 bounds it, which is the pattern followed here.
-
 		 The preferred direction is kept, up for a young bride and down for an older one, but
 		 the search now stops at the array bounds and then tries the other direction before
 		 giving up. Giving up is reported through the verification table rather than silently.}
@@ -2439,7 +2341,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 					' at any age at union']);
 		end;
 		ageUnionWomanInd := indTried;
-
 		{Did this man find a bride of the cohort and age at union he was looking for? The cohort
 		 is clamped by lookInBridesRange and the age at union may have moved in the sweep above,
 		 both counted in years. The cell is the cohort the bride index was keyed by, which is
@@ -2454,10 +2355,8 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 		womanInd := g_RangeBridesInfo[cohortWomanInd, ageUnionWomanInd, indBride];
 		
 		ageUnionSelected := getAgeUnionSelected (randomGenerator, womanInd, ageUnionWomanInd + kMinAgeUnion_women, kNotDefined, gThisIsNotAnArrayOfBrides);
-
 		result := womanInd;
 	end;
-
 	function sharePct (part, whole: longint): string;
 	begin
 		if (whole <= 0) then
@@ -2465,7 +2364,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 		else
 			result := str_float (100.0 * part / whole) + ' per cent';
 	end;
-
 	function groomAgeBand (ageUnionMan: longint): longint;
 	{which band of kGroomAgeBandFirst this age at union falls in}
 	begin
@@ -2474,6 +2372,16 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 			Inc (result);
 	end;
 
+	procedure countPoolCell (var a: array of arrayOfLongint; cohortInd, ageInd: longint);
+	{one cell of one of the pool maps. Everything is bounds checked here rather than at the
+	 half dozen call sites: these are statistics, and a cohort or an age outside the map is a
+	 reason to count nothing, never a reason to stop a run. The increment is atomic because
+	 three of the five maps are filled from the worker threads.}
+	begin
+		if (cohortInd < 0) or (cohortInd >= length (a)) then exit;
+		if (ageInd < 0) or (ageInd >= length (a [cohortInd])) then exit;
+		InterLockedIncrement (a [cohortInd, ageInd]);
+	end;
 	procedure countGroomUnion (cohortMan, ageUnionMan: longint);
 	{one union the simulation produced, entered in the two way count whether or not its
 	 groom cohort is inside the range. The cohort is clamped into the widened span, so the
@@ -2488,11 +2396,12 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 		InterLockedIncrement (gStateGroomsByAge [cohortInd, groomAgeBand (ageUnionMan)]);
 	end;
 
+	{groomWarning below is the text of the groom range warning, kept in a variable because it
+	 now goes to two places: the memo and the note of the check that caught each case.}
 	procedure reportIndexCoverage;
 	{Says once, at the end of initMotherhood, how much of what the simulation produced actually
 	 reached the two indexes that the kinship reconstruction reads from, and which compile time
 	 constant to widen when something was lost.
-
 	 Two separate losses, both on the WRITE side:
 	   grooms   a union whose implied groom cohort falls outside [gFirstCohortGrooms,
 	            gLastCohortGrooms] is not entered in g_RangeBridesForGrooms_Info, so that
@@ -2500,25 +2409,40 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 	   children a child born outside [gFirstCohortAncestorsChildren,
 	            gLastCohortAncestorsChildren] is not entered in g_RangeBirthsInfo, so it can
 	            never be chosen as a relative.
-
 	 Note that this is NOT what gStateGrooms and gStateChildren measure. Those are filled by
 	 lookInRange, on the READ side, and record queries that fell outside the range and were
 	 then clamped to the nearest cohort in it. A run can have no read overflow at all and
 	 still be losing unions and children here, which is why the two charts never showed N35.
-
 	 The ranges come from constants in Declarations.pas and cannot be set from the
 	 configuration file, so the advice names the constant and the number of years.}
 	var
-		advice: string;
+		advice, groomWarning, childrenNote: string;
 	begin
+		{What the share of children outside the index means depends on the run, and until now the
+		 line said only the first of the two. Under a stable population the index covers one
+		 cohort on purpose and almost every child is born outside it, so the share is close to a
+		 hundred per cent by construction and says nothing. Under variable regimes a child born
+		 outside the range is a child the kinship reconstruction can never pick, and the two
+		 shortfalls say how many years the range would have to widen to take them all. They were
+		 counted and never reported, which is what made them look like dead counters.}
+		if StablePopulation () then
+			childrenNote := ' outside the indexed cohorts, which is by design: the index has the ' +
+					'mothers who gave birth in each cohort, and a stable population run indexes ' +
+					'one cohort only). '
+		else if (gChildrenSkipped = 0) then
+			childrenNote := ' outside the indexed cohorts). '
+		else
+			childrenNote := ' outside the indexed cohorts, and under variable regimes that is a ' +
+					'loss: the range would have to widen by ' + IntToStr (gChildShortfallBelow) +
+					' years below and ' + IntToStr (gChildShortfallAbove) +
+					' years above to take them all). ';
 		memoWriteLn (['Index coverage. Unions in the groom index: ',
 				gGroomUnionsSeen - gGroomCohortSkipped, ' of ', gGroomUnionsSeen,
 				' (', sharePct (gGroomCohortSkipped, gGroomUnionsSeen), ' lost, and a loss it is). ',
 				'Children in the birth index: ',
 				gChildrenSeen - gChildrenSkipped, ' of ', gChildrenSeen,
 				' (', sharePct (gChildrenSkipped, gChildrenSeen),
-				' outside the indexed cohorts, which is by design: the index holds the mothers ',
-				'who gave birth in each cohort, and a stable population run indexes one cohort only). ',
+				childrenNote,
 				'Women in the bride index: ',
 				gBrideWomenSeen - gBrideWomenSkipped, ' of ', gBrideWomenSeen,
 				' (', sharePct (gBrideWomenSkipped, gBrideWomenSeen), ' lost, and a loss it is). ',
@@ -2526,36 +2450,57 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 				gChildLookupsClamped, ' of ', gChildLookupsSeen,
 				' (', sharePct (gChildLookupsClamped, gChildLookupsSeen),
 				'), at most ', gChildClampWorst, ' years away']);
-
 		if (gGroomCohortSkipped > 0) then begin
+			{The advice this warning used to give was wrong, and wrong in the direction that costs a
+			 rebuild for nothing. It named kMaxAgeUnion_men as the constant to raise, but in the branch
+			 that computes the range for variable regimes the lower bound did not mention that constant
+			 at all, so raising it would have moved nothing. The range itself is now derived from the
+			 ages the union model can produce, in initMotherhood, so under variable regimes it covers
+			 every groom cohort the model can imply and this warning should no longer appear. If it does,
+			 the range computation is at fault and not the constants.
+			 Under a stable population the pools are deliberately narrow, to save memory: the brides are
+			 restricted to the cohorts within kMaxDiffAgeUnion_men_olderWomen and
+			 kMaxDiffAgeUnion_women_olderMen of the children being simulated, and the groom range is
+			 built from the same two constants. Nothing in the union model enforces them, so a union with
+			 a wider age gap is produced and lost from the index. There the two constants are the ones to
+			 widen, at the price of a larger bride pool.}
 			advice := '';
-			if g_GENPARAM.NEW_INIT_MOTHERHOOD.value and StablePopulation () then begin
+			if StablePopulation () then begin
 				if (gGroomShortfallBelow > 0) then
-					advice := advice + ' Raise kMaxDiffAgeUnion_women_olderMen from ' +
+					advice := advice + ' The pools of a stable population run are bounded by the two ' +
+							'age difference constants. Raise kMaxDiffAgeUnion_women_olderMen from ' +
 							IntToStr (kMaxDiffAgeUnion_women_olderMen) + ' to at least ' +
 							IntToStr (kMaxDiffAgeUnion_women_olderMen + gGroomShortfallBelow) + '.';
 				if (gGroomShortfallAbove > 0) then
 					advice := advice + ' Raise kMaxDiffAgeUnion_men_olderWomen from ' +
 							IntToStr (kMaxDiffAgeUnion_men_olderWomen) + ' to at least ' +
 							IntToStr (kMaxDiffAgeUnion_men_olderWomen + gGroomShortfallAbove) + '.';
-			end else begin
-				if (gGroomShortfallBelow > 0) then
-					advice := advice + ' Raise kMaxAgeUnion_men from ' + IntToStr (kMaxAgeUnion_men) +
-							' to at least ' + IntToStr (kMaxAgeUnion_men + gGroomShortfallBelow) + '.';
-				if (gGroomShortfallAbove > 0) then
-					advice := advice + ' Lower kMinAgeUnion_men from ' + IntToStr (kMinAgeUnion_men) +
-							' to at most ' + IntToStr (kMinAgeUnion_men - gGroomShortfallAbove) + '.';
-			end;
-			writeAndWait ('===> WARNING: the range of groom birth cohorts is too narrow. ' +
+			end else
+				advice := advice + ' Under variable demographic regimes the range is computed in ' +
+						'initMotherhood from kMinAgeUnion_women, kMaxAgeUnion_women, kMinAgeUnion_men ' +
+						'and kMaxAgeUnion_men, and is meant to cover every groom cohort the union model ' +
+						'can imply. A failure here means that computation is wrong, not that one of the ' +
+						'constants is too small.';
+			{This used to go through writeAndWait, which counts the message as a problem of its
+			 own in the verification table. But every union this warning is about was already
+			 caught, one by one, by chk_kin_groomCohortRange in addGroomsInfo, so the one fault
+			 was counted twice: as the failures of a check and as a reported problem. The run that
+			 showed it announced three failures where two unions had fallen outside one range.
+			 The summary and the advice are now written to the memo as an ordinary warning, and
+			 the same text is attached to that check as its note, so it appears under the check in
+			 verification.txt beside the cases it caught. Nothing is lost: the red indicator is
+			 lit by the check, which is where the fault was seen.}
+			groomWarning := '===> WARNING: the range of groom birth cohorts is too narrow. ' +
 					IntToStr (gGroomCohortSkipped) + ' unions of ' + IntToStr (gGroomUnionsSeen) +
 					' (' + sharePct (gGroomCohortSkipped, gGroomUnionsSeen) +
 					') could not be entered in the groom index, whose cohorts run ' +
 					IntToStr (gFirstCohortGrooms) + ' to ' + IntToStr (gLastCohortGrooms) +
 					'. Widest miss: ' + IntToStr (gGroomShortfallBelow) + ' years below and ' +
 					IntToStr (gGroomShortfallAbove) + ' years above.' + advice +
-					' The constants are in Declarations.pas and the program must be rebuilt after changing them.');
+					' The constants are in Declarations.pas and the program must be rebuilt after changing them.';
+			memoWriteLn ([groomWarning]);
+			setCheckNote (chk_kin_groomCohortRange, groomWarning);
 		end;
-
 		{No warning for children not entered in the birth index. That index holds, for each
 		 cohort, the mothers who gave birth in it, and selectMother deliberately answers every
 		 query from inside the range even when the child was born outside it: see the comment
@@ -2563,7 +2508,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 		 cohort on purpose and reuses it for all years, so almost every child is born outside
 		 the indexed year and the share not indexed is close to 100 per cent by construction.
 		 Reporting that as a fault was alarming and wrong.
-
 		 What does matter is the read side: how often a mother had to be taken from a cohort
 		 other than the child's, and how many years away. Under a stable population that
 		 substitution is exact. Under variable rates it draws the mother from a different
@@ -2579,13 +2523,10 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 					'kMaxDiffAgeUnion_men_olderWomen and kMaxDiffAgeUnion_women_olderMen for a stable ' +
 					'population, and from kMaxAgeUnion_women and kMinAgeUnion_women otherwise, all in ' +
 					'Declarations.pas.');
-
 	end;
-
 	{The READ side, reported at the END of the run rather than at the end of initMotherhood: the
 	 searches counted here are made while the kinship is being built, which happens after
 	 initMotherhood returns, so reporting them there would only ever print zeros.
-
 	 What it says, for each of the two searches the reconstruction depends on: how many were
 	 answered exactly, that is from the cohort and the age at union asked for, and how far the
 	 others had to go. A search answered from a neighbouring cell still produces a relative, so
@@ -2595,7 +2536,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 	var
 		searches, missed, years: longint;
 		totSearches, totMissed, totYears: longint;
-
 		procedure sumOne (const total, miss, yrs: array of arrayOfLongint; row: longint);
 		var
 			c: longint;
@@ -2610,7 +2550,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 				years := years + yrs [row, c];
 			end;
 		end;
-
 		procedure reportOne (const total, miss, yrs: array of arrayOfLongint; what: string);
 		var
 			gen, genRow: longint;
@@ -2632,9 +2571,15 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 			end;
 			{Say something in every case, including the case where the count is zero, which is
 			 otherwise indistinguishable from the report not having run.}
+			{The old wording gave one reason, that no kinship was built, which is false whenever
+			 the kin asked for do not call for that search at all. A run of ego, partner, children
+			 and grandchildren builds ten thousand trees and never looks for a mother, since it
+			 asks for no ancestors, and the report then said the counts were empty because nothing
+			 had been built.}
 			if (totSearches = 0) then
-				memoWriteLn ([what, ': none recorded. These counts are filled while the kinship ',
-						'is built, so a run that built no kinship leaves them empty'])
+				memoWriteLn ([what, ': none recorded, which means either that no kinship was built ',
+						'or that the kin asked for never call for this search. A run with no ',
+						'ancestors among the selected kin never looks for a mother'])
 			else if (totMissed = 0) then
 				memoWriteLn ([what, ', all generations: ', totSearches,
 						', every one found the cell it asked for'])
@@ -2644,11 +2589,9 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 						'), on average ', str_float (totYears / max (1, totMissed)),
 						' years away over the ones that missed']);
 		end;
-
 	begin
 		reportOne (gMotherSearch, gMotherSearchMiss, gMotherSearchYears, 'Searches for a mother');
 		reportOne (gBrideSearch, gBrideSearchMiss, gBrideSearchYears, 'Searches for a bride');
-
 		if (gChildLookupsClamped > 0) and not StablePopulation () then
 			writeAndWait ('===> WARNING: under variable rates, ' + IntToStr (gChildLookupsClamped) +
 					' of ' + IntToStr (gChildLookupsSeen) + ' searches for a mother (' +
@@ -2660,7 +2603,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 					'initMotherhood from the first and last cohort asked for, widened by one mean age ' +
 					'at childbearing per ascendant generation below.');
 	end;
-
 	procedure addGroomsInfo (womanInd: longint; arrayMothers: boolean = true);
 	var
 		ind, cohortMan, cohortManInd, ageUnionMan, ageUnionManInd, cohortWoman, ageUnionWoman: longint;
@@ -2676,14 +2618,12 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 				InterLockedIncrement (gGroomUnionsSeen);
 				{The union implies a groom born in cohortMan. If that falls outside the groom
 				 cohort range there is nowhere to index it, so the union is skipped.
-
 				 This used to be exit rather than continue. The loop is over one woman's
 				 unions, so as soon as one union implied a groom cohort outside the range,
 				 every LATER union of the same woman was dropped from the groom index as well.
 				 The first union is the one most often outside, so what was lost was mostly
 				 second and third unions, which biased the two ways table of unions and the
 				 search for a bride by the groom's cohort.
-
 				 Skipping is still a loss, and the range is set from compile time constants,
 				 not from anything the user can change in the configuration. So rather than
 				 lose unions quietly, the run counts them and records how far outside they
@@ -2718,6 +2658,8 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 					setLength (g_RangeBridesForGrooms_Info[cohortManInd, ageUnionManInd], length(g_RangeBridesForGrooms_Info[cohortManInd, ageUnionManInd]) + kSetLengthGrooms);
 				g_RangeBridesForGrooms_Info[cohortManInd, ageUnionManInd, g_RangeBridesForGrooms_Nb[cohortManInd, ageUnionManInd]] := womanInd;
 				Inc (g_RangeBridesForGrooms_Nb[cohortManInd, ageUnionManInd]);
+				{the same count, kept for the map of the pool after the index is freed}
+				countPoolCell (gPoolBrideSupply, cohortManInd, ageUnionManInd);
 			end;
 		end;
 	end;
@@ -2753,12 +2695,10 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 			end;
 		end;
 	end;
-
 	function yearIntFromDatePlusAge (yearBirth: double; age: double): longint;
 	begin
 		result := trunc (yearBirth + age);
 	end;
-
 	procedure addUnionsInfo (womanInd: longint; arrayMothers: boolean = true);
 	// Take all the unions of women and store them in data structures indexed by year of union and age of man at union
 	var
@@ -2775,7 +2715,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 				ageUnionMan := max(kMinAgeUnion_men, trunc (unionStates.Unions [n - 1].ages[le_union, man]));
 				yearUnionInd := yearUnion - gFirstYearUnions;
 				ageUnionManInd := ageUnionMan - kMinAgeUnion_men;
-
 				if (yearUnionInd < 0) or (yearUnionInd > (gLastYearUnions - gFirstYearUnions + 1)) then begin
 					if reportFailure (chk_kin_unionYearOutRange, []) then breakOnFailure;
 					break;
@@ -2789,7 +2728,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 			end;
 		end;
 	end;
-
 	procedure addChildrenInfo (randomGenerator: TRandomNumberGenerator; womanInd: longint);
 	// Take all the children of a mother and store them in a data structure indexed by year of birth that will allow later to select
 	// a mother, a grand mother, etc.
@@ -2830,7 +2768,10 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 						SetLength(g_RangeBirthsInfo[indCohort], length(g_RangeBirthsInfo[indCohort]) + kSetLengthBirths);
 					g_RangeBirthsInfo[indCohort, g_RangeBirthsNb[indCohort]] := womanInd;
 					Inc (g_RangeBirthsNb[indCohort]);
-
+					{the same birth, placed on the map of the pool by the age the mother had
+					 when she bore it}
+					countPoolCell (gPoolMotherSupply, indCohort,
+							longint (trunc (pChild^.ageMotherAtChildbirth)) - kMinAgeFert);
 					if gCAMSIM_1993 then begin
 						nbChildrenTemp := nbChildren;
 						if nbChildrenTemp > kMaxNbChildrenCalc then
@@ -2953,7 +2894,6 @@ if checkFalse (chk_kin_ageUnionWomanIndex, (ageUnionWomanInd < 0) or ( ageUnionW
 			f.Destroy;
 		end;
 	end;
-
 	procedure writeInfoGrooms (table: array2OfLongint; s: string = '');
 	var
 		cohort, indCohort: longint;
@@ -3044,7 +2984,6 @@ if checkFalse (chk_kin_valueAgeUnionManGMenWomen, (ageManInd < kNotDefined) or (
 		[ageMan]) then breakOnFailure;
 if checkFalse (chk_kin_valueAgeUnionWomanGMenWomen, (ageWomanInd < kNotDefined) or (ageWomanInd >= length(gMen_Women[0, 0])),
 		[ageWoman]) then breakOnFailure;
-
 						bWriteln(f, [cohort, tab, ageMan, tab, ageWoman, tab, gMen_Women[indCohort, ageManInd, ageWomanInd]]);
 					end;
 				end;
@@ -3107,7 +3046,6 @@ if checkFalse (chk_kin_valueAgeUnionWomanGMenWomen, (ageWomanInd < kNotDefined) 
 			f.Destroy;
 		end;
 	end;
-
 	procedure writeStates;
 	begin
 		if not g_GENPARAM.DEBUG.value then exit;
@@ -3154,7 +3092,6 @@ if checkFalse (chk_kin_valueAgeUnionWomanGMenWomen, (ageWomanInd < kNotDefined) 
 		end;
 		WriteAndWait ('Child not found in getAgeChildbearing');
 	end;
-
 	function CreateWomenSetForCohort(randomGenerator: TRandomNumberGenerator;
             				pData: pThreadCohortData;
 							threadNumber: longint;
@@ -3175,20 +3112,15 @@ if checkFalse (chk_kin_valueAgeUnionWomanGMenWomen, (ageWomanInd < kNotDefined) 
 		distributions of women ordered in a non stochastic way: first women with a lower union age and then
 		higher fertility level}
 		result := false;
-
 		isThreaded := (threadNumber > 0);
 		memoWriteLn(['Cohort: ', pData^.cohort, ', ', pData^.womenType, ': ', pData^.nWomen, ', thread: ', threadNumber]);
-
 		for indWoman := 0 to pData^.nWomen - 1 do begin
-
 if not isThreaded then begin
 	Inc (gIndMother);
 end;
-
 			// all the women should enter an union to be considered as possible bride or mother
 			// this is controlled setting kNoSinglehood in calc_ageUnion...
 			pChildrenList := nil;
-
 			if isThreaded then
 				unionStates := TUnionsType.Create(pData^.pDemReg^.yearOfBirth.value * 100000 + indWoman, woman)
 			else
@@ -3213,14 +3145,12 @@ end;
 								kNewReproductiveLife,
 								isThreaded
 							);
-
 			if g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_INITMOTHERHOOD.value and (gMaxThreads > 1) then begin
 				idWoman := indWoman + 1;
 			end else begin
 				Inc (totalWomenBridesCreated);
 				idWoman := totalWomenBridesCreated;
 			end;
-
 			if not pData^.womenCollection.addPerson (
 						TPersonMemoryBlock.Create(
 						// when in a thread, idWoman is specific for each cohort: important for multithreading
@@ -3228,13 +3158,11 @@ end;
 						pData^.cohort, nbChildren, unionStates, pChildrenList, nil)
 					) then
 				exit;
-
 			disposeChild (pChildrenList);
 			FreeAndNil (unionStates);
 		end; {indWoman}
 		result := true;
 	end;
-
 	Constructor TCohortWomenSet.Create(CreateSuspended : boolean; pData: pThreadCohortData; ind: longint);
 	begin
 		inherited Create(CreateSuspended);
@@ -3251,7 +3179,6 @@ end;
 		myRandomGenerator.initWithSeed (nextThreadSeed);
 		FAFinished := false;
 	end;
-
 	Destructor TCohortWomenSet.Destroy();
 	begin
 		inherited Destroy;
@@ -3270,7 +3197,6 @@ end;
 		CreateWomenSetForCohort (myRandomGenerator, @myData, myThreadNumber, dummy);
 		FAFinished := true;
 	end;
-
 	Constructor TBigCohortsWomenSet.Create(CreateSuspended : boolean; pData: pThreadCohortDataArray; ind: longint);
 	begin
 		inherited Create(CreateSuspended);
@@ -3286,13 +3212,11 @@ end;
 		myRandomGenerator.initWithSeed (nextThreadSeed);
 		FAFinished := false;
 	end;
-
 	Destructor TBigCohortsWomenSet.Destroy();
     begin
 		inherited Destroy;			{waits for Execute to return: see TCohortWomenSet.Destroy}
 		if Assigned (myRandomGenerator) then myRandomGenerator.Destroy;
 	end;
-
 
 	procedure TBigCohortsWomenSet.Execute;
 	var
@@ -3306,7 +3230,6 @@ end;
 		ran := myRandomGenerator.alea0;
 		if g_GENPARAM.DEBUG.value then
             memoWriteLn (['TBigCohortsWomenSet.Execute first random number: ', ran]);
-
 		for ind := low(myData.arrayOfData) to high(myData.arrayOfData) do begin
 			cohortData.pDemReg := myData.arrayOfData[ind].pDemReg;
 			cohortData.nWomen := myData.arrayOfData[ind].nWomen;
@@ -3315,7 +3238,6 @@ end;
 		end;
 		FAFinished := true;
 	end;
-
 	procedure initPopNumber (firstCohort, lastCohort: longint; r: double; var womenPopNumbers: array of longint);
 	var
 		cohort, indCohort: longint;
@@ -3335,7 +3257,6 @@ end;
 			end;
 		end; {cohort}
 	end;
-
 	procedure multiThreaded_initMotherhood (
 				firstCohort, lastCohort: longint;
 				r: double;
@@ -3401,7 +3322,6 @@ end;
 			BigCohortWomenThreads[ind] := nil;
 		end;
 		setLength (BigCohortWomenThreads, 0);
-
 		// copy women of each cohort collection to the big table of women
 		for ind := low(cohortArrayOfWomen) to high(cohortArrayOfWomen) do begin
 			for indWoman := 1 to cohortArrayOfWomen [ind].numPersons() do begin
@@ -3435,7 +3355,6 @@ end;
 		for cohort := firstCohort to lastCohort do begin
 			pDemReg := getCohort_p (cohort);
 			indCohort := cohort - firstCohort;
-
 			cohortThreadData.pDemReg := pDemReg;
 			cohortThreadData.nWomen := womenPopNumbers[indCohort];
 			cohortThreadData.cohort := cohort;
@@ -3462,7 +3381,6 @@ end;
 		else
 			result := mother_KINFERT;
 	end;
-
 	procedure applyMotherAlgorithm;
 	{Two sources can name the algorithm: the configuration file, through MOTHER_ALGORITHM, and
 	 the checkboxes of the Utiles form. The configuration file wins when it named one, because a
@@ -3486,14 +3404,12 @@ end;
 		g_GENPARAM.motherAlgorithm.setChanged;
 		g_GENPARAM.CAMSIM_1993_ANY_AGE_UNION.setChanged;
 	end;
-
 	procedure initMotherhood (randomGenerator: TRandomNumberGenerator);
 	var
 		cohort, age, indMother, indBride, indCohort: longint;
 		{Number of women simulated in each cohort for the big array}
 		womenPopNumbers: array of longint;
 		bridesPopNumbers: array of longint;
-
 		pDemReg: pStructDemographicRegimeSettings;
 		indChild: longint;
 		tStart: TDateTime;  // Begin and end of measurement
@@ -3501,7 +3417,6 @@ end;
 {==============================================}
         MULTITHREADING: boolean;
 {==============================================}
-
 		totalWomenBridesCreated: longint;
 		r: double;
 ind, res: longint;
@@ -3510,7 +3425,6 @@ f: TFileType; // used in the main thread
 	
 	begin
 		tStart:= Now();  // Get date+time
-
 if g_GENPARAM.DEBUG.value then begin
 	if checkDirResult () then begin
 		f := TFileType.Create (gPathToResult + 'ProblemBrides.txt', res, 'PROBLEMBRIDES');
@@ -3533,7 +3447,6 @@ end;
 			if gCAMSIM_1993 and gCAMSIM_1993_unbounded then
 				memoWriteLn (['   age at union of the mother drawn without an upper bound']);
 		end;
-
 		if StablePopulation() then begin
 			gFirstCohortAncestorsChildren := g_GENPARAM.RUNTIME[cmd_firstCohort].value;
 			gLastCohortAncestorsChildren := g_GENPARAM.RUNTIME[cmd_lastCohort].value;
@@ -3590,8 +3503,25 @@ end;
 				gLastCohortAncestorsChildren := g_GENPARAM.RUNTIME[cmd_lastCohort].value;
 				gFirstCohortBrides := gFirstCohortAncestorsChildren;
 				gLastCohortBrides := gLastCohortAncestorsChildren + kMaxAgeUnion_women;
-				gFirstCohortGrooms := gFirstCohortAncestorsChildren;
-				gLastCohortGrooms := gLastCohortAncestorsChildren + kMaxAgeUnion_men; // bug corrected
+				{THE RANGE OF GROOM COHORTS.
+				 A groom has no cohort of his own in this program: no man is simulated as an individual
+				 before he enters a union. His cohort is implied by the bride's, at addGroomsInfo:
+				       cohortMan = cohortWoman + ageUnionWoman - ageUnionMan
+				 so it can fall outside any range taken from the cohorts of the women, and a union whose
+				 groom falls outside is dropped from the index and lost to the search for a bride.
+				 The range therefore has to hold every cohort the union model can imply, not every cohort
+				 the program simulates. The oldest groom the model can produce is kMaxAgeUnion_men facing a
+				 bride of kMinAgeUnion_women, so he is born that many years before the first bride cohort;
+				 the youngest is kMinAgeUnion_men facing a bride of kMaxAgeUnion_women, so that many years
+				 after the last.
+				 kMaxDiffAgeUnion_women_olderMen and kMaxDiffAgeUnion_men_olderWomen are deliberately not
+				 used here. They size the pools of the stable population mode, where the bride pool is kept
+				 narrow to save memory, and nothing in the union model enforces them: a union with a wider
+				 age gap is produced and has to be indexed all the same.
+				 The cost of the wider range is empty cells. With the constants of today it grows from 199
+				 to 322 cohorts, which is about 1.6 MB in g_RangeBridesForGrooms_Info.}
+				gFirstCohortGrooms := gFirstCohortBrides - (kMaxAgeUnion_men - kMinAgeUnion_women);
+				gLastCohortGrooms := gLastCohortBrides + (kMaxAgeUnion_women - kMinAgeUnion_men);
 				gFirstCohortWomen := gFirstCohortBrides;
 				gLastCohortWomen := gLastCohortBrides;
 			end;
@@ -3602,20 +3532,39 @@ end;
 			
 			gFirstCohortBrides := gFirstCohortAncestorsChildren;
 			gLastCohortBrides := gLastCohortAncestorsChildren + kMaxAgeUnion_women;
-			gFirstCohortGrooms := gFirstCohortAncestorsChildren;
-			if g_GENPARAM.NEW_INIT_MOTHERHOOD.value then begin
-				gLastCohortGrooms := gLastCohortAncestorsChildren + kMaxAgeUnion_men;
-			end else begin
-				// probable bug there, caught in the new version of the algorithm
-				gLastCohortGrooms := gLastCohortAncestorsChildren + kMinAgeUnion_men;
-			end;
+			{THE RANGE OF GROOM COHORTS.
+			 A groom has no cohort of his own in this program: no man is simulated as an individual
+			 before he enters a union. His cohort is implied by the bride's, at addGroomsInfo:
+			       cohortMan = cohortWoman + ageUnionWoman - ageUnionMan
+			 so it can fall outside any range taken from the cohorts of the women, and a union whose
+			 groom falls outside is dropped from the index and lost to the search for a bride.
+			 The range therefore has to hold every cohort the union model can imply, not every cohort
+			 the program simulates. The oldest groom the model can produce is kMaxAgeUnion_men facing a
+			 bride of kMinAgeUnion_women, so he is born that many years before the first bride cohort;
+			 the youngest is kMinAgeUnion_men facing a bride of kMaxAgeUnion_women, so that many years
+			 after the last.
+			 kMaxDiffAgeUnion_women_olderMen and kMaxDiffAgeUnion_men_olderWomen are deliberately not
+			 used here. They size the pools of the stable population mode, where the bride pool is kept
+			 narrow to save memory, and nothing in the union model enforces them: a union with a wider
+			 age gap is produced and has to be indexed all the same.
+			 The cost of the wider range is empty cells. With the constants of today it grows from 199
+			 to 322 cohorts, which is about 1.6 MB in g_RangeBridesForGrooms_Info.
+			 The two bounds no longer depend on NEW_INIT_MOTHERHOOD. The old lower bound was the first
+			 cohort of children, which left no room at all for a groom older than the oldest bride, and
+			 the old upper bound was measured from the last cohort of children while brides run
+			 kMaxAgeUnion_women years beyond it. With a cohort file and NEW_INIT_MOTHERHOOD on, a run of
+			 cohort 2000 lost 36195 unions of 3832599, 0.944 per cent, the widest 30 years below the
+			 range; with NEW_INIT_MOTHERHOOD off the upper bound used kMinAgeUnion_men and was narrower
+			 still. This changes results: those unions re-enter the index and the search for a bride by
+			 the groom's cohort and age now sees them.}
+			gFirstCohortGrooms := gFirstCohortBrides - (kMaxAgeUnion_men - kMinAgeUnion_women);
+			gLastCohortGrooms := gLastCohortBrides + (kMaxAgeUnion_women - kMinAgeUnion_men);
 			gFirstCohortWomen := gFirstCohortBrides;
 			gLastCohortWomen := gLastCohortBrides;
 		end;
 		// obsolete
 		gFirstYearUnions := gFirstCohortBrides + kMinAgeUnion_women;
 		gLastYearUnions := gLastCohortBrides + kMaxAgeUnion_women;
-
 		{sized here, not with the other state arrays further down: gStateGroomsByAge is filled
 		 on the write side by addGroomsInfo, which runs BEFORE that point. gStateGrooms can be
 		 sized late because lookInRange fills it later still, while kinship is being built.}
@@ -3638,16 +3587,11 @@ end;
 		gChildLookupsSeen := 0;
 		gChildLookupsClamped := 0;
 		gChildClampWorst := 0;
-		for gen := 0 to kNbKinGenerations - 1 do begin
-			gChildLookupsSeenByGen [gen] := 0;
-			gChildLookupsClampedByGen [gen] := 0;
-		end;
 		{How deep the kinship tree goes for the kin set asked for, and from that how far outside
 		 the index the lookups can reach: one mean age at childbearing per generation, for which
 		 kMaxAgeFert is a safe upper bound, below for the ascendants and above for the
 		 descendants. The margin is one generation wider than strictly needed for the children
 		 array, since the deepest ascendant is never itself the person whose mother is sought.
-
 		 Only the ascendants are looked up in the birth index, so the children array needs no
 		 descendant margin. The grooms include ego's descendants, whose unions are simulated, so
 		 that array needs both.}
@@ -3660,6 +3604,14 @@ end;
 		SetLength (gAllBirths, 3000);
 		SetLength (g_RangeBirthsNb, gLastCohortAncestorsChildren - gFirstCohortAncestorsChildren + 1);
 		SetLength (g_RangeBirthsInfo, gLastCohortAncestorsChildren - gFirstCohortAncestorsChildren + 1, kSetLengthBirths);
+		{the map of the birth index, emptied and sized with the index itself}
+		gPoolMotherFirstCohort := gFirstCohortAncestorsChildren;
+		SetLength (gPoolMotherSupply, 0, 0);
+		SetLength (gPoolMotherChosen, 0, 0);
+		SetLength (gPoolMotherSupply, gLastCohortAncestorsChildren - gFirstCohortAncestorsChildren + 1,
+				kMaxAgeFert - kMinAgeFert + 1);
+		SetLength (gPoolMotherChosen, gLastCohortAncestorsChildren - gFirstCohortAncestorsChildren + 1,
+				kMaxAgeFert - kMinAgeFert + 1);
 		if gCAMSIM_1993 then begin
 			for indChild := 0 to kMaxNbChildrenCalc do begin
 				SetLength (CAMSIM_RangeBirthsNb [indChild], gLastCohortAncestorsChildren - gFirstCohortAncestorsChildren + 1);
@@ -3677,9 +3629,16 @@ end;
 				SetLength (bridesPopNumbers{%H-}, gLastCohortBrides - gFirstCohortBrides + 1);
 			end;
 		end;
-
 		SetLength (g_RangeBridesNb, gLastCohortBrides - gFirstCohortBrides + 1, kMaxAgeUnion_women - kMinAgeUnion_women + 1);
 		SetLength (g_RangeBridesInfo, gLastCohortBrides - gFirstCohortBrides + 1, kMaxAgeUnion_women - kMinAgeUnion_women + 1, kSetLengthBrides);
+		{the map of the bride index, emptied and sized with the index itself}
+		gPoolBrideFirstCohort := gFirstCohortGrooms;
+		SetLength (gPoolBrideSupply, 0, 0);
+		SetLength (gPoolBrideChosen, 0, 0);
+		SetLength (gPoolBrideMissed, 0, 0);
+		SetLength (gPoolBrideSupply, gLastCohortGrooms - gFirstCohortGrooms + 1, kMaxAgeUnion_men - kMinAgeUnion_men + 1);
+		SetLength (gPoolBrideChosen, gLastCohortGrooms - gFirstCohortGrooms + 1, kMaxAgeUnion_men - kMinAgeUnion_men + 1);
+		SetLength (gPoolBrideMissed, gLastCohortGrooms - gFirstCohortGrooms + 1, kMaxAgeUnion_men - kMinAgeUnion_men + 1);
 		SetLength (g_RangeBridesForGrooms_Nb, gLastCohortGrooms - gFirstCohortGrooms + 1, kMaxAgeUnion_men - kMinAgeUnion_men + 1);
 		SetLength (g_RangeBridesForGrooms_NotFound, gLastCohortGrooms - gFirstCohortGrooms + 1, kMaxAgeUnion_men - kMinAgeUnion_men + 1);
 		SetLength (g_RangeBridesForGrooms_Info, gLastCohortGrooms - gFirstCohortGrooms + 1, kMaxAgeUnion_men - kMinAgeUnion_men + 1, kSetLengthGrooms);
@@ -3695,12 +3654,10 @@ end;
 				kMaxAgeFert - kMinAgeFert + 1,
 				kSetLengthBirths);
 		end;
-
 		memoWriteLn(['============  Init cohort of women possible mothers and / or brides ========']);
 		FlushIO ();
 		totalWomenBridesCreated := 0;
 		MULTITHREADING := g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_INITMOTHERHOOD.value and (gMaxThreads > 1);
-
 		if MULTITHREADING then
 			multiThreaded_initMotherhood (
 				gFirstCohortWomen, gLastCohortWomen, r, 'women',
@@ -3711,7 +3668,6 @@ end;
 				randomGenerator, gFirstCohortWomen, gLastCohortWomen, r, 'women',
 				womenPopNumbers, totalWomenBridesCreated,
 				gBig_ArrayWomen);
-
 		if g_GENPARAM.NEW_INIT_MOTHERHOOD.value then begin
 			if StablePopulation() then begin
 				if MULTITHREADING then
@@ -3767,7 +3723,6 @@ end;
 				addUnionsInfo (indMother);
 			end;
 		end;
-
 		SetLength (gMen_Women, gLastCohortGrooms - gFirstCohortGrooms + 1, kMaxAgeUnion_men - kMinAgeUnion_men + 1, kMaxAgeUnion_women - kMinAgeUnion_women + 1);
 		{one row per ascendant generation, and a lower margin wide enough to hold the cohorts of
 		 the deepest ascendants instead of piling them all into the first cell}
@@ -3792,7 +3747,6 @@ end;
 		SetLength (gBrideSearchMiss, kNbKinGenerations, length (gStateGrooms [0]));
 		SetLength (gBrideSearchYears, kNbKinGenerations, length (gStateGrooms [0]));
 		SetLength (gStateYearUnions, (gLastYearUnions + kStateRangeLengthLimit) - (gFirstYearUnions - kStateRangeLengthLimit) + 1);
-
 		LookMemory;
 		
 if gRunFromIDE then begin
@@ -3824,18 +3778,12 @@ if gRunFromIDE then begin
 			writeInfoParents ('gBig_ArrayBrides.txt', gBig_ArrayBrides, gFirstCohortBrides, gLastCohortBrides);
 	end;
 end;
-
 		SetLength (womenPopNumbers, 0);
 		SetLength (bridesPopNumbers, 0);
-
 		reportIndexCoverage;
-
 		stopTime (tStart, '===== initMotherhood lasted: ');
-
         g_endInitMotherhood := true;
-
 	end; {initMotherhood}
-
 	procedure disposeMotherhood;
 	var
 		ind: longint;
@@ -3874,9 +3822,7 @@ end;
 		if g_GENPARAM.NEW_INIT_MOTHERHOOD.value then
 			if StablePopulation() then
 				gBig_ArrayBrides.Destroy;
-
 	end;
-
 	procedure disposeMotherhood_DemReg;
 	// This part is disposed of when the Demographic Regime Collection is destroyed
 	begin
@@ -3908,7 +3854,6 @@ end;
 			exit;
 		end;
 		ageAtRef := ageRef + pRelative^.ageAtBirthOfEgo;
-
 		if (pRelative^.ageDeath < ageAtRef) then begin
 			{the relative was no longer alive when ego reached the reference age}
 			getPartnershipStatus := dead;
@@ -3918,13 +3863,11 @@ end;
 			getPartnershipStatus := neverInUnion;
 			exit;
 		end;
-
 		{index of the last union that had begun when ego reached the reference age}
 		lastBegun := 0;
 		for ind := 1 to pRelative^.nUnions do
 			if getAgeUnion (pRelative, ind) <= ageAtRef then
 				lastBegun := ind;
-
 		if (lastBegun = 0) then
 			{no union had begun yet}
 			getPartnershipStatus := neverInUnion
@@ -3943,7 +3886,6 @@ end;
 			getPartnershipStatus := widow;
 		
 	end;
-
 	procedure copyWomanPartnershipInfoToManAsRelative (woman_unionStates: TUnionsType; woman_indUnion: longint; var pMan: pRelativeType);
 	var
 		ind: longint;
@@ -3954,7 +3896,6 @@ end;
 		with pMan^ do begin
 			if ageDeath <= 0 then
 				ageDeath := woman_unionStates.Unions [woman_indUnion - 1].ages[le_death, man];
-
 			// first check whether there are already ages at union entered for that man
 			ind := 0;
 			while getAgeUnion (pMan, ind+1) > 0 do
@@ -3967,7 +3908,6 @@ end;
 			// if there is already at least an age at union, ind will be equal to the number of previous Unions for the man
 			// but if the last age at union is equal to the current one, than ind will be decreased by one
 			nUnions := ind + 1;
-
 			ind := nUnions;
 			setAgeUnion (pMan, ind, woman_unionStates.Unions [woman_indUnion - 1].ages[le_union, man]);
 			if 	(woman_unionStates.Unions [woman_indUnion - 1].ages[le_endUnion, man] > 0) then begin
@@ -3988,15 +3928,12 @@ end;
 					setCauseEndUnion (pMan, ind, end_by_widowhood);
 				end;
 			end;
-
 			// references to partners should be added afterwards
 			setPartner (pMan, ind, nil);
-
 			// references to biological children should be added afterwards
 			emptyRelativeChildList (pMan);
 		end;
 	end;
-
 	procedure copyWomanPartnershipInfoToWomanAsRelative (unionStates: TUnionsType; var pWoman: pRelativeType);
 	var
 		ind: longint;
@@ -4040,7 +3977,6 @@ if (pEgo^.yearBirth < 0)
 	more or less 6 months is of the same age than ego. If the distance is higher than
 	6 months, than that person will be at least 1 year older or younger (if the distance is negative)}
 		distanceInMonths := trunc (( pEgo^.yearBirth - pRelative^.yearBirth ) * kNbLunarMonths);
-
 		offset := 6;
 		if distanceInMonths > 0 then begin
 			distanceInMonths := distanceInMonths + offset;
@@ -4115,14 +4051,12 @@ if the age at first union > age at death, then no union}
 				end;
 			end;
 	end;
-
 	function CalcChildren (pEgo: pRelativeType): longint;
 	var
 		n: longint = 0;
 		pRelative: pRelativeType;
 	begin
 		if pEgo^.typeOfKin <> kt_ego then exit;
-
 		pRelative := pEgo;
 		while pRelative <> nil do begin
 			if (pRelative^.typeOfKin = kt_child) and (pRelative^.kinOf = pEgo) then n := n + 1;
@@ -4140,7 +4074,6 @@ if the age at first union > age at death, then no union}
 		result := (pRelative <> nil) and
 				  ( trunc (pRelative^.ageDeath) >= (ageRefEgo + pRelative^.ageAtBirthOfEgo) );
 	end;
-
 	function writeKinDemoCare (ageRefEgo, indFamily: longint; pEgo: pRelativeType; pRelative: pRelativeType): boolean;
 	var
 		i: longint = 1;
@@ -4180,7 +4113,6 @@ if the age at first union > age at death, then no union}
 					tickIn := max(0, -ageRel);
 				tickOut := ageDeathInt-ageRel;
 			end;
-
 			ageRel := max(0, ageRel);
 			
 			if byUnion (pEgo, pRelative) then
@@ -4203,10 +4135,8 @@ if the age at first union > age at death, then no union}
 				writeKinDemoCare := FALSE;
 				exit;
 			end;
-
 			begin
 				if RP.wKey then bWrite (gOutFileIndivKin, [RP.key, comma]);
-
 				if g_GENPARAM.DEMOCARE_LARGE_FIELDS.value then begin
 					bWriteLn(gOutFileIndivKin, [
 						indFamily, comma,
@@ -4264,10 +4194,8 @@ if the age at first union > age at death, then no union}
 				end;
 			end;
 		end; {with pRelative^ do}
-
 		writeKinDemoCare := true;
 	end;
-
 	procedure delLastChar (var s: string);
 	begin
 		s := Copy(s, 1, length(s)-1);
@@ -4295,7 +4223,6 @@ if the age at first union > age at death, then no union}
 		sep: char=comma;
 	begin
 		result := False;
-
 		idEgo := pEgo^.indNumber;
 		with pRelative^ do begin
 			if not (typeOfKin in g_GENPARAM.OUTPUT_KINTYPES.value) then exit;
@@ -4445,15 +4372,12 @@ if the age at first union > age at death, then no union}
 				chkInheritances_2 := checkInheritances (pRelative);
 				bWrite (gOutFileIndivKin, [sep, chkInheritances_2]);
 			end;
-
 			bWriteLn (gOutFileIndivKin, []);
-
 			result := True;
 		end;
  		if gRunFromIDE and (checkSumShareHeirs > 0) and ( abs (checkSumShareHeirs-1) > 0.01) then
 			checkSumShareHeirs := checkSumShareHeirs;
 	end;
-
 	function writeKinGEDCOM (indFamily: longint; pEgo: pRelativeType; pRelative: pRelativeType): boolean;
 	begin
 		result := False;
@@ -4472,7 +4396,6 @@ if the age at first union > age at death, then no union}
 		else if fileFormat = out_GEDCOM then
 			writeKin := writeKinGEDCOM (indFamily, pEgo, pRelative)
 	end;
-
 	function byUnionOfKinInSet (pEgo, pRelative: pRelativeType; relativesSet: KinSetType): boolean;
 	begin
 		if byUnion (pEgo, pRelative) then
@@ -4480,7 +4403,6 @@ if the age at first union > age at death, then no union}
 		else
 			result := false;
 	end;
-
 	function includeKinInNetwork (pEgo, pRelative: pRelativeType; relativesSet: KinSetType; fileFormat: Kinship_FileFormat): boolean;
 	var
 		inKinSet, kinByUnion, acceptNonBioKin: boolean;
@@ -4496,26 +4418,22 @@ if the age at first union > age at death, then no union}
 			else
 				result := inKinSet and not byUnion (pEgo, pRelative);
 	end;
-
 	function writeKinship (indFamily: longint; pEgo: pRelativeType;
 							relativesSet: KinSetType; fileFormat: Kinship_FileFormat; indThread: longint = 0): longint;
 	var
 		pRelative: pRelativeType;
 		nbRelatives: longint = 0;
 		ageRefEgo: longint;
-
 	begin
 		result := 0;
 		
 		if not g_GENPARAM.OUTPUT_INDIVIDUAL_KINSHIP_INFO.value then exit;
-
 		if fileFormat = out_DemoCare then
 			ageRefEgo := 50
 		else if fileFormat = out_EgoGenealogy then
 			ageRefEgo := 0
 		else if fileFormat = out_GEDCOM then
 			ageRefEgo := 0;
-
 		pRelative := pEgo;
 		while (pRelative <> nil) do begin
 			pRelative^.inKinSet := false;
@@ -4533,7 +4451,6 @@ if the age at first union > age at death, then no union}
 		end;
 		result := nbRelatives;
 	end;
-
 	procedure addAllPartners (randomGenerator: TRandomNumberGenerator;
                             pPartnerWoman: pRelativeType; unionStates: TUnionsType;
 							pMan: pRelativeType; indUnionWoman: longint;
@@ -4568,7 +4485,6 @@ if the age at first union > age at death, then no union}
 			addLastPartner (pPartnerWoman, pPartner);
 		end;
 	end;
-
 	procedure copyInfoChildToRelative (aChild: pInfoChildType; pRelative: pRelativeType; destinyInfo: boolean = false);
 	begin
 		if destinyInfo then begin
@@ -4582,7 +4498,6 @@ if the age at first union > age at death, then no union}
 		pRelative^.ageFatherAtChildbirth := aChild^.ageFatherAtChildbirth;
 		pRelative^.motherUnionNumber := aChild^.motherUnionNumber;
 	end;
-
 	function lookingForRefChild (randomGenerator: TRandomNumberGenerator;
                             	cohortChild: longint;
                                 pChildrenList: pInfoChildType;
@@ -4639,7 +4554,6 @@ if the age at first union > age at death, then no union}
 					
 	procedure ageFatherAtUnionChild (pRefChild: pRelativeType);
 	// statistics on age at death of father and age at union of his male children
-
 		function goodSon (pSon: pRelativeType): boolean;
 		begin
 			result := (pSon^.gender = man) and (getAgeUnion (pSon, 1) > 0);
@@ -4667,7 +4581,6 @@ if the age at first union > age at death, then no union}
 				valAgeAtUnionLastChild := trunc((getAgeUnion (pChild, 1)));
 			end;
 		end;
-
 		if valAgeAtBirthFirst > 0 then
 			begin
 				InterlockedIncrement (gAgeFatherAgeSon[numberCases]);
@@ -4678,7 +4591,6 @@ if the age at first union > age at death, then no union}
 				dummy := InterlockedExchangeAdd(gAgeFatherAgeSon[ageAtUnionLastChild], valAgeAtUnionLastChild);
 			end;
 	end;
-
 {we integrate the siblings of the pRefChild who has birth order 'birthOrder' into ego's kinship}
 {as this individual can be either ego or one of his two parents, we take care not to add her/him twice in}
 {ego's kinship, once as an ego and once as a brother, or once as a parent and once as an uncle...}
@@ -4691,14 +4603,12 @@ If 'birthOrder' is more than 0, then the individual pRefChild is not added and s
 							pEgo, pRefChild, pMother, pFatherBioKinOfEgo: pRelativeType;
 							var pLastRelative: pRelativeType; var nbTotRelatives: longint);
 	var
-
 first: longint = 0;
 last: longint = 0;
 		ind: longint = 0;
 		pFather: pRelativeType = nil;
 		pLastChild: pRelativeType = nil;
 		pCh: pInfoChildType;
-
 	begin
 {$IFDEF VerboseProfiler} timeProfile_start_proc('calcSiblings'); {$ENDIF}
         pCh := pChildrenList;
@@ -4746,7 +4656,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 			ageFatherAtUnionChild(pRefChild);
 {$IFDEF VerboseProfiler} timeProfile_end_proc('calcSiblings'); {$ENDIF}
 	end;
-
 	function updateInfoMother (randomGenerator: TRandomNumberGenerator;
                             	womanObj: TPersonMemoryBlock;
                                 pRefChild: pRelativeType;
@@ -4826,6 +4735,11 @@ last := pLastChild^.ageAtBirthOfEgo;
 		// we have one!
 		womanObj := getWomanFromBigArray (g_RangeBirthsInfo[cohortChildInd + offsetCohort, indMother]);
 		result := offsetCohort;
+		{the cell this search drew from, for the map of the pool. The age of the mother at that
+		 birth is the year of the birth less her own year of birth, both of which are known
+		 here, so nothing has to be looked up in her list of children.}
+		countPoolCell (gPoolMotherChosen, cohortChildInd + offsetCohort,
+				(gPoolMotherFirstCohort + cohortChildInd + offsetCohort) - longint (womanObj.cohort) - kMinAgeFert);
 		{Did this child find a mother of its own cohort? Two things can move the answer away
 		 from the cohort asked for: the clamp into the indexed range performed by
 		 lookInChildrenRange, and the step to a neighbouring cohort taken just above when the
@@ -4847,7 +4761,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 	// this set of mothers was constructed at start and are stored in arrays g_RangeBirthsInfo and gBig_ArrayWomen
 	var
 		cohortChild, offsetCohort: longint;
-
 	begin
 		// year of birth of the child whose mother we are looking for
 		if g_GENPARAM.NEW_INIT_MOTHERHOOD.value then begin
@@ -4864,9 +4777,7 @@ last := pLastChild^.ageAtBirthOfEgo;
 		
 		// we copy the information from that mother and determine the birth order of the reference child
 		result := updateInfoMother (randomGenerator, womanObj, pRefChild, offsetCohort, pMother);
-
 	end; {LookingForMother}
-
 	function BACKFOR_MotherAgeChildbearing (randomGenerator: TRandomNumberGenerator; pRefChild: pRelativeType): longint;
 	// We use our set of mothers to select an age at childbearing (will work both for stable and non-stable population simulation)
 	var
@@ -4930,7 +4841,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		 literals 13 and 54 in its reshuffle test}
 		kMinAgeChildbearingCAMSIM = 13;
 		kMaxAgeChildbearingCAMSIM = 54;
-
 	function CAMSIM_NumberChildren (randomGenerator: TRandomNumberGenerator; pRefChild: pRelativeType): longint;
 	var
 		cohortChild, cohortChildInd, indChild: longint;
@@ -4952,7 +4862,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		until (sum >= dummy) or (indChild >= kMaxNbChildrenCalc);
 		result := indChild;
 	end;
-
 	function CAMSIM_MotherAgeChildbearing (randomGenerator: TRandomNumberGenerator;
                                 			pRefChild: pRelativeType;
                                             numChildrenSelected: longint): longint;
@@ -4977,7 +4886,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 			reportFailure (chk_kin_camsimParityIndexEmpty, [cohortChild, cohortChildInd, numChildrenSelected]);
 			exit;
 		end;
-
 		{We randomly select a mother who had a birth in year cohortChild, in order to obtain an age at childbearing }
 		indMother := trunc ( randomGenerator.alea ( 0, CAMSIM_RangeBirthsNb[numChildrenSelected, cohortChildInd] - 0.00000000001 ) );
 		// we have one!
@@ -4995,7 +4903,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 			result := 0;
 		end;
 	end;
-
 	function infoRefChildToMotherAndSibling (
                                 randomGenerator: TRandomNumberGenerator;
 								yearBirthRefChildInd: double;
@@ -5024,7 +4931,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		// update date of birth of mother based on refChild's info
 		calcDateBirth (womanObj.yearBirth, yearBirthRefChildInd, pRefChild^.ageMotherAtChildbirth, 0);
 		calcDateBirth (pMother^.yearBirth, yearBirthRefChildInd, pRefChild^.ageMotherAtChildbirth, 0);
-
 		// update date of birth of siblings from date of birth of mother (will recopy the info to the refChild also!)
 		pCh := womanObj.pChildrenList;
 		gotoToFirstLiveBornChild(pCh);
@@ -5032,10 +4938,8 @@ last := pLastChild^.ageAtBirthOfEgo;
 			calcDateBirth (pCh^.yearBirth, womanObj.yearBirth, 0, pCh^.ageMotherAtChildbirth);
 			gotoToNextLiveBornChild(pCh);
 		end;
-
 		// we copy the information from that mother and update the birth order of the reference child
 		birthOrder := updateInfoMother (randomGenerator, womanObj, pRefChild, 0, pMother);
-
 		result := womanObj;
 	end;
 	
@@ -5062,7 +4966,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		nPasses: longint = 0;
 	begin
 		result := -1; {No child found}
-
 		yearBirthRefChildInd := lookInChildrenRange (trunc (pRefChild^.yearBirth), pRefChild^.typeOfKin) + gFirstCohortAncestorsChildren;
 		yearBirthRefChildInd := yearBirthRefChildInd +
 					pRefChild^.yearBirth - trunc (pRefChild^.yearBirth);
@@ -5121,7 +5024,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		else
 			motherFound := true;
 		end;
-
 		// looking for the refChild in the list of children to update her/his info
 		birthOrderSelected := trunc (randomGenerator.alea (1, nbChildren + 0.9999999999999));
 		pCh := pChild;
@@ -5136,7 +5038,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 			gotoToNextLiveBornChild(pCh);
 		end;
 		cohortWoman := trunc (yearBirthRefChildInd - pRefChild^.ageMotherAtChildbirth);
-
 		womanObj := infoRefChildToMotherAndSibling (
 								randomGenerator,
                                 yearBirthRefChildInd,
@@ -5147,12 +5048,10 @@ last := pLastChild^.ageAtBirthOfEgo;
 								pMother,
 								birthOrder
 							);
-
 		disposeChild (pChild);
 		FreeAndNil (unionStates);
 		result := birthOrder;
 	end;
-
 	function LookingForMother_CAMSIM_1993 (
                                 randomGenerator: TRandomNumberGenerator;
 								pRefChild: pRelativeType;
@@ -5183,7 +5082,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		nDraws, nPasses, nRetreats, step: longint;
 	begin
 		result := -1; {No child found}
-
 		nTries := 0;
 		numChildrenSelected := CAMSIM_NumberChildren (randomGenerator, pRefChild);
 		ageChildbearing := CAMSIM_MotherAgeChildbearing (randomGenerator, pRefChild, numChildrenSelected);
@@ -5225,7 +5123,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 			ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator, cohortWoman, kMaxAgeUnion_women)
 		else
 			ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator, cohortWoman, ageChildbearing);
-
 		// Sanity check: if the age at union of the woman is higher than the age at childbearing of ego, we try another woman...
 		{this returns to the top of the loop, where nPasses is counted and the cap below
 		 applies, so a pair of values that can never agree no longer spins without end}
@@ -5238,7 +5135,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 			end;
 			continue;
 		end;
-
 			repeat
 				FreeAndNil (unionStates);
 				Inc (nTries);
@@ -5333,7 +5229,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 								pMother,
 								birthOrder
 							);
-
 		disposeChild (pChild);
 		FreeAndNil (unionStates);
 		result := birthOrder;
@@ -5363,7 +5258,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		yearBirthRefChildInd: double;
 		birthOrder: longint;
 		nDraws, nRetreats, nPasses, step, ageChildbearingDrawnAgain: longint;
-
 	begin
 		result := -1; {No child found}
 		yearBirthRefChildInd := lookInChildrenRange (trunc (pRefChild^.yearBirth), pRefChild^.typeOfKin) + gFirstCohortAncestorsChildren;
@@ -5470,7 +5364,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 		
 		InterlockedIncrement (gBACKFOR_women);
-
 		// looking for the refChild in the list of children to update her/his info
 		{The loop above is now left only with a woman who has a birth at this age, so the count
 		 below is positive. It is tested all the same: a draw on an empty count returns zero,
@@ -5506,7 +5399,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 								pMother,
 								birthOrder
 							);
-
 		disposeChild (pChild);
 		FreeAndNil (unionStates);
 		result := birthOrder;
@@ -5534,12 +5426,10 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 		ageChildbearing: longint;
 		ageUnionWoman, ageUnionWomanTemp, ageUnionWomanInd: longint;
 		nDraws: longint;
-
 		function nearestAgeAtUnionHeld (ageAsked, ageChildbearingNow: longint; out ageUsed: longint): longint;
 		{The number of mothers the index holds for this cohort at the age at union nearest
 		 ageAsked, looking on both sides and staying between kMinAgeUnion_women and the age at
 		 childbearing, or 0 if the whole row is empty.
-
 		 The original walked in one direction only. Both of its loops carried the same pair of
 		 bounds, and the second started from the value the first had left, so the bound that
 		 stopped the first loop blocked the second at its own first test and it never ran a
@@ -5571,7 +5461,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 			end;
 			result := 0;
 		end;
-
 	begin
 		{1. Select an age at childbearing}
 		ageChildbearing := BACKFOR_MotherAgeChildbearing (randomGenerator, pRefChild);
@@ -5589,7 +5478,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 			myHalt (['BACKFOR_MIXED: no age at childbearing could be drawn for a reference child born in ',
 					trunc (pRefChild^.yearBirth), ' after ', nDraws, ' draws']);
 		end;
-
 		{3. No we look for a suitable mother, based on the previous age at union, in the set of mother who had a child
 		at age ageChildbearing the year cohortChild}
 		cohortChild := trunc (pRefChild^.yearBirth);
@@ -5626,7 +5514,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 		 not clear, and the caller's own variable has no initial value either, so the call to
 		 updateInfoMother below dereferenced whatever the stack held, as did two further uses of
 		 womanObj in ancestorsAndTheirOffspring.
-
 		 There is nothing to fall back on here: the whole point of the algorithm is to take the
 		 mother from the set of mothers indexed by cohort and age at union, and the sweep above
 		 has already looked at every age at union the index could answer. So the run stops with
@@ -5646,12 +5533,9 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 		 assigned to birthOrder and never read, because updateInfoMother below returns its own,
 		 and it repeated the same search of the same children list with the same arguments, so
 		 it walked that list twice for every reference child.}
-
 		// we copy the information from that mother and determine the birth order of the reference child
 		result := updateInfoMother (randomGenerator, womanObj, pRefChild, 0, pMother);
-
 	end; {LookingForMotherBACKFOR}
-
 	function tailOfRelativeList (pRelative: pRelativeType): pRelativeType;
 	// last relative of the linked list
 	begin
@@ -5682,7 +5566,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 {$IFDEF VerboseProfiler} timeProfile_start_proc('calcStateWoman'); {$ENDIF}
 		calcStateWoman := FALSE;
 		pWoman := LookingForRelative(pEgo, kinType, woman);
-
 		if (pWoman <> nil) then begin
 			if (pWoman^.descendanceSimulated) then
                            exit;
@@ -5716,7 +5599,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 													arrayPartners, // not implemented at the moment
 													true, // idem
                                                     arrayChildren);
-
 					if (pWoman^.typeOfKin = kt_ego) and (pWoman^.ageDeath >= 50) then
 					begin
 						{reached from every worker thread: a plain Inc loses increments}
@@ -5725,7 +5607,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 					end;
 					
 					copyWomanPartnershipInfoToWomanAsRelative (unionStates, pWoman);
-
 					{we bring this woman's partners into the kinship}
 					for indUnion := 1 to unionStates.nbUnions do begin
 						pLastRelative := newRelative(pLastRelative, pWoman, nbTotRelatives, kt_partner);
@@ -5734,7 +5615,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 						calcDateBirth (pPartnerMan^.yearBirth, pWoman^.yearBirth,
 									unionStates.Unions [indUnion - 1].ages[le_union, man],
 									unionStates.Unions [indUnion - 1].ages[le_union, woman]);
-
 						cohortMen := trunc (pPartnerMan^.yearBirth);
 						pDemReg := getCohort_p (cohortMen);
 						with pPartnerMan^ do
@@ -5763,11 +5643,9 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 		end; // if (pWoman <> nil)
 {$IFDEF VerboseProfiler} timeProfile_end_proc('calcStateWoman'); {$ENDIF}
 	end; {calcStateWoman}
-
 	function AnotherUnionPossible (unionAgeDur: UnionAgeDurationsType): boolean;
 	var
 		durationUnionWoman, durationUnionMan, ageEndUnion: double;
-
 	begin
 		result := false;
 		if unionAgeDur.ages[le_endUnion, man] > 0 then begin
@@ -5803,12 +5681,10 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 		indChild: DistribChildrenCalc;
 		pChild: pInfoChildType;
 		order: longint;
-
 	begin
 		for age := kMinAgeFert to kMaxAgeFert do
 			for indChild := 0 to kMaxNbChildrenCalc do
 				ageChildren[age, indChild] := 0;
-
 		pChild := pChildrenList;
 		gotoToFirstLiveBornChild (pChild);
 		while pChild <> nil do begin
@@ -5818,7 +5694,6 @@ Inc (gAgeChildbearingBACKFOR_post [ageChildbearing]);
 			gotoToNextLiveBornChild (pChild);
 		end;
 	end;
-
 	procedure writeRelConsole (pRelative: pRelativeType);
 	var
 		egoId: longint = 0;
@@ -5870,10 +5745,8 @@ end;
 		ageUnionMan := max(kMinAgeUnion_men, ageUnionMan);
 		ageUnionWoman := max(kMinAgeUnion_women, ageUnionWoman);
 		cohortManInd := lookInGroomsRange (cohortMan, pGroom^.typeOfKin);
-
 		InterlockedIncrement (gMen_Women[cohortManInd, ageUnionMan-kMinAgeUnion_men, ageUnionWoman-kMinAgeUnion_women]);
 	end; {addGroomForComputing2WaysTableOfUnion}
-
 	procedure computeMenWomen2WaysTable;
 	var
 		pDemReg: pStructDemographicRegimeSettings;
@@ -5942,7 +5815,6 @@ end;
 	var
 		dummy: double;
 		pDemReg: pStructDemographicRegimeSettings;
-
 	begin
 		pDemReg := getCohort_p (pMan^.cohort);
 	{Age at union of the woman}
@@ -5969,7 +5841,6 @@ end;
 					, pMan^.typeOfKin
 					);
 	end;
-
 	// better way of doing it: everything is based 'in fine' on the two-way table of age at union of women BY age at union of men
 	// as we use the man age at union to select a bride from a table of unions which took place a year equal to
 	// man date of birth plus age at union
@@ -5991,13 +5862,11 @@ end;
 		ageUnion := trunc (manUnionInfo.ages[le_union, man]);
 		ageUnionInd := ageUnion - kMinAgeUnion_men;
 		nUnions := g_RangeYearUnionsNb[yearUnionInd, ageUnionInd];
-
 		grow := ( yearUnionInd < (length (g_RangeYearUnionsNb) / 2) ) and ( ageUnion < 40 );
 		yearUnionTemp := yearUnionInd;
 		if nUnions = 0 then
 			{reached from every worker thread: a plain Inc loses increments}
 			InterlockedIncrement (g_RangeYearUnionsNotFound [yearUnionInd, ageUnionInd]);
-
 		while (nUnions = 0) and (yearUnionTemp > 0) and (yearUnionTemp < length (g_RangeYearUnionsNb)) do begin
 			if grow then
 				Inc (yearUnionTemp)
@@ -6020,7 +5889,6 @@ end;
 		end else begin
 			yearUnionInd := yearUnionTemp;
 		end;
-
 		{as in selectBrideByGroomCohortAndAgeAtUnion, but this algorithm moves the YEAR of union
 		 rather than the age at union when the cell is empty. The distance is again in years and
 		 is recorded against the man's own birth cohort, so that the three bride algorithms can
@@ -6034,7 +5902,6 @@ end;
 		
 		ageUnionWomanSelected := getAgeUnionSelected (randomGenerator, womanInd, kNotDefined, ageUnion, gThisIsNotAnArrayOfBrides);
 		manUnionInfo.ages[le_union, woman] := ageUnionWomanSelected;
-
 	{we're introducing this woman into pEgo's kinship}				
 		pLastRelative := newRelative(pLastRelative, pMan, nbTotRelatives, kt_partner);
 		// we compute her date of birth based on info of the man and their respective ages at union
@@ -6042,9 +5909,7 @@ end;
 					manUnionInfo.ages[le_union, woman],
 					manUnionInfo.ages[le_union, man]);
 		pLastRelative^.cohort := trunc (pLastRelative^.yearBirth);
-
 	end;
-
 	{The best approach is to use a table of brides classified by the birth cohort of grooms and their age at union.  
 		This allows us to find a suitable bride for each groom based on these two factors}
 	procedure selectBrideByGroomCohortAndAgeAtUnion (
@@ -6070,27 +5935,21 @@ end;
 		end else begin
 			cohortGroom := pMan^.cohort;
 		end;
-
 		cohortGroomInd := lookInGroomsRange (cohortGroom, pMan^.typeOfKin);
 		ageUnion := trunc (manUnionInfo.ages[le_union, man]);
-
 		// We check whether there are brides with corresponding age at union for the men
 		ageUnionInd := ageUnion - kMinAgeUnion_men;
 		nBrides := g_RangeBridesForGrooms_Nb[cohortGroomInd, ageUnionInd];
-
 		{The search for a bride at a neighbouring age at union, bounded at both ends.
-
 		 Found by ChatGPT's independent review of 13 September, and it is the same defect as the
 		 one corrected in lookingForABrideByAgeAndCohort on 11 September, in the algorithm that
 		 is actually in force rather than in its sibling.
-
 		 The loop tested only the upper bound. The direction is chosen from the man's age, and
 		 for an age at union of 30 or more it decrements, so a run of empty cells walked the
 		 index down through zero and past it: a range error with the checks of Defines.pas on,
 		 and a read outside the array without them. Worse, the failure branch reported the
 		 problem and then fell through to the two lines below, which draw an index from
 		 nBrides = 0 and read a cell that holds nothing.
-
 		 The sweep now stops at both ends, tries the other direction before giving up, and a
 		 cohort row with no bride at any age at union ends the run rather than reading an empty
 		 cell. Halting is a blunt answer: the caller uses womanInd on the next line and has no
@@ -6101,7 +5960,10 @@ end;
 			// No bride for this age at union of the groom. We keep track of that
 			// (reached from every worker thread: a plain Inc loses increments)
 			InterlockedIncrement (g_RangeBridesForGrooms_NotFound [cohortGroomInd, ageUnionInd]);
-
+		{the same, kept for the map of the pool: this is the cell that was asked for and had
+		 nothing in it, which is the failure the map is drawn to show}
+		if nBrides = 0 then
+			countPoolCell (gPoolBrideMissed, cohortGroomInd, ageUnionInd);
 		if (ageUnion < 30) then step := 1 else step := -1;
 		ageUnionIndTemp := ageUnionInd;
 		while (nBrides = 0) and (ageUnionIndTemp + step >= 0) and (ageUnionIndTemp + step < nAgesMen) do begin
@@ -6129,7 +5991,6 @@ end;
 			// We found brides at age 'ageUnionIndTemp'
 			ageUnionInd := ageUnionIndTemp;
 		end;
-
 		{Did this man find a bride of the cohort and the age at union he was looking for? Two
 		 things can move the answer: the clamp of his cohort into the indexed range, and the
 		 step to another age at union taken just above when the cell was empty. Both are counted
@@ -6141,10 +6002,12 @@ end;
 				abs (ageUnionInd - (ageUnion - kMinAgeUnion_men)));
 		indBride := trunc ( randomGenerator.alea ( 0, nBrides - 0.00000000001 ) );
 		womanInd := g_RangeBridesForGrooms_Info[cohortGroomInd, ageUnionInd, indBride];
+		{the cell this search drew from, which is the one asked for unless the sweep above moved
+		 the age at union}
+		countPoolCell (gPoolBrideChosen, cohortGroomInd, ageUnionInd);
 		
 		ageUnionWomanSelected := getAgeUnionSelected (randomGenerator, womanInd, kNotDefined, ageUnionInd + kMinAgeUnion_men, gThisIsNotAnArrayOfBrides);
 		manUnionInfo.ages[le_union, woman] := ageUnionWomanSelected;
-
 		{we're introducing this woman into pEgo's kinship}				
 		pLastRelative := newRelative(pLastRelative, pMan, nbTotRelatives, kt_partner);
 		// we compute her date of birth based on info of the man and their respective ages at union
@@ -6152,7 +6015,6 @@ end;
 					manUnionInfo.ages[le_union, woman],
 					manUnionInfo.ages[le_union, man]);
 		pLastRelative^.cohort := trunc (pLastRelative^.yearBirth);
-
 	end;
 	
 {idem than calcStateWoman, but for a male relative of ego}
@@ -6181,7 +6043,6 @@ end;
 {$IFDEF VerboseProfiler} timeProfile_start_proc('calcStateMan'); {$ENDIF}
 		calcStateMan := FALSE;
 		pMan := LookingForRelative(pEgo, kinType, man);
-
 		if (pMan <> nil) then begin
 			if (pMan^.descendanceSimulated) then
 				exit;
@@ -6208,7 +6069,6 @@ end;
 							 1: selectBrideByGroomAgeAtUnion (randomGenerator, pMan, unionStatesMan.Unions [indUnionMan - 1], pLastRelative, ageUnionWomanSelected, womanInd, nbTotRelatives);
 							 2: selectBrideByGroomCohortAndAgeAtUnion (randomGenerator, pMan, unionStatesMan.Unions [indUnionMan - 1], pLastRelative, ageUnionWomanSelected, womanInd, nbTotRelatives);
 						end;
-
 						pPartnerWoman := pLastRelative;
 						pDemReg := getCohort_p (pPartnerWoman^.cohort);
 						cohortWoman := pPartnerWoman^.cohort;
@@ -6219,11 +6079,9 @@ if gRunFromIDE then begin
 			getWomanFromBigArray (womanInd, gThisIsNotAnArrayOfBrides).nbChildren,
 			getWomanFromBigArray (womanInd, gThisIsNotAnArrayOfBrides).pChildrenList);
 end;
-
 						{The variable 'ageUnionWomenSelected' contains the actual age at union for the women selected,
 						which can be slightly different from the age we computed at first}
 						indUnionWoman := getNumUnionMan (getWomanFromBigArray (womanInd, gThisIsNotAnArrayOfBrides), ageUnionWomanSelected);
-
 						unionStatesMan.Unions [indUnionMan - 1].ages[le_union, woman] := ageUnionWomanSelected;
 						unionStatesMan.Unions [indUnionMan - 1].ages[le_death, woman] := getWomanFromBigArray (womanInd, gThisIsNotAnArrayOfBrides).unionStates.Unions [indUnionWoman - 1].ages[le_death, woman];
 						// actually we take the lifecycle of the women up to age ageUnionWomenSelected and the rest is truncated / discarded
@@ -6237,7 +6095,6 @@ end;
                                             arrayChildren,
 											ageUnionWomanSelected
 										);
-
 						// we substitute the information for the man in the woman's partnership history and put the correct values for union and death
 						aNewBrideInfo.unionStates.Unions [indUnionWoman - 1].ages[le_union, man] := unionStatesMan.Unions [indUnionMan - 1].ages[le_union, man];
 						aNewBrideInfo.unionStates.Unions [indUnionWoman - 1].ages[le_death, man] := unionStatesMan.Unions [indUnionMan - 1].ages[le_death, man];
@@ -6258,7 +6115,6 @@ end;
                                             arrayChildren,
 											not kNewReproductiveLife
 										);
-
 						//The age at union of the man may have been modified by calcCompleteFertilityWomen function, so we update it here
 						setAgeUnion (pMan, indUnionMan,
 							aNewBrideInfo.unionStates.Unions [indUnionWoman - 1].ages[le_union, man]);
@@ -6268,16 +6124,13 @@ end;
                         unionStatesMan.Unions [indUnionMan - 1].ages[le_endUnion, man] := aNewBrideInfo.unionStates.Unions [indUnionWoman - 1].ages[le_endUnion, man];
                         unionStatesMan.Unions [indUnionMan - 1].ages[le_endUnion, woman] :=  aNewBrideInfo.unionStates.Unions [indUnionWoman - 1].ages[le_endUnion, woman];
 						aNewBrideInfo.nbChildren := aNewBrideInfo.nbChildren + nbChildren;
-
 if gRunFromIDE then begin
 	aNewBrideInfo.CheckOwnUnionStates;
 	aNewBrideInfo.CheckOwnChildrenList;
 	unionStatesMan.checkMe (pMan);
 end;
-
 						copyWomanPartnershipInfoToManAsRelative (aNewBrideInfo.unionStates, indUnionWoman, pMan);
 						copyWomanPartnershipInfoToWomanAsRelative (aNewBrideInfo.unionStates, pPartnerWoman);
-
 						with pPartnerWoman^ do
 						begin
 							gender := woman;
@@ -6295,7 +6148,6 @@ end;
 						end;
 						addLastPartner (pMan, pPartnerWoman);
 						addAllPartners (randomGenerator, pPartnerWoman, aNewBrideInfo.unionStates, pMan, indUnionWoman, pLastRelative, nbTotRelatives);
-
 						{and now the children of this couple}
 						{as we introduce them all into ego's kinship, we set the birth order to 0.
 						The biological father will be this man, but only for the children of his partnership with this woman}
@@ -6315,10 +6167,8 @@ end;
 			calcStateMan := true;
     		unionStatesMan.destroy;
 		end; {(pMan <> nil)}
-
 {$IFDEF VerboseProfiler} timeProfile_end_proc('calcStateMan'); {$ENDIF}
 	end; {calcStateMan}
-
 {
 Looking for parents (ancestors) of pRefChild as well as the offspring of the mother (in all her partnerships).
 We DO NOT have the offspring of the father in other partnerships
@@ -6404,7 +6254,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			FreeAndNil (womanObj);
 {$IFDEF VerboseProfiler} timeProfile_end_proc('ancestorsAndTheirOffspring'); {$ENDIF}
 	end;
-
 	procedure calcFatherMother (randomGenerator: TRandomNumberGenerator; pEgo: pRelativeType; var nbTotRelatives: longint);
 	var
 		pRelative: pRelativeType;
@@ -6412,7 +6261,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		pRelative := pEgo;
 		ancestorsAndTheirOffspring(randomGenerator, kt_father, kt_mother, kt_sibling, pEgo, pEgo, pRelative, nbTotRelatives);
 	end;
-
 	procedure linksParentsAndChildren (pEgo: pRelativeType);
 	var
 		pRelative: pRelativeType;
@@ -6424,7 +6272,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			pRelative := pRelative^.nextRelative;
 		end;
 	end;
-
 	{The status of a person is now drawn after the status of that person's parents, because
 	 the intra-family mode gives anyone whose two parents are in the network the distribution
 	 conditional on the two of them. The single pass that stood here walked the list in the order
@@ -6440,7 +6287,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 	procedure giveEdStatus (randomGenerator: TRandomNumberGenerator;pEgo: pRelativeType);
 	var
 		pRelative: pRelativeType;
-
 		procedure assignOne (pRel: pRelativeType);
 		begin
 			if (pRel = nil) or (pRel^.status <> '') then exit;
@@ -6448,7 +6294,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			assignOne (pRel^.mother);
 			pRel^.status := edStatus (randomGenerator, getCohort_p (pRel^.cohort), pRel, g_GENPARAM.eduKind.value);
 		end;
-
 	begin
 		pRelative := pEgo;
 		while (pRelative <> nil) do begin
@@ -6461,7 +6306,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			pRelative := pRelative^.nextRelative;
 		end;
 	end;
-
 	// check the kin network for completeness
 	procedure checkRelatives (pRelative: pRelativeType; writeCounts: boolean = false);
 	const
@@ -6471,7 +6315,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			num: integer;
 			table: arrayOfRelatives;
 		end;
-
 		TCountOfKinType = array [KinTypes] of array[boolean] of TListRelatives;
 		
 	var
@@ -6484,7 +6327,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		procedure initCountOfKin (out c: TCountOfKinType);
 		var
 			aKinType: KinTypes;
-
 		begin
 			for aKinType := kt_none to kt_total do begin
 				c[aKinType, bioKin].num := 0;
@@ -6493,7 +6335,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 				setLength (c[aKinType, unionKin].table, 100);
 			end;
 		end;
-
 		procedure addKinInCount (kt: KinTypes; isUnion: boolean; pRelative: pRelativeType; var c: TCountOfKinType; checkAlreadyInList: boolean = true);
 		var
 			aKinType: KinTypes;
@@ -6518,7 +6359,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 				table [num-1] := pRelative;
 			end;
 		end;
-
 		procedure countKin (pEgo, pRelative: pRelativeType; var c: TCountOfKinType; checkAlreadyInList: boolean = true);
 		begin
 			while (pRelative <> nil) do begin
@@ -6542,7 +6382,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			begin
 				parentsInfo := writeKinString (pRelative^.father) + tab;
 				parentsInfo := parentsInfo + writeKinString (pRelative^.mother);
-
 				unionsInfo := '';
 				for ind := 1 to pRelative^.nUnions do
 					unionsInfo := unionsInfo + writeKinString (getPartner (pRelative, ind)) + tab;
@@ -6570,7 +6409,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 				pRelative := pRelative^.nextRelative;
 			end;
 		end;
-
 		function childOutsideUnions (pRelative: pRelativeType): boolean;
 		// test whether this is a child whose father and mother are both not biological kin of Ego
 		// if this is the case, we have no info on their unions and children thereof
@@ -6578,7 +6416,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			result :=	(pRelative^.father <> nil) and (pRelative^.father^.typeOfKin = kt_partner) and
 						(pRelative^.mother <> nil) and (pRelative^.mother^.typeOfKin = kt_partner)
 		end;
-
 		procedure checkInfoUnion (pRel: pRelativeType);
 		// coherence of information about unions between partners
 		var
@@ -6674,7 +6511,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 						  countKinCheck [kt_total, unionKin].num +
 						  countKinCheck [aKinType, unionKin].num;
 		end;
-
 		errorKin := false;
 		for aKinType := kt_none to kt_total do begin
 			a := countKinNext [aKinType, bioKin].num;
@@ -6686,10 +6522,14 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			if (a <> b) then
 				errorKin := true;
 		end;
-
 		InterlockedIncrement (gCheckRelativesCount);
-		if (gCheckRelativesCount <= gCheckRelativesMax) or (errorKin) then begin
-			//write info for the first kin trees
+		{The first half of this test was gCheckRelativesCount <= gCheckRelativesMax, which was
+		 meant to dump the first few kinship trees. gCheckRelativesMax was never assigned
+		 anywhere, so it stayed at zero and the test was false from the first ego: only an
+		 inconsistency ever reached this block. Nothing is lost by removing it, since the two
+		 lines below dump the trees of a range of egos chosen in the Utiles window, which is the
+		 same facility with a way of setting it.}
+		if errorKin then begin
 			memoWriteLn(['======= Ego: ', gCheckRelativesCount]);
 			for aKinType := kt_none to kt_total do begin
 				memoWriteLn([
@@ -6735,7 +6575,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			pRelative := pRelative^.nextRelative;
 		end;
 	end; {end checkRelatives}
-
 	procedure setInfoParents;
 	{Statistics about ego's mother and father only make sense when those parents are
 	 actually simulated. With the DemoCare format the kin set never contains them, and
@@ -6746,7 +6585,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		setKinshipToSimulate (g_GENPARAM.OUTPUT_KINTYPES.value);
 		g_InfoParents := (kt_mother in gKinToSimulate) and (kt_father in gKinToSimulate);
 	end;
-
 	procedure setKinshipToSimulate (kinToSimulate: KinSetType; writeIt: boolean = false);
 	var
 		aKin: KinTypes;
@@ -6762,14 +6600,12 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		arrayKinBranchUp [kt_child] := [kt_partner] + arrayKinBranchUp [kt_partner];
 		arrayKinBranchUp [kt_grandChild] := [kt_child] + arrayKinBranchUp [kt_child];
 		arrayKinBranchUp [kt_greatGrandChild] := [kt_grandChild] + arrayKinBranchUp [kt_grandChild];
-
 		arrayKinBranchUp [kt_mother] := [kt_ego] + arrayKinBranchUp [kt_ego];
 		arrayKinBranchUp [kt_father] := [kt_mother] + arrayKinBranchUp [kt_mother];
 		arrayKinBranchUp [kt_sibling] := [kt_father] + arrayKinBranchUp [kt_father];
 		arrayKinBranchUp [kt_nieceNephew] := [kt_sibling] + arrayKinBranchUp [kt_sibling];
 		arrayKinBranchUp [kt_grandNieceNephew] := [kt_nieceNephew] + arrayKinBranchUp [kt_nieceNephew];
 		arrayKinBranchUp [kt_greatGrandNieceNephew] := [kt_grandNieceNephew] + arrayKinBranchUp [kt_grandNieceNephew];
-
 		arrayKinBranchUp [kt_grandMother] := [kt_father] + arrayKinBranchUp [kt_father];
 		arrayKinBranchUp [kt_grandFather] := [kt_grandMother] + arrayKinBranchUp [kt_grandMother];
 		arrayKinBranchUp [kt_auntUncle] := [kt_grandFather] + arrayKinBranchUp [kt_grandFather];
@@ -6777,7 +6613,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		arrayKinBranchUp [kt_cousin_removed] := [kt_cousin] + arrayKinBranchUp [kt_cousin];
 		arrayKinBranchUp [kt_cousin_twice_removed] := [kt_cousin_removed] + arrayKinBranchUp [kt_cousin_removed];
 		arrayKinBranchUp [kt_cousin_thrice_removed] := [kt_cousin_twice_removed] + arrayKinBranchUp [kt_cousin_twice_removed];
-
 		arrayKinBranchUp [kt_greatGrandMother] := [kt_grandFather] + arrayKinBranchUp [kt_grandFather];
 		arrayKinBranchUp [kt_greatGrandFather] := [kt_greatGrandMother] + arrayKinBranchUp [kt_greatGrandMother];
 		arrayKinBranchUp [kt_grandAuntUncle] := [kt_greatGrandFather] + arrayKinBranchUp [kt_greatGrandFather];
@@ -6808,14 +6643,12 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		arrayKinBranchDown [kt_great_cousin_removed] := [kt_second_cousin];
 		arrayKinBranchDown [kt_second_cousin] := [kt_second_cousin_removed];
 		arrayKinBranchDown [kt_second_cousin_removed] := [kt_second_cousin_twice_removed];
-
 		for aKin := low(kinTypes) to high(kinTypes) do
 			arrayIncludedKin [aKin] := [];
 		
 		arrayIncludedKin [kt_mother] := [kt_sibling];
 		arrayIncludedKin [kt_grandMother] := [kt_auntUncle];
 		arrayIncludedKin [kt_greatGrandMother] := [kt_grandAuntUncle];
-
 		gKinToSimulate := [kt_ego];
 		gKinWithNoDescendance := [];
 		for aKin := low(KinTypes) to high(KinTypes) do begin
@@ -6828,25 +6661,20 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 				gKinWithNoDescendance := gKinWithNoDescendance - arrayKinBranchUp[aKin];
 			end;
 		end;
-
 		gKinWithNoDescendance := gKinWithNoDescendance * gKinToSimulate;
-
 		for aKin := low(KinTypes) to high(KinTypes) do begin
 			if (aKin in gKinToSimulate) then
 				if not (arrayIncludedKin[aKin] <= gKinToSimulate) then
 					gKinWithNoDescendance := gKinWithNoDescendance + arrayIncludedKin[aKin];
 		end;
-
 		for aKin := low(KinTypes) to high(KinTypes) do begin
 			if (aKin in gKinToSimulate) then
 				if not (arrayKinBranchDown[aKin] <= gKinToSimulate) then
 					gKinWithNoDescendance := gKinWithNoDescendance + [aKin];
 		end;
-
 		if g_GENPARAM.NON_BIO_KIN.value then begin
 			gKinToSimulate := gKinToSimulate + [kt_nonBio];
 		end;
-
 		if writeIt then begin
 			memoWriteLn(['============  Selected kin ==================']);
 			for aKin in kinToSimulate do
@@ -6859,7 +6687,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 				memoWriteLn([str_kinship[aKin]]);
 		end;
 	end;
-
 	procedure assignDestiny (randomGenerator: TRandomNumberGenerator; pRelative: pRelativeType);
 	begin
 		while (pRelative <> nil) do begin
@@ -6870,7 +6697,6 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 			pRelative := pRelative^.nextRelative;
 		end;
 	end;
-
 	procedure ascendantsForPartner (randomGenerator: TRandomNumberGenerator; pEgo: pRelativeType; var pLastRelative: pRelativeType; var nbTotRelatives: longint; nPartner: longint);
 	var
 		pPartner, pMother, pFather: pRelativeType;
@@ -7098,10 +6924,8 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		but all the ascendants have already that information pre computed}
 	
 		pLastRelative := tailOfRelativeList (pEgo);
-
 		nbTotRelatives_init := nbTotRelatives;
 {$IFDEF VerboseProfiler} timeProfile_start_proc('calcKinship'); {$ENDIF}
-
 		{partner and children of pEgo => DESCENDANCE}
 		if 	allKin or
 				(kt_partner in relativeSet) or
@@ -7114,11 +6938,9 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 				// ego didn't enter into at least an union...
 				egoHadUnion := pEgo^.nUnions > 0;
 			posInFamily := pLastRelative^.indNumber - nbTotRelatives_init + 1;
-
 			if egoHadUnion then begin
 				{partners of children and grandchildren => DESCENDANCE 2 & 3}
 				getDescendance_2_and_3 (randomGenerator, pEgo, pLastRelative, arrayChildren, nbTotRelatives, nbTotRelatives_init, posInFamily, relativeSet, allKin);
-
 				if g_GENPARAM.PARTNER_DECEDENT.value and not g_GENPARAM.ALL_EGO_PARTNERS_GENEALOGY.value then begin
 					// we have to reconstruct last partner's ancestry, because she/he can be a decedent
 					ascendantsForLastPartner (randomGenerator, pEgo, pLastRelative, nbTotRelatives);
@@ -7137,10 +6959,8 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 				
 			end; // egoHadUnion
 		end; {DESCENDANCE OF EGO}
-
 		{ASCENDANCE}
 		getAncestry (randomGenerator, pEgo, pLastRelative, arrayChildren, nbTotRelatives, nbTotRelatives_init, posInFamily, relativeSet, allKin);
-
 		{for all individuals: we create a link to their children.}
 {$IFDEF VerboseProfiler} timeProfile_start_proc('linksParentsAndChildren'); {$ENDIF}
 		linksParentsAndChildren (pEgo);
@@ -7150,15 +6970,12 @@ but all the kin are nevertheless stored in the main kinship linked list, with th
 		assignDestiny (randomGenerator, pEgo);
 {$IFDEF VerboseProfiler} timeProfile_end_proc('assignDestiny'); {$ENDIF}
 		computeYears (pEgo);
-
 {$IFDEF VerboseProfiler} timeProfile_end_proc('calcKinship'); {$ENDIF}
-
 {$IFDEF VerboseProfiler} timeProfile_start_proc('checkRelatives'); {$ENDIF}
 if gRunFromIDE and g_GENPARAM.DEBUG.value then begin
 	checkRelatives (pEgo, g_GENPARAM.DEBUG.value and not g_GENPARAM.MULTITHREADING.value);
 end;
 {$IFDEF VerboseProfiler} timeProfile_end_proc('checkRelatives'); {$ENDIF}
-
 		if g_GENPARAM.INHERITANCE.value then begin
 {$IFDEF VerboseProfiler} timeProfile_start_proc('inheritance'); {$ENDIF}
 			lookForHeirs (pEgo);
@@ -7169,13 +6986,11 @@ end;
 {$IFDEF VerboseProfiler} timeProfile_end_proc('inheritance'); {$ENDIF}
 		end;
 		
-
 {$IFDEF VerboseProfiler} timeProfile_start_proc('endCalcKinship'); {$ENDIF}
 		calcCountSize (pEgo, false);
 		giveEdStatus (randomGenerator, pEgo);
 {$IFDEF VerboseProfiler} timeProfile_end_proc('endCalcKinship'); {$ENDIF}
 	end;
-
 	procedure simulFatherMother (randomGenerator: TRandomNumberGenerator; ageEgo: agesLife; out ageFather, ageMother: agesLife);
 		var
 			pEgo, pRelative: pRelativeType;
@@ -7206,10 +7021,8 @@ end;
 			end
 		else
 			if reportFailure (chk_kin_egoAgeAtDeathTooLow, []) then breakOnFailure;
-
 		disposeKinship(pEgo);
 	end;
-
 	procedure initDataKinship(setAgesEgo: setAges);
 	var
 		typeOfKin: KinTypes;
@@ -7222,7 +7035,6 @@ end;
 		gAgeFatherAgeSon[ageDeathFather] := 0;
 		gAgeFatherAgeSon[ageAtUnionFirstChild] := 0;
 		gAgeFatherAgeSon[numberCases] := 0;
-
 		setLength (g_TotalBornKinship, 0);
 		if g_GENPARAM.outputs_opt[res_kin_totalNumbers].value then begin
 			setLength (g_TotalBornKinship,
@@ -7316,7 +7128,6 @@ end;
 		ageUnionStatus: StatusUnion;
 		SelectAllKinsBorn: boolean = true;
 		SelectKinsBornAndPossiblyAlive: boolean = false;
-
 	begin
 		for aKinType := low (KinTypes) to high (KinTypes) do
 			for sexT := low (SexTotal) to high (SexTotal) do begin
@@ -7326,23 +7137,15 @@ end;
 					nLivingKins [ageInd, sexT, aKinType] := 0;
 				end;
 			end;
-
-		if pEgo^.gender = man then begin
-			sexT_Ego := men;
-Inc (gNumEgoMen);
-gChildrenEgoMen := gChildrenEgoMen + getNumChildren (pEgo);
-		end else begin
+		if pEgo^.gender = man then
+			sexT_Ego := men
+		else
 			sexT_Ego := women;
-Inc (gNumEgoWomen);
-gChildrenEgoWomen := gChildrenEgoWomen + getNumChildren (pEgo);
-		end;
-
 		ageDeathEgo := trunc (pEgo^.ageDeath);
 		for a := 0 to ageDeathEgo do begin
 			InterlockedIncrement (numKinByAgeEgo[sexT_Ego, a, kt_ego]);
 			InterlockedIncrement (numKinByAgeEgo[all, a, kt_ego]);
 		end;
-
 		// add ego to born kin count
 		if (SelectAllKinsBorn) then begin
 			if g_GENPARAM.outputs_opt[res_kin_totalNumbers].value then begin
@@ -7360,7 +7163,6 @@ gChildrenEgoWomen := gChildrenEgoWomen + getNumChildren (pEgo);
 				if kinOf <> pEgo then
 					// partners of biological kin like aunts/uncles are classified as 'non-bio'
 					aKinType := kt_nonBio;
-
 				if (SelectAllKinsBorn) then begin
 					if g_GENPARAM.outputs_opt[res_kin_totalNumbers].value then begin
 						InterlockedIncrement (g_TotalBornKinship[ord(aKinType), ord(sexT_Ego), kTotal-kTotal]);
@@ -7434,16 +7236,13 @@ gChildrenEgoWomen := gChildrenEgoWomen + getNumChildren (pEgo);
 								InterlockedIncrement (tabKinshipAgeEgo[ageEgoInd, sexT_Ego, born, aKinType, ageRef]);
 								InterlockedIncrement (tabKinshipAgeEgo[ageEgoInd, all, born, aKinType, ageRef]);
 							end;
-
 							pRelative := pRelative^.nextRelative;
 							continue;
 						end;
-
 						if (SelectAllKinsBorn) then begin						
 							Inc (nBornKins [ageEgoInd, sexT_Ego, aKinType]);
 							Inc (nBornKins [ageEgoInd, all, aKinType]);
 						end;
-
 						if (SelectKinsBornAndPossiblyAlive) then
 						begin
 							InterlockedIncrement (tabKinshipAgeEgo[ageEgoInd, sexT_Ego, born, aKinType, ageRef]);
@@ -7462,7 +7261,6 @@ gChildrenEgoWomen := gChildrenEgoWomen + getNumChildren (pEgo);
 if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		[]) then breakOnFailure;
 		end; {ageEgo}
-
         setSex := [sexT_Ego, all];
 		for aKinType := low (KinTypes) to high (KinTypes) do
 			for sexT in setSex do begin
@@ -7470,7 +7268,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 				if g_GENPARAM.outputs_opt[res_kin_totalNumbers].value then
 					Inc (g_TotalBornKinship[ord(aKinType), ord(sexT), numKins_born-kTotal]);
 			end;
-
 		ageEgoInd := -1;
 		for ageEgo in sa do begin
 			ageEgoInd := ageEgoInd + 1;
@@ -7512,7 +7309,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 							var nbTotRelatives: longint ): pRelativeType;
 	var
 		pEgo: pRelativeType;
-
 	begin
 		result := nil;
 		
@@ -7522,7 +7318,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 {$IFDEF VerboseProfiler} timeProfile_start_proc('calcKinship'); {$ENDIF}
 		calcKinship(randomGenerator, pEgo, arrayChildren, nbTotRelatives, gKinToSimulate);
 {$IFDEF VerboseProfiler} timeProfile_end_proc('calcKinship'); {$ENDIF}
-
 		result := pEgo;
 	end;
 	
@@ -7543,14 +7338,12 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		myRandomGenerator.initWithSeed (nextThreadSeed);
 		inherited Create(false); // start execution now!
 	end;
-
 	Destructor TSimulEgoTree.Destroy();
 	var
 		ind: longint;
 	begin
 		inherited Destroy;
 	end;
-
 	procedure TSimulEgoTree.InitTrees (num: longint);
 	var
 		ind: longint;
@@ -7618,7 +7411,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 			end;
  		end;
 	end;
-
 	Procedure TSimulEgoTree.CleanUp();
 	var
 		ind: longint;
@@ -7644,7 +7436,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		end;
 		result := true;
 	end;
-
 	function UpdateKinNumber (obj: TSimulEgoTree; offsetNumber: longint): boolean;
 	var
 		pRelative: pRelativeType;
@@ -7660,7 +7451,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		end;
 		result := true;
 	end;
-
 	function TSimulEgoTree.meanNumberOfKin: double;
 	begin
 		if myNumTreesStored > 0 then
@@ -7668,7 +7458,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		else
 			result := 0;
 	end;
-
 	Constructor TSimulEgoTreeCleanUp.Create(objs: arrayOfSimulEgoTree; nThreadsUsed: longint);
 	begin
 		FreeOnTerminate := false;
@@ -7691,14 +7480,12 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 			myObjs[indThread].Terminate;
 		end;
 	end;
-
 	procedure writeAgeFatherAgeSon;
 	begin
 		 if not g_GENPARAM.outputs_opt[res_kin_fathers_son].value then exit;
 {age father, age child}
 		bWriteLn (gOutFileKin, ['### Interesting relative ages of fathers and sons' +
 				' (option ' + g_GENPARAM.outputs_opt[res_kin_fathers_son].name + ')']);
-
 		if gAgeFatherAgeSon[numberCases] > 0.0 then
 			begin
 				gAgeFatherAgeSon[ageAtBirthFirst] := trunc (gAgeFatherAgeSon[ageAtBirthFirst] / gAgeFatherAgeSon[numberCases]);
@@ -7721,7 +7508,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 				bWriteLn(gOutFileKin, [AatMLastSonToEnterUnion, tab, gAgeFatherAgeSon[ageAtUnionLastChild]]);
 			end;
 	end;
-
 	procedure survivalParents (randomGenerator: TRandomNumberGenerator; cohort: longint; writeAges, writeSurvival: boolean);
 		var
 			pDemReg: pStructDemographicRegimeSettings;
@@ -7729,10 +7515,8 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 			typeOfKin: KinTypes;
 			individual, ind: longint;
 			ageDiff: double;
-
 			fatherMotherAgeDiff: array[kMinAgeLife..kMaxAgeLife, kt_father..kt_mother, 0..2] of double;
 			LivingParents: array[kMinAgeLife..kMaxAgeLife, 0..2] of double;
-
 	begin
 		pDemReg := getCohort_p(cohort);
 		
@@ -7743,7 +7527,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 				gAgeFatherAgeSon[ageAtUnionFirstChild] := 0;
 				gAgeFatherAgeSon[numberCases] := 0;
 			end;
-
 		screenFileWriteLn(ParentsSurvival);
 		for ageSimpleEgo := kMinAgeLife to kMaxAgeLife do
 			begin
@@ -7787,10 +7570,8 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 					end; {for typeOfKin := kt_father to kt_mother do}
 				LivingParents[ageSimpleEgo, ind] := LivingParents[ageSimpleEgo, ind] / pDemReg^.lp[nEgoPar].value;
 			end; {for ageSimpleEgo := kMinAgeLife to kMaxAgeLife do}
-
 		if writeAges then
 			writeAgeFatherAgeSon;
-
 		if writeSurvival then
 			begin
 				cWriteLn(gOutFileKin, '### Statistics on kin');
@@ -7812,7 +7593,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 					end;
 			end;
 	end;
-
 	procedure writeTables (writeInfo: boolean);
 	var
 		ageEgoInd: longint;
@@ -7822,7 +7602,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		ind: longint;
 		typeOfKin: KinTypes;
 		ageDiff: double;
-
 		nEgos: array [SexTotal] of longint;
 		aSexT: SexTotal;
 		nbRelatives_calc: double = 0;
@@ -7832,7 +7611,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		outputTab: array of TVarRec;
 		outputTabString: array of ShortString;
 		lenOutputTab: longint;
-
 	begin
 		for ageEgo := kMinAgeLife to kMaxAgeLife do begin
 			for aSexT := men to all do begin
@@ -7843,7 +7621,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 				end;
 			end;
 		end;
-
 		ageEgoInd := -1;
 		for ageEgo in kSetAgesEgo do
 		begin
@@ -7870,7 +7647,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 					end;
 				end;
 			end; {typeOfKin}
-
 			for aSexT := low(SexTotal) to high(SexTotal) do begin
     			nEgos[aSexT] := gOut_totKinship[g_nRuns_aggrKinship-1, ageEgoInd, aSexT, alive, kt_ego, ageEgo];
 				for typeOfKin := kFirstKinInEnum to kLastKinInEnum do
@@ -7888,7 +7664,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 					end; {for age := kMinAgeLife to kMaxAgeLife do}
 				end; {for typeOfKin := kFirstKinInEnum to grandChild do}
 			end; {sexT}
-
 			for aSexT := low(SexTotal) to high(SexTotal) do begin
 				for typeOfKin := kFirstKinInEnum to kLastKinInEnum do
 				begin
@@ -7909,7 +7684,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 					end;
 				end; {typeOfKin}
 			end; {sexT}
-
 			for typeOfKin := kFirstKinInEnum to kt_nonBio do
 				for nbRelatives := 0 to kMaxNumRelatives do begin
 					g_distribKin[ageEgoInd, nbRelatives, kt_total] :=
@@ -7925,7 +7699,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 					end;
 				end;
 		end; {ageEgo}
-
 		{moments of the distribution of surviving relatives according to ego age}
 		if writeInfo and g_GENPARAM.outputs_opt[res_kin_stats].value then
         begin
@@ -7952,10 +7725,8 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 				end;
 			end; {aSexT}
 		end;
-
 		{age father, age child}
 		writeAgeFatherAgeSon;
-
 		{distribution of the size of total and surviving kinship groups according to ego age}
 		if writeInfo and g_GENPARAM.outputs_opt[res_kin_dist].value then begin
 			bWriteLn (gOutFileKin, ['### Distribution of living kin numbers for all egos, alive or dead, by ego''s age' +
@@ -8001,7 +7772,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 					end;
 				end; {typeOfKin}
 			end; {aSexT}
-
 			cWriteLn (gOutFileKin, '### Distribution of born kin numbers for surviving egos, by ego''s age and sex');
 			for aSexT := low(SexTotal) to high(SexTotal) do begin
 				bWriteLn (gOutFileKin, ['===> ', sSexTotal [aSexT]]);
@@ -8025,7 +7795,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 				end; {for typeOfKin := kt_father to kt_total do}
 			end; {aSexT}
 		end; {g_GENPARAM.outputs_opt[res_kin_dist]}
-
 		if writeInfo and g_GENPARAM.outputs_opt[res_kin_reldist].value then begin
 			bWriteLn (gOutFileKin, ['### Relative distribution of living kin numbers for surviving egos, by ego''s age' +
 				 ' (option ' + g_GENPARAM.outputs_opt[res_kin_reldist].name + ')']);
@@ -8094,7 +7863,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 			for aSexT := men to all do
 			begin
 				bWriteLn(gOutFileKin, ['### Number of biological kin of surviving ', aSexT]);
-
 				for typeOfKin := kt_ego to kt_total do
 				begin
 					if (typeOfKin in gKinToSimulate) or (typeOfKin = kt_total) then begin
@@ -8119,7 +7887,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 						cWriteLn(gOutFileKin);
 					end;
 				end; {for typeOfKin := kt_father to kt_grandChild do}
-
 			end;
 		end; {g_GENPARAM.outputs_opt[res_kin_agedist]}
 		
@@ -8194,10 +7961,8 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 				if (nbRelatives < kMaxNumRelatives_extended) then
 					outputTabString [4 + nbRelatives * 2 + 1] := tab;
 			end;
-
 			fileScreenWriteLn (gOutFileKin, ['### Mean number and distribution of kin born, for all egos (alive or dead)'], col_none, true, gWriteTableToScreen);
 			fileScreenWriteLn (gOutFileKin, outputTab, col_header, true, gWriteTableToScreen);
-
 			for typeOfKin := kt_ego to kt_nonBio do
 				if typeOfKin in gKinToSimulate then
 					for nbRelatives := kTotal to kMaxNumRelatives_extended do
@@ -8287,10 +8052,8 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 			bWrite (gOutFileIndivKin, [sep, 'shareDecs_2']);
 			bWrite (gOutFileIndivKin, [sep, 'chkInheritances_2']);
 		end;
-
 		bWriteLn (gOutFileIndivKin, []);
 	end;
-
 	procedure header_GEDCOM;
 	begin
 		{gOutFileIndivKin_link is opened for the DemoCare format ONLY, so the second line
@@ -8300,7 +8063,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		if RP.wKey then bWrite (gOutFileIndivKin, ['key', comma]);
 	end;
 	
-
 	function individualKin_openFile (bootstrap_ind: longint; fileFormat: Kinship_FileFormat; var fname: string; openFile: boolean = true): KinSetType;
 	const
 		ftype_democare = '_indKin.txt';
@@ -8319,12 +8081,10 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 	begin
 		result := [kt_none];
 		if not g_GENPARAM.OUTPUT_INDIVIDUAL_KINSHIP_INFO.value then exit;
-
 		if fileFormat = out_GEDCOM then begin
 			memoWriteLn(['GEDCOM File Format not implemented yet -- Using EgoGenealogy instead']);
 			fileFormat := out_EgoGenealogy;
 		end;
-
 		if ( g_GENPARAM.RUNTIME[gBootstrap_nRuns].value > 1 ) and g_GENPARAM.OUTPUT_BOOTSTRAP_MULTIPLE_INDIV_FILES.value then
 			sNum := '_' + IntToStr (bootstrap_ind)
 		else
@@ -8350,7 +8110,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 			openMode := f_append
 		else
 			openMode := f_rewrite;
-
 		fname := g_FileName.value;
 		fname := concat (fname, sNum, ftype);
 		if openFile then begin 
@@ -8374,7 +8133,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		end;
 			
 		if (fileFormat = out_DemoCare) then begin
-
 			if openFile and not sharedBootstrapFile then header_democare;
 			
 			result := gKinToSimulate;
@@ -8382,18 +8140,14 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		end else if fileFormat = out_EgoGenealogy then begin
 		
 			if openFile and not sharedBootstrapFile then header_EgoGenealogy;
-
 			result := gKinToSimulate;
 			
 		end else if fileFormat = out_GEDCOM then begin
 		
 			if openFile and not sharedBootstrapFile then header_GEDCOM;
-
 			result := gKinToSimulate;
-
 		end;
 	end {individualKin_openFile};
-
 	function individualKin_init (bootstrap_ind: longint; fileFormat: Kinship_FileFormat; var fname: string; openFile: boolean = true): boolean;
 	begin
 		result := true;
@@ -8435,7 +8189,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		end;
 		flushIO;
 	end;
-
 	procedure checkKinship (pRel: pRelativeType; nKinsInTree: longint);
 	var
 		nKins: longint = 0;
@@ -8455,20 +8208,17 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 	var
 		tStart: TDateTime;  // Begin and end of measurement, and difference
 		iHours, iMinutes, iSeconds, iMilliseconds: Word;  // Time components
-
 	begin
 		if not g_GENPARAM.OUTPUT_INDIVIDUAL_KINSHIP_INFO.value then exit;
 		if not closeIt then begin
 			flushIO;
 			exit;
 		end;
-
 		gOutFileIndivKin.myCloseFile;
 		if (fileFormat = out_DemoCare) then
 			gOutFileIndivKin_link.myCloseFile;
 		memoWriteLn(['========== Num families written: ', indFamily, ', num individuals: ', nIndividuals, ' ==========']);
 		memoWriteLn(['======================================================================']);
-
 		if (g_GENPARAM.ZIP_INDIVIDUAL.value) then
 		begin
 			tStart := Now();
@@ -8477,7 +8227,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
             stopTime (tStart, '===== zipping genealogies file lasted: ');
 		end;
 	end;
-
 	procedure simulateKinship (randomGenerator: TRandomNumberGenerator; cohortToSimulate: longint; bootstrap_ind: longint; loopPhase: loopTypes);
 	var
 		pDemReg: pStructDemographicRegimeSettings;
@@ -8488,12 +8237,10 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
 		ind, indEgo, stepEgos: longint;
         modEgo: longint = 1000;
 		writeInfo: boolean;
-
         fname: string;
 		pEgo: pRelativeType;
 		nIndividuals: longint = 0;
 		fileFormat: Kinship_FileFormat;
-
 		arrayChildren: arrayOfInfoChild;
 		
         indThread, numThreads: longint;
@@ -8508,7 +8255,6 @@ if checkFalse (chk_kin_ageEgoAddToTableKinship, (ageEgo = 0),
         
 arr: array [0..1] of longint;
 indEgoValues: longint;
-
 	var
         allThreadsTerminated, allThreadsCleanedUp: boolean;
 		tmp: longint;
@@ -8525,20 +8271,15 @@ indEgoValues: longint;
 		MULTITHREADING := g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_SIMKIN.value and (gMaxThreads > 1);
 		if g_GENPARAM.USE_ARRAY_CHILDREN.value then
 			CreateArrayChildren(arrayChildren{%H-});
-
 {$IFDEF VerboseProfiler}
 timeProfile_init(1000);
 timeProfile_talkative();
 {$ENDIF}
-
 {$IFDEF VerboseProfiler} timeProfile_start_proc('simulateKinship'); {$ENDIF}
-
 gCheckRelativesCount := 0;
 arr[0] := UtilesForm.FromFamily();
 arr[1] := UtilesForm.ToFamily();
-
 		pDemReg := getCohort_p (cohortToSimulate);
-
 		if MULTITHREADING then begin
 			egoData.yearOfBirthEgo := cohortToSimulate;
 			// estimate the optimal number of genealogical trees for each thread object
@@ -8580,18 +8321,14 @@ arr[1] := UtilesForm.ToFamily();
 		screenFileWriteLn('======================================================================');
 		screenFileWriteLn(KinCohort + ' ' + intToStr(cohortToSimulate));
 		screenFileWriteLn(KinshipWithPossibleDeathMother + ' ' + intToStr(pDemReg^.lp[nEgoPar].value));
-
 		initDataKinship (kSetAgesEgo);
-
 		ageEgoInd := -1;
 		for ageEgo in kSetAgesEgo do
 		begin
 			ageEgoInd := ageEgoInd + 1;
-
 			zero_kinshipStruct ( gOut_totKinship[g_nRuns_aggrKinship-1, ageEgoInd] );
 		end;
 		zero_KinByAgeEgoStruct ( g_NumKinByAgeEgo[g_nRuns_aggrKinship-1] );
-
 		{Family and individual numbers must be unique inside ONE individual file, and that
 		 file spans every cohort of the run. So the two counters restart only when a new
 		 file is opened, and otherwise continue where the previous cohort left them.}
@@ -8602,29 +8339,23 @@ arr[1] := UtilesForm.ToFamily();
 		end;
 		nbTotRelatives := gFirstRelativeInFile;
 		
-gNumEgoMen := 0; gNumEgoWomen := 0; gChildrenEgoMen := 0; gChildrenEgoWomen := 0;
 gIndEgo := 0;
-
 		fileFormat := g_GENPARAM.kinIndFmt.value;
 		
 		{g_InfoParents is decided once per run, before initComputeStatesKinship sizes and
 		 zeroes the ego-parent arrays. See setInfoParents in this unit.}
-
 		if not individualKin_init (bootstrap_ind, fileFormat, fname{%H-}, ((loopPhase = k_onlyOne) or (loopPhase = k_first))) then
 			exit;
-
 		indEgo := 0;		{counts the egos of THIS cohort: the loop below tests it against nEgoPar}
 		stepEgos := 0;
         //if gRunFromIDE then
 			modEgo := g_GENPARAM.MODEGO.value;
-
 		if (g_GENPARAM.TALKATIVE.value) then begin
 			stopTime (tStart_interm, '===== init phase of simulateKinship lasted: ');
 		end;
 		timeForTrees := Now();
 		while indEgo < pDemReg^.lp[nEgoPar].value do
 		begin
-
 {$IFDEF DEBUG - NOT THREAD AWARE}
 gIndEgo := indEgo + 1;
 if (gIndEgo >= arr[0]) and (gIndEgo <= arr[1]) then
@@ -8634,7 +8365,6 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 	if gIndEgo = gViewEgos[indEgoValues] then
 		// breakpoint
      	   breakOnFailure;
-
 //memoWriteLn([gIndEgo]);flushIO;
 {$ENDIF}
 			if MULTITHREADING then begin
@@ -8695,7 +8425,6 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 				nKinsInTree := nbTotRelatives;
 				pEgo := simulKinship(randomGenerator, cohortToSimulate, arrayChildren, nbTotRelatives);
 				nKinsInTree := nbTotRelatives - nKinsInTree;
-
 				addToTableKinship(pEgo, kSetAgesEgo, gOut_totKinship[g_nRuns_aggrKinship-1], g_NumKinByAgeEgo[g_nRuns_aggrKinship-1]);
 				addToStatesKinship(pEgo);
 				
@@ -8714,7 +8443,6 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 }               
 				disposeKinship(pEgo);
 			end;
-
 		end; {while indEgo < pDemReg^.lp[nEgoPar].value do}
 		
 		if g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_SIMKIN.value then begin
@@ -8723,12 +8451,10 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 			cleanUpThread := TSimulEgoTreeCleanUp.Create (gMyThreadObjects, gNumThreadsUsed);
 			cleanUpThread.start;
 		end;
-
 		{hand the counters to the next cohort of the same file}
 		gFirstFamilyInFile := gFirstFamilyInFile + indEgo;
 		gFirstRelativeInFile := nbTotRelatives;
 		gIndividualsInFile := gIndividualsInFile + nIndividuals;
-
 		stopTime (tStart, '***=====*** simulateKinship in total lasted: ');
 {$IFDEF VerboseProfiler} timeProfile_start_proc('individualKin_end'); {$ENDIF}
 		individualKin_end (fileFormat, gFirstFamilyInFile, gIndividualsInFile, fname,
@@ -8737,13 +8463,11 @@ for indEgoValues := 0 to length (gViewEgos)-1 do
 			tStart_interm := Now();
 		end;
 {$IFDEF VerboseProfiler} timeProfile_end_proc('individualKin_end'); {$ENDIF}
-
 		if g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_SIMKIN.value then begin
             cleanUpThread.Terminate;
             cleanUpThread.WaitFor;
             allThreadsCleanedUp := true;
 		end;
-
 try
 if g_GENPARAM.DEBUG.value then begin
 	checkBrides ('simulateKinship', gThisIsNotAnArrayOfBrides);
@@ -8752,7 +8476,6 @@ end;
 		if (g_GENPARAM.TALKATIVE.value) then begin
 			stopTime (tStart_interm, '===== checkBrides & checkChildren lasted: ');
 		end;
-
 {$IFDEF VerboseProfiler} timeProfile_start_proc('writeTables'); {$ENDIF}
 		writeTables (writeInfo);
 {$IFDEF VerboseProfiler} timeProfile_end_proc('writeTables'); {$ENDIF}
@@ -8765,7 +8488,6 @@ On E: Exception Do
 breakOnFailure;
 end;
 {$IFDEF VerboseProfiler} timeProfile_end_proc('simulateKinship'); {$ENDIF}
-
 		if g_GENPARAM.MULTITHREADING.value and g_GENPARAM.MULTITHREADING_SIMKIN.value then begin
 				if not allThreadsCleanedUp then begin
 					for indThread := 0 to gNumThreadsUsed - 1 do begin
@@ -8777,12 +8499,16 @@ end;
 					end;
 				end;
 		end;
-
 		if g_GENPARAM.USE_ARRAY_CHILDREN.value then
 				DestroyArrayChildren(arrayChildren);
 
-		stopTime (tStart_interm, '===== post-phase of simulateKinship lasted: ');
-
+		{Guarded like every other interim timer of this routine. tStart_interm is set only when
+		 TALKATIVE is on, so with it off this line measured from an unset TDateTime, that is
+		 from 30 December 1899, and stopTime prints the hours, minutes and seconds of the
+		 difference: the result was the time of day, which read as a phase of fourteen hours in
+		 a run of two minutes.}
+		if (g_GENPARAM.TALKATIVE.value) then
+			stopTime (tStart_interm, '===== post-phase of simulateKinship lasted: ');
 		if (g_GENPARAM.TALKATIVE.value) then begin
 			CTFR50 := 0;
 			for ind := 0 to 49 do
@@ -8791,5 +8517,4 @@ end;
 			memoWriteLn(['Cohort Total fertility for women ever in union and alive at 50: ', CTFR50, ', for cohort: ', cohortToSimulate]);
 		end;
 	end; {simulateKinship}
-
 end.

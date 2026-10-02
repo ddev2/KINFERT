@@ -495,7 +495,11 @@ var
 			g_GENPARAM.listOfParams := g_GENPARAM.FERTILITY;
 			g_GENPARAM.KINSHIP := BooleanName.Create(TRUE, 'KINSHIP', 'Run the kinship model', g_GENPARAM.listOfParams);
 			g_GENPARAM.eduKind := EduStatusName.Create(eduNone, 'EDUCATION',
-					'Values can be 0 (none, not taken into account), 1 (totally stochastic), 2 (stochastic but based on observed levels), 3 (idem, but with intrafamily correlation)',
+					'Values can be 0 (none, not taken into account), 1 (the three levels with equal chances),' + LineEnding +
+					'2 (drawn from the levels observed for the cohort and the sex, person by person),' + LineEnding +
+					'3 (the same observed levels, with the family taken into account),' + LineEnding +
+					'4 (the three levels with equal chances, with the family taken into account).' + LineEnding +
+					'2 and 3 read the EDU_ and EDUPARTNER_ distributions from the cohort file; 1 and 4 need no input',
 					g_GENPARAM.listOfParams);
 			g_GENPARAM.kinIndFmt := KinFileFmtName.Create(out_EgoGenealogy, 'KINSHIP_INDIV_FORMAT',
 					'Values can be 0 (Ego genealogy), 1 (DemoCare), 2 (GEDCOM)',
@@ -783,6 +787,29 @@ var
 		if g_GENPARAM.FIXED_FERTILITY.value then
 			initFixedFertility (g_GENPARAM.FIXED_FERTILITY_VALUE.value);
 		initFixedParameters();
+		{A DemoCare file carries the educational level in its status column, and with EDUCATION
+		 set to none every person is written with that column empty, which is not a file DemoCare
+		 can read. The level is forced in that case, and only in that case, to the mode that gives
+		 the three levels equal chances and lets the members of one family resemble one another.
+		 That mode is chosen because it needs no input of its own: the two modes that follow
+		 observed levels read the EDU_ and EDUPARTNER_ distributions from the cohort file, and
+		 forcing one of those on a run without such a file would draw every person from a
+		 neighbouring cohort's distribution, or leave the status empty after all.
+
+		 A mode the user has chosen is never overridden, and the line below says what happened, so
+		 a run cannot change the meaning of its own output in silence.}
+		if g_GENPARAM.OUTPUT_INDIVIDUAL_KINSHIP_INFO.value and
+			(g_GENPARAM.kinIndFmt.value = out_DemoCare) and
+			(g_GENPARAM.eduKind.value = eduNone) then begin
+			g_GENPARAM.eduKind.value := eduStochasticFamily;
+			memoWriteLn (['===> Education: the individual kinship file is written in the DemoCare ',
+					'format, whose status column is the educational level, so EDUCATION has been ',
+					'set from none to the stochastic mode with the family taken into account, ',
+					'which would otherwise leave that column empty. It gives the three levels ',
+					'equal chances and lets the members of one family resemble one another, and ',
+					'it needs no input. Set it yourself to one of the two observed modes, with the ',
+					'EDU_ distributions in the cohort file, for levels that follow observed data.']);
+		end;
 		{The stochastic education mode gives every person an equal chance of each of the three
 		 levels and reads none of the EDU_* parameters. That is what the mode is, a uniform test
 		 distribution, but nothing said so, and a run made with it looked as though the parameters
@@ -793,6 +820,10 @@ var
 					'an equal chance of the three levels and reads none of the EDU_ parameters. ',
 					'Use the cohort or the intra-family mode to have those read.']);
 		DemRegimeCollection_init(randomGenerator);
+		{after the cohort file has been read and the cohorts between the ones read have been
+		 interpolated, so that the report can say whether the educational distributions came from
+		 the file or from the values built into the program}
+		reportEduDataSource;
 		initParams := true;
 		
 		stopTime (tStart, '===== General init phase lasted: ');
