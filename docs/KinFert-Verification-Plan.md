@@ -9,8 +9,7 @@ The plan has two parts. **Part A** verifies the changes, which is the work you a
 B** is what still lies between the repository and a release you would defend, with the
 inheritance module first, since that is the one you take up next month.
 
-Three documents go with this one: `KinFert-FIXED.md` says what each change was and why,
-`KinFert-TODO.md` carries what is still open, and `KinFert-Manual.md` is the manual. This one
+`KinFert-Manual.md`, the user and reference manual, goes with this one. This one
 replaces nothing in them; section 2 of the TODO is the older list of the same checks, by their V
 numbers, and the last section here says which of those this plan covers.
 
@@ -163,7 +162,7 @@ These are the fixes that were meant to alter results. For each one, the baseline
 
 ## Part A, section 4. The older V list
 
-Section 2 of `KinFert-TODO.md` carries the checks from the earlier rounds, by their V numbers. S2
+The checks from the earlier rounds are kept with the author's working notes, by their V numbers. S2
 and S3 above are what most of them were waiting for. The ones this plan already covers are
 **V8** and **V14d** (A1), **V10**, **V11** and **V23** (B3), **V19**, **V20** and **V4** (B4), and
 **V22** in part (C1). Still to do from that list, and none of them needs anything new:
@@ -207,7 +206,7 @@ numbers are those after the changes.
       is found, usufruct.
 - [ ] **Answer Q4**: is `inher_Spain` / `inher_Other` meant to select between rule sets, or is it a
       leftover to remove?
-- [ ] **Review the N26 change, and run it.** `docs/KinFert-FIXED.md` has what was done. Read the
+- [ ] **Review the N26 change, and run it.** The author's record of the change has what was done. Read the
       new field `partnerCanInherit` in `Declarations.pas` and the line that fills it in
       `lookForHeirs`, the two partner tests at `inheritance.pas:237` and `254`, and the new
       `checkHeirs` at `2337`. Then run any configuration with `INHERITANCE` and `DEBUG` on, with a
@@ -219,7 +218,7 @@ numbers are those after the changes.
       searches looked at, and 0 where the two answers really differ. Before the change that column
       was almost always 1, including on rows where the two searches disagreed, so a column that
       still reads 1 everywhere means the change is not in the binary.
-- [ ] **Review the N24 change, and run it. It changes results.** `docs/KinFert-FIXED.md` has what
+- [ ] **Review the N24 change, and run it. It changes results.** The author's record has what
       was done, including why two of the five call sites of `commonAncestor` were left alone. Read
       the two repaired blocks of `checkEgoIsHeir`, the nieces and nephews at `inheritance.pas:947`
       and the grand nieces and nephews at `996`, against the first cousins block at `1091`, which
@@ -230,7 +229,7 @@ numbers are those after the changes.
       nephew must fall in the estates where ego is a half-sibling of the dead relative's parent,
       and the shares of the remaining heirs must rise. This belongs in the A2 comparison, with the
       N22 and N22b changes, and not in A1.
-- [ ] **Review the N22 change, and run it. It changes results.** `docs/KinFert-FIXED.md` has what
+- [ ] **Review the N22 change, and run it. It changes results.** The author's record has what
       was done and the nine cases it was measured on. Read `AscendantHeirs_2` at
       `inheritance.pas:1660`, which is the only routine that changed, and the comment inside
       `exploreAscendantHeirsTree_2` at `1537`. Then: (a) `verification.txt` must show

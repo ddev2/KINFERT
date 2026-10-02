@@ -36,7 +36,10 @@ uses
 
 implementation
 uses
-	FertilityRuntime;
+	{EducationalLevel is here, in the implementation, not in the interface above: Init needs only
+	 reportEduDataSource, at the end of initParams, and the interface of Init says nothing about
+	 education.}
+	FertilityRuntime, EducationalLevel;
 var
 	memoryAllocated: boolean = FALSE;
 		

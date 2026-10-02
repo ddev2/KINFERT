@@ -6,7 +6,10 @@ interface
 	{$IFDEF UNIX}
 	cthreads,
 	{$ENDIF}
-Declarations, DemographicRegime, RandomNumbers, Utilities, Verification;
+{SysUtils is here for IntToStr, which reportEduDataSource uses to say how many columns of a
+ family the cohort file carried. Using Utilities is not enough: a unit does not inherit what
+ the units it uses have themselves used.}
+Declarations, DemographicRegime, RandomNumbers, SysUtils, Utilities, Verification;
 
 procedure initEduStatus(p: pStructDemographicRegimeSettings);
 {Rebuilds the cumulative distributions the three sampling routines read, for one cohort, from the

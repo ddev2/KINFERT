@@ -48,6 +48,21 @@ heapTrace.log
 /KinFert.exe
 /KinFert.app/
 
+# --- The instructions file for Claude -------------------------
+# It stays in the project root, where the tool reads it, and out of
+# the repository: it is working material about how to work on the
+# program, not documentation of the program.
+CLAUDE.md
+AGENTS.md
+
+# --- Working documents kept out of the public repository ------
+# The record of what was fixed, the list of what is still open, the
+# handover and state notes, the audits and the annexes on the mother
+# algorithms. KinFert has not been released before and these describe
+# work in progress rather than the program, so they stay private. What
+# ships is docs/KinFert-Manual.md and docs/KinFert-Verification-Plan.md.
+docs-private/
+
 # --- Machine-specific config (absolute paths / email) --------
 # The program's own state, not input: it writes these itself and a fresh
 # installation has neither. Since 1 October 2026 they live in the per-user

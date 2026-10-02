@@ -10,11 +10,11 @@
 > [Appendix F: Open questions](#appendix-f-open-questions-for-the-author).
 > Nothing here changes the program; it documents it.
 >
-> **Verification phase.** The program itself is in its verification phase. The defects found in
-> the audit that began in August 2026 are recorded in `KinFert-FIXED.md`, and what is still open
-> is in `KinFert-TODO.md`, but no run should be treated as settled until the checks collected in
-> `KinFert-Verification-Plan.md` have been made and answered. That document lists what is checked,
-> what is not, and how each answer would be obtained.
+> **Verification phase.** The program itself is in its verification phase. An audit that began in
+> August 2026 found and corrected a number of defects, several of which affected results, but no
+> run should be treated as settled until the checks collected in `KinFert-Verification-Plan.md`
+> have been made and answered. That document lists what is checked, what is not, and how each
+> answer would be obtained.
 
 ---
 
@@ -874,9 +874,47 @@ The strength of the association is the constant `kEduFamilyCorrelation` in
 the mode exists to give a file a plausible family structure rather than to reproduce
 a measured association.
 
-**With no cohort file**, or with one that carries no `EDU_` columns, modes 2 and 3
-have nothing to draw from: they report a failed check and leave the status empty.
-Modes 1 and 4 need nothing and always work.
+#### 8.5.1 Where the observed distributions come from
+
+Modes 2 and 3 read 51 probabilities, in three families, all of them columns of the
+**cohort file** ([§10.2](#102-cohort--demographic-regime-data-file)) and therefore
+specific to each cohort:
+
+| Columns | How many | What one value is | Read by |
+|---|---|---|---|
+| `EDU_<level>_<sex>` | 6 | the probability that a person of that sex has that level | modes 2 and 3 |
+| `EDUPARTNER_<level>_<sex>_<level>` | 18 | given a person of that sex and that first level, the probability that the partner has that second level | mode 3 |
+| `EDUPARTNERCHILDREN_<level>_<level>_<level>` | 27 | given a mother of the first level and a father of the second, the probability that a child has the third | mode 3 |
+
+`<level>` is `LOW`, `MEDIUM` or `HIGH`, in the column name, for the three levels
+written `B`, `M` and `A` in the output. `<sex>` is `man` or `woman`. Case does not
+matter when the file is read. Every group of three that answers one question has to
+sum to one: the three levels of one sex, the three levels of a partner given one
+level and sex, and the three levels of a child given the two parental levels. That is
+checked for every cohort at the start of a run, and a group that does not sum to one
+within a small tolerance is reported as a failed check.
+
+**Every one of the 51 has a value built into the program.** They are a plausible set,
+written when the module was made, and they are what modes 2 and 3 use for any value
+the cohort file does not supply. This matters more than it first appears: there is no
+missing value to trip over, so a run with mode 2 or 3 and a cohort file with no `EDU_`
+column produces an output that looks exactly like a run following observed data, and
+is not one.
+
+The program therefore checks, at the start of every run in mode 2 or 3, whether the
+file supplied each family, and says so:
+
+- **none of a family's columns.** A warning that lights the error indicator and is
+  kept in `verification.txt`: the run does not follow observed data, and the message
+  names the columns to add.
+- **some of a family's columns but not all.** The same kind of warning, and worth
+  more attention rather than less: the distribution then mixes two sources and the
+  groups no longer sum to one. Supply a whole family or none of it.
+- **all of them.** One quiet line saying the distributions are read from the cohort
+  file, as the mode asks.
+
+Modes 1 and 4 read none of these columns and need no cohort file at all. Mode 0
+assigns nothing.
 
 Status is assigned once the kin network is complete, by `giveEdStatus`, which gives
 the parents of a person a status before the person, so that the intrafamily mode
@@ -1244,8 +1282,21 @@ When a run spans several cohorts, their demographic regimes are supplied in a
 cohort; **Write complete cohort file** (`DUMPALLCOHORTS`) writes the full set, and
 **Write detailed cohort data** (`DETAILED_COHORT_DATA`) adds detail.
 
-*`[TODO: document the per-cohort block layout (one block per cohort, which
-parameters appear, and how cohorts are keyed by year).]`*
+The file is a **tab-separated table**. The first line is a header whose first column
+must be the word `COHORT` and whose other columns are parameter names. Each line after
+it describes one cohort: the year of birth in the first column, then one value per
+column of the header, in the same order. A parameter with no column keeps the value
+built into the program, and cohorts between two that the file supplies are
+interpolated.
+
+The **education** columns are the three families described in
+[§8.5](#85-education): `EDU_<level>_<sex>` (6), `EDUPARTNER_<level>_<sex>_<level>`
+(18) and `EDUPARTNERCHILDREN_<level>_<level>_<level>` (27). They are read only by the
+two modes that follow observed levels, and a run in one of those modes says in its log
+whether the file supplied them or the built-in values were used instead.
+
+*`[TODO: document the remaining column families (fertility, nuptiality, mortality,
+contraception) and give a small complete example file.]`*
 
 ---
 
@@ -1747,10 +1798,7 @@ names one.
 | 4 | `CAMSIM_1993` | The second, with `CAMSIM_1993_ANY_AGE_UNION` deciding whether the mother's age at union is drawn without an upper bound (the default) or bounded by the age at childbearing already selected. |
 
 The four alternates exist so that the five can be run on one configuration and
-compared. The comparison already made is recorded in
-[`docs/KinFert-Annex-Mother-Algorithms.md`](KinFert-Annex-Mother-Algorithms.md) and
-the decisions taken in
-[`docs/KinFert-Alternate-Algorithms-Decisions.md`](KinFert-Alternate-Algorithms-Decisions.md).
+compared.
 
 > **To write.** For a reader who has to choose: what the five differ in, in
 > demographic terms rather than in code; which results are sensitive to the choice
@@ -1845,11 +1893,10 @@ format is chosen with **File format** (`KINSHIP_INDIV_FORMAT`):
 > and from whom does ego inherit), the succession rules applied, and the two sets
 > that restrict the answer. Explain the three partner options and what each does to
 > the shares. Say what the output looks like, both in the aggregate and in the
-> per-kin fields. The rules as implemented are documented in the header of
-> `inheritance.pas` and mapped in
-> [`docs/KinFert-Inheritance-Map.md`](KinFert-Inheritance-Map.md); summarise them
-> here rather than repeating them. State plainly which parts are verified and which
-> are not, with a pointer to the verification plan.
+> per-kin fields. The rules as implemented are documented at length in the header of
+> `inheritance.pas`; summarise them here rather than repeating them. State plainly
+> which parts are verified and which are not, with a pointer to the verification
+> plan.
 
 ![Figure 14-14. The inheritance options](img/outputs-inheritance.png)
 

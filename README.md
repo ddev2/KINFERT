@@ -16,13 +16,12 @@ has two guided chapters on using the fertility model and the kinship model. It i
 reconstructed from the source, and the points where the code alone does not settle the intended
 demographic meaning are marked and collected in its Appendix F.
 
-The other documents are in [`docs/`](docs):
+Two documents go with it, in [`docs/`](docs):
 
 | Document | What it is |
 |---|---|
 | [`KinFert-Verification-Plan.md`](docs/KinFert-Verification-Plan.md) | What has to be verified: one entry per check, with the run to make, the file to look at and the answer to expect |
-| [`KinFert-TODO.md`](docs/KinFert-TODO.md) | What remains before a finished release |
-| [`KinFert-FIXED.md`](docs/KinFert-FIXED.md) | What has been corrected since the audit began, and why |
+| [`KinFert-TODO.md`](docs/KinFert-TODO.md) | What is open and what is planned: the defects that can affect a result, the limits of the model that are by design, and what the documentation and the packaging still need |
 
 ## Status
 
@@ -38,18 +37,17 @@ fecundability model, the birth interval and the effect of infant death on it, th
 progression adjustment, the intrinsic rate and the net reproduction rate, the infant mortality age
 correction and the life expectancy range, the education module, the lost unions and the union
 setters, the schedule of ages at first union, and, on 30 September 2026, the inheritance rules for
-ascendants and for lateral relatives. `docs/KinFert-FIXED.md` records each one, unit by unit, with
-what it changed.
+ascendants and for lateral relatives.
 
-What is still open is in `docs/KinFert-TODO.md`. In summary:
+What is still open is in [`docs/KinFert-TODO.md`](docs/KinFert-TODO.md). In summary:
 
 | | |
 |---|---|
-| One deliberate decision | `Kinship.pas`, in the CAMSIM 1987 backward search: the mother is given the year of birth of her own child, so her reproductive life is simulated with the regime of the following generation. Correcting it would change what the algorithm is, so it is left as it stands and set out in `docs/KinFert-Alternate-Mother-Algorithms.md` |
+| One deliberate decision | `Kinship.pas`, in the CAMSIM 1987 backward search: the mother is given the year of birth of her own child, so her reproductive life is simulated with the regime of the following generation. Correcting it would change what that algorithm is, so it is left as it stands and the comment at that line says so |
 | One option with no effect | The country inheritance parameter never selects between the two rule sets. Both run unconditionally |
 | Guardrails | Several parameters accept values the model cannot use, and a few indices are computed without bounds. None of them binds while the inputs are sensible |
-| Threading | Questions of object lifetime and memory ordering, in section 4 of the TODO |
-| The dialogs | Faults reachable by clicking rather than by running, in section 8 |
+| Threading | Questions of object lifetime and memory ordering |
+| The dialogs | Faults reachable by clicking rather than by running |
 
 A change that has not yet been reviewed is wrapped in the source between `// >>> Claude <date>
 start` and `// <<< Claude <date> end`, so that it can be read in place; the markers are removed
@@ -144,9 +142,8 @@ xattr -d com.apple.quarantine /path/to/KinFert.app
 | `*.pas`, `*.lfm` | The Pascal units and the Lazarus form definitions. |
 | `kinfert.lpi`, `kinfert.lpr` | The Lazarus project. |
 | `docs/KinFert-Manual.md` | User and reference manual: every window and option, the demographic model, the kin taxonomy, and the file formats. A first draft, with open questions collected in its Appendix F. |
-| `docs/KinFert-TODO.md` | The working list of what remains before a finished release. |
 | `docs/KinFert-Verification-Plan.md` | What has to be verified, one entry per check, with the run to make, the file to look at and the answer to expect. The program is in its verification phase and this is the record of it. |
-| `docs/KinFert-FIXED.md` | What has been corrected since the audit began, and why. |
+| `docs/KinFert-TODO.md` | What is open and what is planned. |
 | `tools/` | `compareruns.lpr`, which compares two results folders, and the small scripts described in `tools/README.md`. |
 
 ### The main units

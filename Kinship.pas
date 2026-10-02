@@ -4970,7 +4970,6 @@ last := pLastChild^.ageAtBirthOfEgo;
 		yearBirthRefChildInd := yearBirthRefChildInd +
 					pRefChild^.yearBirth - trunc (pRefChild^.yearBirth);
 		// We don't have the age at childbearing, so we assign a year of birth for the mother equal to the ego's one
-// >>> Claude 2026-09-15 start
 		{BUG DECISION NEEDED, left as it stands on purpose. The line below gives the mother the
 		 year of birth of her own child, so the call to getCohort_p (cohortWoman) inside the
 		 loop simulates her whole reproductive life with the fertility, nuptiality and
@@ -4979,9 +4978,8 @@ last := pLastChild^.ageAtBirthOfEgo;
 		 out of it, so the woman ends with the history of one cohort and the identity of
 		 another. This is not an oversight of the original author: the comment above says that
 		 the age at childbearing is not known at this point, which is true of CAMSIM 1987 as
-		 described. Changing it would change what the algorithm is, so it is reported in
-		 docs/KinFert-Alternate-Mother-Algorithms.md rather than changed here.}
-// <<< Claude 2026-09-15 end
+		 described. Changing it would change what the algorithm is, so it is left as it stands,
+		 deliberately, and this comment is the record of the decision.}
 		cohortWoman := trunc (yearBirthRefChildInd);
 		ageUnionWoman := BACKFOR_MotherAgeUnion (randomGenerator, cohortWoman, kMaxAgeUnion_women);
 		while (not motherFound) do begin
